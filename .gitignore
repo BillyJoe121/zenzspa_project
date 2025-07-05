@@ -1,0 +1,53 @@
+# Archivos de Bytecode de Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Bases de datos locales
+*.sqlite3
+*.db
+
+# Archivos de entorno virtual (aunque usamos Docker, es buena práctica)
+venv/
+env/
+.venv/
+.env/
+
+# Archivo de variables de entorno - ¡MUY IMPORTANTE!
+.env
+.env.*
+
+# Archivos de logs y temporales
+*.log
+*.tmp
+logs/
+tmp/
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivos de configuración de IDEs y editores
+.idea/
+.vscode/
+*.swp
+
+# Dependencias de frontend (cuando las agreguemos)
+node_modules/
+npm-debug.log
+
+# Archivos de build y distribución
+build/
+dist/
+*.egg-info/
+
+# Archivos de Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Datos de Docker
+# A veces Docker puede generar archivos o carpetas,
+# es bueno ignorar el volumen de la base de datos si se mapea localmente.
+postgres_data/
