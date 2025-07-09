@@ -1,6 +1,7 @@
-# Reemplaza todo el contenido de zenzspa_project/users/views.py
 from django.db import transaction
-from django.utils import timezone  # <- IMPORTACIÓN AÑADIDA
+from django.utils import timezone
+from django.core.cache import cache
+from datetime import timedelta
 from rest_framework import generics, status, views
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
@@ -9,6 +10,7 @@ from rest_framework_simplejwt.token_blacklist.models import (BlacklistedToken,
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import CustomUser
+from .permissions import IsVerified
 from .serializers import (CustomTokenObtainPairSerializer,
                           FlagNonGrataSerializer,
                           PasswordResetConfirmSerializer,
@@ -37,22 +39,48 @@ class UserRegistrationView(generics.CreateAPIView):
 class VerifySMSView(views.APIView):
     permission_classes = [AllowAny]
 
+    MAX_ATTEMPTS = 3
+    LOCKOUT_PERIOD_MINUTES = 10
+
     def post(self, request, *args, **kwargs):
         serializer = VerifySMSSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         phone_number = serializer.validated_data['phone_number']
         code = serializer.validated_data['code']
+
+        cache_key_attempts = f'otp_attempts_{phone_number}'
+        cache_key_lockout = f'otp_lockout_{phone_number}'
+
+        if cache.get(cache_key_lockout):
+            return Response(
+                {"error": f"Demasiados intentos. Por favor, intente de nuevo en {self.LOCKOUT_PERIOD_MINUTES} minutos."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+
+        attempts = cache.get(cache_key_attempts, 0)
+
         try:
             twilio_service = TwilioService()
             is_valid = twilio_service.check_verification_code(
                 phone_number, code)
+
             if is_valid:
+                cache.delete(cache_key_attempts)
+                cache.delete(cache_key_lockout)
+
                 user = CustomUser.objects.get(phone_number=phone_number)
                 if not user.is_verified:
                     user.is_verified = True
                     user.save(update_fields=['is_verified'])
                 return Response({"detail": "Usuario verificado correctamente."}, status=status.HTTP_200_OK)
             else:
+                attempts += 1
+                if attempts >= self.MAX_ATTEMPTS:
+                    cache.set(cache_key_lockout, True, timedelta(minutes=self.LOCKOUT_PERIOD_MINUTES).total_seconds())
+                    cache.delete(cache_key_attempts)
+                else:
+                    cache.set(cache_key_attempts, attempts, timeout=timedelta(minutes=self.LOCKOUT_PERIOD_MINUTES).total_seconds())
+
                 return Response({"error": "El código de verificación es inválido o ha expirado."}, status=status.HTTP_400_BAD_REQUEST)
         except CustomUser.DoesNotExist:
             return Response({"error": "No se encontró un usuario con ese número de teléfono."}, status=status.HTTP_404_NOT_FOUND)
@@ -64,8 +92,6 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
 
-# --- VISTAS DE RESETEO DE CONTRASEÑA (VERSIÓN CON TWILIO VERIFY) ---
-
 class PasswordResetRequestView(views.APIView):
     permission_classes = [AllowAny]
 
@@ -75,7 +101,6 @@ class PasswordResetRequestView(views.APIView):
         phone_number = serializer.validated_data['phone_number']
 
         try:
-            # Reutilizamos el servicio de verificación existente
             twilio_service = TwilioService()
             twilio_service.send_verification_code(phone_number)
         except Exception as e:
@@ -100,7 +125,6 @@ class PasswordResetConfirmView(views.APIView):
         password = serializer.validated_data['password']
 
         try:
-            # Reutilizamos la comprobación del servicio de verificación
             twilio_service = TwilioService()
             is_valid = twilio_service.check_verification_code(
                 phone_number, code)
@@ -112,7 +136,6 @@ class PasswordResetConfirmView(views.APIView):
             user.set_password(password)
             user.save()
 
-            # Twilio Verify maneja el código, no hay nada que borrar de la caché.
             return Response({"detail": "Contraseña actualizada correctamente."}, status=status.HTTP_200_OK)
 
         except CustomUser.DoesNotExist:
@@ -120,8 +143,6 @@ class PasswordResetConfirmView(views.APIView):
         except Exception as e:
             return Response({"error": f"Ha ocurrido un error inesperado: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-# --- VISTAS AUXILIARES ---
 
 class CurrentUserView(generics.RetrieveAPIView):
     permission_classes = [IsAuthenticated]
@@ -140,68 +161,47 @@ class FlagNonGrataView(generics.UpdateAPIView):
     @transaction.atomic
     def perform_update(self, serializer):
         instance = self.get_object()
-
-        # --- INICIO DE CAMBIOS QUIRÚRGICOS ---
-
-        # 1. Generar una contraseña aleatoria y segura ANTES de hacer otras operaciones
-        new_unusable_password = CustomUser.objects.make_random_password(
-            length=16)
-
-        # --- FIN DE CAMBIOS QUIRÚRGICOS ---
-
-        # Cancelar citas futuras
+        new_unusable_password = CustomUser.objects.make_random_password(length=16)
         now = timezone.now()
+        
         future_appointments = Appointment.objects.filter(
             user=instance,
             start_time__gte=now,
-            # Aseguramos que el status sea correcto, usando el Enum del modelo Appointment
             status__in=[Appointment.AppointmentStatus.CONFIRMED,
                         Appointment.AppointmentStatus.PENDING_PAYMENT]
         )
-        # Cambiamos el status al correcto según el modelo
-        future_appointments.update(
-            status=Appointment.AppointmentStatus.CANCELLED_BY_ADMIN)
+        future_appointments.update(status=Appointment.AppointmentStatus.CANCELLED_BY_ADMIN)
 
-        # Crear el registro de auditoría
+        # --- INICIO DE LA MODIFICACIÓN ---
+        # Se elimina la contraseña temporal del texto que se guarda en el log.
         AuditLog.objects.create(
             admin_user=self.request.user,
             target_user=instance,
             action=AuditLog.Action.FLAG_NON_GRATA,
-            # 2. Modificamos los detalles para incluir la nueva contraseña
-            details=f"Notas: {serializer.validated_data.get('internal_notes', 'N/A')}\n"
-            f"New Unusable Password: {new_unusable_password}"
+            details=f"Usuario marcado como Persona Non Grata. Notas: {serializer.validated_data.get('internal_notes', 'N/A')}"
         )
+        # --- FIN DE LA MODIFICACIÓN ---
 
-        # Actualizar la instancia del usuario
         instance.is_persona_non_grata = True
-        instance.is_active = False  # Es buena práctica desactivar al usuario también
-        # 3. Usamos la nueva contraseña aleatoria en lugar de None
+        instance.is_active = False
         instance.set_password(new_unusable_password)
+        
+        instance.internal_notes = serializer.validated_data.get('internal_notes', instance.internal_notes)
+        instance.internal_photo_url = serializer.validated_data.get('internal_photo_url', instance.internal_photo_url)
 
-        # Invalidar tokens
         tokens = OutstandingToken.objects.filter(user=instance)
         for token in tokens:
             try:
                 BlacklistedToken.objects.get_or_create(token=token)
             except Exception:
-                # Si el token ya está en la lista negra, no hacemos nada
                 continue
-
-        # El serializer.save() se encarga de guardar los campos del serializador
-        # como 'internal_notes'. Los otros cambios los guardamos manualmente.
+        
         instance.save()
 
 
 class StaffListView(generics.ListAPIView):
-    """
-    Vista de solo lectura para listar todos los usuarios con el rol 'STAFF'.
-    Accesible por cualquier usuario autenticado.
-    """
     serializer_class = StaffListSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        """
-        Sobrescribimos este método para devolver solo los usuarios que son STAFF.
-        """
         return CustomUser.objects.filter(role=CustomUser.Role.STAFF)

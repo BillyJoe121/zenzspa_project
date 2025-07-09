@@ -1,4 +1,3 @@
-# Reemplaza todo el contenido de zenzspa_project/users/signals.py
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
@@ -21,17 +20,18 @@ def create_default_staff_availability(sender, instance, created, **kwargs):
         afternoon_start = datetime.time(14, 0)
         afternoon_end = datetime.time(19, 0)
 
-        # CORRECCIÓN: Iterar de Lunes (0) a Sábado (5)
-        for day in range(0, 6):
+        # CORRECCIÓN: Iterar de Lunes (1) a Sábado (6).
+        # El rango correcto es range(1, 7) para generar los números del 1 al 6.
+        for day in range(1, 7):
             StaffAvailability.objects.create(
                 staff_member=instance,
-                day_of_week=day,  # Usar el valor correcto del rango
+                day_of_week=day,
                 start_time=morning_start,
                 end_time=morning_end
             )
             StaffAvailability.objects.create(
                 staff_member=instance,
-                day_of_week=day,  # Usar el valor correcto del rango
+                day_of_week=day,
                 start_time=afternoon_start,
                 end_time=afternoon_end
             )

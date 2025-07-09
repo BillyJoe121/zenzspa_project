@@ -1,7 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
-from core.models import BaseModel  # Importar BaseModel
-
+from core.models import BaseModel
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, phone_number, email, first_name, password=None, **extra_fields):
@@ -43,8 +42,6 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
         STAFF = 'STAFF', 'Trabajador'
         ADMIN = 'ADMIN', 'Administrador'
 
-    # 'id' ahora es heredado de BaseModel y es la primary_key.
-    # Se elimina primary_key=True de phone_number.
     phone_number = models.CharField(
         max_length=15, unique=True, verbose_name='Número de Teléfono')
     email = models.EmailField(
@@ -61,13 +58,16 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(
         default=False, verbose_name='Personal del Staff')
 
-    # El campo date_joined se elimina porque 'created_at' de BaseModel cumple la misma función.
-
-    # --- NUEVOS CAMPOS ---
     is_persona_non_grata = models.BooleanField(
         default=False, verbose_name="Cliente No Grato")
-    profile_picture = models.ImageField(
-        upload_to='profile_pictures/', null=True, blank=True, verbose_name="Foto de Perfil (Interno)")
+
+    # --- INICIO DE LA MODIFICACIÓN ---
+    # Se elimina 'profile_picture' y se añaden los campos requeridos.
+    internal_notes = models.TextField(
+        blank=True, null=True, verbose_name="Notas Internas (Staff/Admin)")
+    internal_photo_url = models.URLField(
+        max_length=512, blank=True, null=True, verbose_name="URL de Foto Interna (Staff/Admin)")
+    # --- FIN DE LA MODIFICACIÓN ---
 
     objects = CustomUserManager()
 

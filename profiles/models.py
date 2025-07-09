@@ -1,9 +1,8 @@
 from django.db import models
 from django.conf import settings
-from core.models import BaseModel  # Importar BaseModel
+from core.models import BaseModel
 
-
-class UserProfile(BaseModel):
+class ClinicalProfile(BaseModel):
     class Dosha(models.TextChoices):
         VATA = 'VATA', 'Vata'
         PITTA = 'PITTA', 'Pitta'
@@ -34,14 +33,12 @@ class UserProfile(BaseModel):
         MODERATE = 'MODERATE', 'Moderada'
         HIGH = 'HIGH', 'Alta (Atleta)'
 
-    # El campo 'id' se hereda de BaseModel. Se elimina la definición explícita.
-    # El campo 'user' ya no puede ser primary_key. La relación 1-a-1 se mantiene con unique=True.
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile')
     dosha = models.CharField(
-        max_length=10, choices=Dosha.choices, default=Dosha.UNKNOWN)
+        max_length=10, choices=Dosha.choices, default=Dosha.UNKNOWN, verbose_name="Dosha Dominante")
     element = models.CharField(
-        max_length=10, choices=Element.choices, blank=True)
+        max_length=10, choices=Element.choices, blank=True, verbose_name="Elemento Dominante")
     diet_type = models.CharField(
         max_length=15, choices=Diet.choices, blank=True, verbose_name="Tipo de Dieta")
     sleep_quality = models.CharField(
@@ -53,14 +50,12 @@ class UserProfile(BaseModel):
     general_notes = models.TextField(
         blank=True, verbose_name="Notas Generales del Terapeuta")
 
-    # Los campos 'created_at' y 'updated_at' se heredan de BaseModel.
-
     def __str__(self):
-        return f"Perfil de {self.user.first_name}"
+        return f"Perfil Clínico de {self.user.first_name}"
 
     class Meta:
-        verbose_name = "Perfil de Usuario"
-        verbose_name_plural = "Perfiles de Usuario"
+        verbose_name = "Perfil Clínico"
+        verbose_name_plural = "Perfiles Clínicos"
 
 
 class LocalizedPain(BaseModel):
@@ -74,9 +69,8 @@ class LocalizedPain(BaseModel):
         OCCASIONAL = 'OCCASIONAL', 'Ocasional'
         SPECIFIC = 'SPECIFIC', 'En momentos específicos'
 
-    # El campo 'id' se hereda de BaseModel. Se elimina la definición explícita.
     profile = models.ForeignKey(
-        UserProfile, on_delete=models.CASCADE, related_name='pains')
+        ClinicalProfile, on_delete=models.CASCADE, related_name='pains')
     body_part = models.CharField(
         max_length=100, verbose_name="Parte del Cuerpo")
     pain_level = models.CharField(
@@ -91,3 +85,54 @@ class LocalizedPain(BaseModel):
     class Meta:
         verbose_name = "Dolor Localizado"
         verbose_name_plural = "Dolores Localizados"
+
+# --- INICIO DE LA MODIFICACIÓN ---
+# Se elimina la estructura anterior y se implementa la nueva arquitectura de modelos.
+
+class Dosha(models.TextChoices):
+    VATA = 'VATA', 'Vata'
+    PITTA = 'PITTA', 'Pitta'
+    KAPHA = 'KAPHA', 'Kapha'
+
+class DoshaQuestion(BaseModel):
+    text = models.TextField(unique=True, verbose_name="Texto de la Pregunta")
+    category = models.CharField(max_length=50, verbose_name="Categoría (ej. Físico, Mental)", default="General")
+    
+    def __str__(self):
+        return f"[{self.category}] {self.text[:50]}..."
+
+    class Meta:
+        verbose_name = "Pregunta de Dosha"
+        verbose_name_plural = "Preguntas de Dosha"
+        ordering = ['category', 'created_at']
+
+class DoshaOption(BaseModel):
+    question = models.ForeignKey(
+        DoshaQuestion, on_delete=models.CASCADE, related_name='options')
+    text = models.CharField(max_length=255, verbose_name="Texto de la Opción")
+    associated_dosha = models.CharField(
+        max_length=5, choices=Dosha.choices, verbose_name="Dosha Asociado")
+    weight = models.PositiveIntegerField(default=1, verbose_name="Peso/Puntuación")
+
+    def __str__(self):
+        return f"{self.associated_dosha}: {self.text[:40]}..."
+
+    class Meta:
+        verbose_name = "Opción de Respuesta Dosha"
+        verbose_name_plural = "Opciones de Respuesta Dosha"
+        unique_together = ('question', 'associated_dosha')
+        ordering = ['question', 'created_at']
+
+class ClientDoshaAnswer(BaseModel):
+    profile = models.ForeignKey(
+        ClinicalProfile, on_delete=models.CASCADE, related_name='dosha_answers')
+    question = models.ForeignKey(
+        DoshaQuestion, on_delete=models.CASCADE)
+    selected_option = models.ForeignKey(
+        DoshaOption, on_delete=models.CASCADE)
+
+    class Meta:
+        verbose_name = "Respuesta de Cliente al Cuestionario"
+        verbose_name_plural = "Respuestas de Clientes al Cuestionario"
+        unique_together = ('profile', 'question')
+# --- FIN DE LA MODIFICACIÓN ---

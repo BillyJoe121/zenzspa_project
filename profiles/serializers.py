@@ -1,7 +1,8 @@
-# Crea el archivo zenzspa_project/profiles/serializers.py con este contenido
-
 from rest_framework import serializers
-from .models import UserProfile, LocalizedPain
+# --- INICIO DE LA MODIFICACIÓN ---
+from .models import ClinicalProfile, LocalizedPain # Se actualiza la importación
+from users.serializers import SimpleUserSerializer
+# --- FIN DE LA MODIFICACIÓN ---
 
 
 class LocalizedPainSerializer(serializers.ModelSerializer):
@@ -11,39 +12,35 @@ class LocalizedPainSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
 
-class UserProfileSerializer(serializers.ModelSerializer):
+# --- INICIO DE LA MODIFICACIÓN ---
+# Se renombra el serializador para mantener la consistencia
+class ClinicalProfileSerializer(serializers.ModelSerializer):
+# --- FIN DE LA MODIFICACIÓN ---
+    user = SimpleUserSerializer(read_only=True)
     pains = LocalizedPainSerializer(many=True, required=False)
-    user_info = serializers.CharField(source='user.first_name', read_only=True)
 
     class Meta:
-        model = UserProfile
+        # Se actualiza el modelo al que hace referencia
+        model = ClinicalProfile
         fields = [
-            'user_info', 'dosha', 'element', 'diet_type',
+            'user', 'dosha', 'element', 'diet_type',
             'sleep_quality', 'activity_level', 'accidents_notes',
             'general_notes', 'pains'
         ]
 
     def update(self, instance, validated_data):
         pains_data = validated_data.pop('pains', None)
-
-        # Actualiza los campos del perfil
         instance = super().update(instance, validated_data)
-
-        # Actualiza o crea los dolores localizados
         if pains_data is not None:
-            # Borra los dolores que no vienen en la petición
             pain_ids_to_keep = [item.get('id')
                                 for item in pains_data if item.get('id')]
             instance.pains.exclude(id__in=pain_ids_to_keep).delete()
-
-            # Crea o actualiza los dolores
             for pain_data in pains_data:
                 pain_id = pain_data.get('id')
                 if pain_id:
                     pain_obj = LocalizedPain.objects.get(
                         id=pain_id, profile=instance)
-                    LocalizedPainSerializer().update(pain_obj, pain_data)
+                    LocalizedPainSerializer(context=self.context).update(pain_obj, pain_data)
                 else:
                     LocalizedPain.objects.create(profile=instance, **pain_data)
-
         return instance
