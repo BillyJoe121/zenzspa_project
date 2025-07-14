@@ -8,7 +8,7 @@ from core.models import AuditLog
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from users.models import CustomUser
-from users.permissions import IsVerified, IsAdminUser
+from users.permissions import IsVerified, IsAdminUser, IsStaff
 from profiles.permissions import IsStaffOrAdmin
 from .permissions import IsAdminOrOwnerOfAvailability, IsAdminOrReadOnly
 from .models import (
@@ -40,33 +40,25 @@ class PackageViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = PackageSerializer
     permission_classes = [AllowAny]
 
-
 class StaffAvailabilityViewSet(viewsets.ModelViewSet):
     serializer_class = StaffAvailabilitySerializer
-
-    def get_permissions(self):
-        """Asigna permisos basados en la acción."""
-        if self.action in ['update', 'partial_update', 'destroy']:
-            self.permission_classes = [IsAdminOrOwnerOfAvailability]
-        else:
-            self.permission_classes = [IsAuthenticated]
-        return super().get_permissions()
+    # Se usa la composición de permisos para mayor claridad
+    permission_classes = [IsAuthenticated, (IsAdminUser | IsStaff)]
 
     def get_queryset(self):
         user = self.request.user
         if user.role == CustomUser.Role.ADMIN:
             return StaffAvailability.objects.all().select_related('staff_member')
-        if user.role == CustomUser.Role.STAFF:
-            return StaffAvailability.objects.filter(staff_member=user).select_related('staff_member')
-        return StaffAvailability.objects.none()
+        # La lógica de filtrado se mantiene, pero el acceso a la vista ya está protegido.
+        return StaffAvailability.objects.filter(staff_member=user).select_related('staff_member')
 
     def perform_create(self, serializer):
         user = self.request.user
+        # La lógica para asignar el staff_member se mantiene, pero ya no se necesita para permisos.
         if user.role == CustomUser.Role.STAFF:
             serializer.save(staff_member=user)
         elif user.role == CustomUser.Role.ADMIN:
             serializer.save()
-
 
 class AppointmentViewSet(viewsets.ModelViewSet):
     """

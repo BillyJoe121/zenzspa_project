@@ -10,7 +10,7 @@ from rest_framework_simplejwt.token_blacklist.models import (BlacklistedToken,
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import CustomUser
-from .permissions import IsVerified
+from .permissions import IsVerified, IsAdminUser, IsStaff
 from .serializers import (CustomTokenObtainPairSerializer,
                           FlagNonGrataSerializer,
                           PasswordResetConfirmSerializer,
@@ -201,7 +201,9 @@ class FlagNonGrataView(generics.UpdateAPIView):
 
 class StaffListView(generics.ListAPIView):
     serializer_class = StaffListSerializer
+    # Ya usaba IsAuthenticated, lo cual es correcto y permite a cualquier usuario ver la lista
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        # La lógica de filtrado es correcta y debe permanecer aquí.
         return CustomUser.objects.filter(role=CustomUser.Role.STAFF)

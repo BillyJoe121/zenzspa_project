@@ -1,17 +1,9 @@
 import uuid
 from django.db import models
 from django.conf import settings
-
+from django.core.cache import cache
 
 class BaseModel(models.Model):
-    """
-    Modelo base abstracto que proporciona campos comunes para otros modelos.
-
-    Atributos:
-        id (UUIDField): Clave primaria única universal para el registro.
-        created_at (DateTimeField): Marca de tiempo de la creación del registro.
-        updated_at (DateTimeField): Marca de tiempo de la última actualización del registro.
-    """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     created_at = models.DateTimeField(auto_now_add=True, editable=False)
     updated_at = models.DateTimeField(auto_now=True, editable=False)
@@ -22,22 +14,16 @@ class BaseModel(models.Model):
 
 
 class AuditLog(BaseModel):
-    """
-    Modelo para registrar acciones significativas realizadas en el sistema,
-    principalmente por administradores.
-    """
     class Action(models.TextChoices):
         FLAG_NON_GRATA = 'FLAG_NON_GRATA', 'Marcar como Persona No Grata'
         ADMIN_CANCEL_APPOINTMENT = 'ADMIN_CANCEL_APPOINTMENT', 'Admin cancela cita pagada'
         APPOINTMENT_CANCELLED_BY_ADMIN = 'APPOINTMENT_CANCELLED_BY_ADMIN', 'Appointment Cancelled by Admin'
-        # Se pueden añadir más acciones en el futuro
 
     action = models.CharField(
         max_length=50,
         choices=Action.choices,
         verbose_name="Acción Realizada"
     )
-    # El administrador que realizó la acción. Si se borra, el log permanece.
     admin_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -45,7 +31,6 @@ class AuditLog(BaseModel):
         related_name='audit_logs_performed',
         verbose_name="Usuario Admin"
     )
-    # El usuario sobre el cual se realizó la acción.
     target_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -67,9 +52,56 @@ class AuditLog(BaseModel):
     )
 
     def __str__(self):
-        return f"Acción '{self.get_action_display()}' por '{self.admin_user}' a las {self.created_at.strftime('%Y-%m-%d %H:%M')}"  # pylint: disable=no-member
+        return f"Acción '{self.get_action_display()}' por '{self.admin_user}' a las {self.created_at.strftime('%Y-%m-%d %H:%M')}" # pylint: disable=no-member
 
     class Meta:
         verbose_name = "Registro de Auditoría"
         verbose_name_plural = "Registros de Auditoría"
         ordering = ['-created_at']
+
+# --- INICIO DE LA MODIFICACIÓN ---
+
+class GlobalSettings(BaseModel):
+    """
+    Modelo Singleton para almacenar las configuraciones globales del sistema.
+    Solo debe existir una única instancia de este modelo.
+    """
+    low_supervision_capacity = models.PositiveIntegerField(
+        default=1,
+        verbose_name="Capacidad Máxima para Servicios de Baja Supervisión",
+        help_text="Número máximo de citas de baja supervisión que pueden ocurrir simultáneamente."
+    )
+    # Aquí se pueden añadir más configuraciones globales en el futuro.
+    # Ejemplo: appointment_buffer_time = models.PositiveIntegerField(default=10, ...)
+
+    def save(self, *args, **kwargs):
+        """
+        Asegura que solo exista una instancia de este modelo.
+        """
+        self.pk = self.id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+        super().save(*args, **kwargs)
+        # Invalida la caché cada vez que se guardan las configuraciones
+        cache.delete('global_settings')
+
+    @classmethod
+    def load(cls):
+        """
+        Carga la instancia de configuración desde la caché o la base de datos.
+        """
+        # Intenta obtener de la caché primero
+        settings_instance = cache.get('global_settings')
+        if settings_instance is None:
+            # Si no está en caché, obténla de la DB y guárdala en caché
+            settings_instance, _ = cls.objects.get_or_create(
+                id=uuid.UUID("00000000-0000-0000-0000-000000000001")
+            )
+            cache.set('global_settings', settings_instance)
+        return settings_instance
+
+    def __str__(self):
+        return "Configuraciones Globales del Sistema"
+
+    class Meta:
+        verbose_name = "Configuración Global"
+        verbose_name_plural = "Configuraciones Globales"
+# --- FIN DE LA MODIFICACIÓN ---

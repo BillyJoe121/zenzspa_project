@@ -4,6 +4,7 @@ from .models import ServiceCategory, Service, Package, StaffAvailability, Appoin
 from users.serializers import SimpleUserSerializer
 from django.contrib.auth import get_user_model
 from datetime import datetime, timedelta
+from core.models import GlobalSettings
 
 CustomUser = get_user_model()
 
@@ -25,7 +26,6 @@ class ServiceSerializer(serializers.ModelSerializer):
             'vip_price', 'category', 'category_name', 'is_active'
         ]
 
-
 class PackageSerializer(serializers.ModelSerializer):
     services = ServiceSerializer(many=True, read_only=True)
 
@@ -44,7 +44,6 @@ class AppointmentReadSerializer(serializers.ModelSerializer):
         model = Appointment
         fields = '__all__'
 
-
 class AppointmentCreateSerializer(serializers.ModelSerializer):
     user = serializers.HiddenField(default=serializers.CurrentUserDefault())
 
@@ -55,73 +54,103 @@ class AppointmentCreateSerializer(serializers.ModelSerializer):
             'status', 'price_at_purchase', 'end_time'
         ]
         read_only_fields = ['status', 'price_at_purchase', 'end_time']
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # --- INICIO DE LA MODIFICACIÓN ---
+        # Hacer el campo staff_member opcional dinámicamente si es necesario
+        service_id = self.context['request'].data.get('service')
+        if service_id:
+            try:
+                service = Service.objects.get(id=service_id)
+                if service.category.is_low_supervision:
+                    self.fields['staff_member'].required = False
+            except Service.DoesNotExist:
+                pass # La validación estándar lo manejará
+        # --- FIN DE LA MODIFICACIÓN ---
 
     def validate(self, data):
         service = data['service']
-        staff_member = data['staff_member']
         start_time = data['start_time']
         end_time = start_time + timedelta(minutes=service.duration)
         user = data['user']
 
-        # Rule: Prevent booking in the past
         if start_time < timezone.now():
-            raise serializers.ValidationError(
-                "Cannot book an appointment in the past.")
+            raise serializers.ValidationError("No se puede reservar una cita en el pasado.")
 
-        # Rule: Check staff availability
-        day_of_week = start_time.isoweekday()
-        if not StaffAvailability.objects.filter(
-            staff_member=staff_member,
-            day_of_week=day_of_week,
-            start_time__lte=start_time.time(),
-            end_time__gte=end_time.time()
-        ).exists():
-            raise serializers.ValidationError(
-                "The staff member is not available at the selected time.")
+        is_low_supervision_service = service.category.is_low_supervision
 
-        # Rule: Check for conflicting appointments for the staff member
-        if Appointment.objects.filter(
-            staff_member=staff_member,
-            start_time__lt=end_time,
-            end_time__gt=start_time,
-            status__in=[Appointment.AppointmentStatus.CONFIRMED,
-                        Appointment.AppointmentStatus.PENDING_PAYMENT]
-        ).exists():
-            raise serializers.ValidationError(
-                "The selected time slot is no longer available.")
+        if is_low_supervision_service:
+            data['staff_member'] = None
+            day_of_week = start_time.isoweekday()
+            
+            if not StaffAvailability.objects.filter(
+                day_of_week=day_of_week,
+                start_time__lte=start_time.time(),
+                end_time__gte=end_time.time()
+            ).exists():
+                raise serializers.ValidationError("No hay personal disponible para supervisar el servicio en el horario seleccionado.")
+            
+            # --- INICIO DE LA MODIFICACIÓN ---
+            # Se consulta el límite de capacidad desde el modelo de configuración global.
+            settings = GlobalSettings.load()
+            
+            # Contar las citas de baja supervisión que se solapan en el tiempo.
+            conflicting_low_supervision_appointments = Appointment.objects.filter(
+                service__category__is_low_supervision=True,
+                start_time__lt=end_time,
+                end_time__gt=start_time,
+                status__in=[Appointment.AppointmentStatus.CONFIRMED, Appointment.AppointmentStatus.PENDING_PAYMENT]
+            ).count()
 
-        # Rule: Check user's active appointment limit based on role [RFD-APP-03]
+            if conflicting_low_supervision_appointments >= settings.low_supervision_capacity:
+                raise serializers.ValidationError("La capacidad para servicios de baja supervisión está completa en este horario.")
+            # --- FIN DE LA MODIFICACIÓN ---
+            
+        else:
+            # LÓGICA PARA SERVICIOS NORMALES (ALTA SUPERVISIÓN)
+            staff_member = data.get('staff_member')
+            if not staff_member:
+                raise serializers.ValidationError({"staff_member": "Este servicio requiere seleccionar un miembro del personal."})
+            
+            day_of_week = start_time.isoweekday()
+            if not StaffAvailability.objects.filter(
+                staff_member=staff_member,
+                day_of_week=day_of_week,
+                start_time__lte=start_time.time(),
+                end_time__gte=end_time.time()
+            ).exists():
+                raise serializers.ValidationError("El miembro del personal no está disponible en el horario seleccionado.")
+
+            if Appointment.objects.filter(
+                staff_member=staff_member,
+                start_time__lt=end_time,
+                end_time__gt=start_time,
+                status__in=[Appointment.AppointmentStatus.CONFIRMED, Appointment.AppointmentStatus.PENDING_PAYMENT]
+            ).exists():
+                raise serializers.ValidationError("El horario seleccionado ya no está disponible con este miembro del personal.")
+        # --- FIN DE LA LÓGICA DIFERENCIADA ---
+
+        # Reglas generales que aplican a ambos tipos de servicio
         active_appointments = Appointment.objects.filter(
             user=user,
-            status__in=[Appointment.AppointmentStatus.CONFIRMED,
-                        Appointment.AppointmentStatus.PENDING_PAYMENT]
+            status__in=[Appointment.AppointmentStatus.CONFIRMED, Appointment.AppointmentStatus.PENDING_PAYMENT]
         ).count()
 
         if user.role == CustomUser.Role.CLIENT and active_appointments >= 1:
-            raise serializers.ValidationError(
-                "As a CLIENT, you can only have 1 active appointment. Please complete or cancel your existing appointment."
-            )
+            raise serializers.ValidationError("Como CLIENTE, solo puedes tener 1 cita activa.")
         if user.role == CustomUser.Role.VIP and active_appointments >= 4:
-            raise serializers.ValidationError(
-                "As a VIP, you can have up to 4 active appointments."
-            )
+            raise serializers.ValidationError("Como VIP, puedes tener hasta 4 citas activas.")
 
         return data
 
     def create(self, validated_data):
         service = validated_data['service']
         user = validated_data['user']
-
-        # Set price based on user role [RFD-PAY-02]
         price = service.vip_price if user.role == CustomUser.Role.VIP and service.vip_price is not None else service.price
         validated_data['price_at_purchase'] = price
-
-        # Calculate end_time
-        validated_data['end_time'] = validated_data['start_time'] + \
-            timedelta(minutes=service.duration)
-
+        validated_data['end_time'] = validated_data['start_time'] + timedelta(minutes=service.duration)
         return super().create(validated_data)
-
 
 class AppointmentStatusUpdateSerializer(serializers.ModelSerializer):
     class Meta:

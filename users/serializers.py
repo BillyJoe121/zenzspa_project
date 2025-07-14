@@ -72,9 +72,10 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
             last_name=validated_data.get('last_name', ''),
             email=validated_data.get('email', '')
         )
-        # --- INICIO DE LA MODIFICACIÓN ---
-        ClinicalProfile.objects.create(user=user) # Se usa el nuevo nombre del modelo
-        # --- FIN DE LA MODIFICACIÓN ---
+        
+        if user.role in [CustomUser.Role.CLIENT, CustomUser.Role.VIP]:
+            ClinicalProfile.objects.create(user=user)
+    
         return user
 
 

@@ -10,25 +10,18 @@ from .serializers import (
     ClinicalProfileSerializer, DoshaQuestionSerializer,
     DoshaQuizSubmissionSerializer, KioskStartSessionSerializer
 )
-from .permissions import IsOwnerForReadOrStaff, IsKioskSession, IsStaffOrAdmin
 from users.models import CustomUser
-from users.permissions import IsAdminUser, IsVerified
 from .services import calculate_dominant_dosha_and_element
+from users.permissions import IsAdminUser, IsVerified
+from .permissions import IsOwnerForReadOrStaff, IsKioskSession, IsStaffOrAdmin # Importamos el centralizado
 from rest_framework.permissions import IsAuthenticated
 
 class ClinicalProfileDetailView(generics.RetrieveUpdateAPIView):
-    """
-    Vista para ver y actualizar el perfil clínico de un usuario.
-    - El dueño puede ver su perfil.
-    - El personal (STAFF/ADMIN) puede ver y actualizar cualquier perfil.
-    """
-    queryset = ClinicalProfile.objects.all().select_related('user').prefetch_related('pains')
+
+    queryset = ClinicalProfile.objects.select_related('user').prefetch_related('pains')
     serializer_class = ClinicalProfileSerializer
-    # --- INICIO DE LA MODIFICACIÓN ---
-    # Se reemplaza el permiso anterior por el nuevo permiso granular.
-    # IsAuthenticated se asegura que solo usuarios logueados puedan intentarlo.
     permission_classes = [IsAuthenticated, IsOwnerForReadOrStaff]
-    # --- FIN DE LA MODIFICACIÓN ---
+
     lookup_field = 'user__phone_number'
     lookup_url_kwarg = 'phone_number'
 
@@ -88,7 +81,7 @@ class KioskStartSessionView(generics.GenericAPIView):
     Vista para que un STAFF inicie una sesión de Modo Quiosco para un cliente.
     """
     serializer_class = KioskStartSessionSerializer
-    permission_classes = [IsStaffOrAdmin] # Solo el personal puede iniciar el quiosco
+    permission_classes = [IsStaffOrAdmin]
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

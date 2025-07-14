@@ -22,7 +22,6 @@ class ServiceCategory(BaseModel):
     def __str__(self):
         return self.name
 
-
 class Service(BaseModel):
     """
     Represents a service offered by the spa.

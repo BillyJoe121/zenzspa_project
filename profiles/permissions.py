@@ -1,15 +1,6 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
-from django.core.cache import cache
 from users.models import CustomUser
-
-class IsStaffOrAdmin(BasePermission):
-    """
-    Permite el acceso solo a usuarios con rol STAFF o ADMIN.
-    """
-    def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated:
-            return False
-        return request.user.role in [CustomUser.Role.STAFF, CustomUser.Role.ADMIN]
+from users.permissions import IsStaffOrAdmin # Se importa el permiso centralizado
 
 class IsOwnerForReadOrStaff(BasePermission):
     """
@@ -18,13 +9,15 @@ class IsOwnerForReadOrStaff(BasePermission):
     - Al personal (STAFF/ADMIN), realizar cualquier acción.
     """
     def has_object_permission(self, request, view, obj):
-        if request.user.role in [CustomUser.Role.STAFF, CustomUser.Role.ADMIN]:
+        # Se reutiliza el permiso centralizado para verificar si es personal.
+        if IsStaffOrAdmin().has_permission(request, view):
             return True
+
+        # El dueño del perfil solo tiene permisos para métodos seguros (lectura).
         if obj.user == request.user and request.method in SAFE_METHODS:
             return True
-        return False
 
-# --- INICIO DE LA MODIFICACIÓN ---
+        return False
 
 class IsKioskSession(BasePermission):
     """
@@ -50,4 +43,3 @@ class IsKioskSession(BasePermission):
             return True
         except CustomUser.DoesNotExist:
             return False
-# --- FIN DE LA MODIFICACIÓN ---
