@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import action
 from django.conf import settings
+from django.db.models import ProtectedError # <--- IMPORTAR ProtectedError
 from core.models import AuditLog
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -28,6 +29,23 @@ class ServiceCategoryViewSet(viewsets.ModelViewSet):
     serializer_class = ServiceCategorySerializer
     permission_classes = [IsAdminOrReadOnly]
 
+    # --- INICIO DE LA MODIFICACIÓN ---
+    def destroy(self, request, *args, **kwargs):
+        """
+        Sobrescribe el método de eliminación para manejar la protección
+        de integridad referencial de forma elegante.
+        """
+        instance = self.get_object()
+        try:
+            self.perform_destroy(instance)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except ProtectedError:
+            return Response(
+                {"error": "Esta categoría no puede ser eliminada porque todavía tiene servicios asociados. Por favor, reasigne o elimine los servicios primero."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    # --- FIN DE LA MODIFICACIÓN ---
+
 
 class ServiceViewSet(viewsets.ModelViewSet):
     queryset = Service.objects.filter(is_active=True)
@@ -42,34 +60,25 @@ class PackageViewSet(viewsets.ReadOnlyModelViewSet):
 
 class StaffAvailabilityViewSet(viewsets.ModelViewSet):
     serializer_class = StaffAvailabilitySerializer
-    # Se usa la composición de permisos para mayor claridad
     permission_classes = [IsAuthenticated, (IsAdminUser | IsStaff)]
 
     def get_queryset(self):
         user = self.request.user
         if user.role == CustomUser.Role.ADMIN:
             return StaffAvailability.objects.all().select_related('staff_member')
-        # La lógica de filtrado se mantiene, pero el acceso a la vista ya está protegido.
         return StaffAvailability.objects.filter(staff_member=user).select_related('staff_member')
 
     def perform_create(self, serializer):
         user = self.request.user
-        # La lógica para asignar el staff_member se mantiene, pero ya no se necesita para permisos.
         if user.role == CustomUser.Role.STAFF:
             serializer.save(staff_member=user)
         elif user.role == CustomUser.Role.ADMIN:
             serializer.save()
 
 class AppointmentViewSet(viewsets.ModelViewSet):
-    """
-    API endpoint for managing appointments.
-    """
     queryset = Appointment.objects.select_related(
         'user', 'service', 'staff_member').all()
-    # --- INICIO DE LA MODIFICACIÓN ---
-    # Se añade el permiso IsVerified. Ahora se requiere estar autenticado Y verificado.
     permission_classes = [IsAuthenticated, IsVerified]
-    # --- FIN DE LA MODIFICACIÓN ---
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -105,7 +114,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 {'detail': 'You do not have permission to perform this action.'},
                 status=status.HTTP_403_FORBIDDEN
             )
-
         serializer = self.get_serializer(
             data=request.data,
             context={'request': request, 'appointment': appointment}
@@ -115,7 +123,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         list_serializer = AppointmentListSerializer(updated_appointment)
         return Response(list_serializer.data, status=status.HTTP_200_OK)
 
-    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser]) # Solo el Admin puede cancelar así
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
     @transaction.atomic
     def cancel_by_admin(self, request, pk=None):
         appointment = self.get_object()
@@ -138,7 +146,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
 
 class InitiatePaymentView(generics.GenericAPIView):
-    # Se añade el permiso IsVerified para asegurar que solo usuarios verificados inicien pagos.
     permission_classes = [IsAuthenticated, IsVerified]
 
     def get(self, request, pk):
@@ -147,7 +154,6 @@ class InitiatePaymentView(generics.GenericAPIView):
         reference = f"APPOINTMENT-{appointment.pk}"
         concatenation = f"{reference}{amount_in_cents}COP{settings.WOMPI_INTEGRITY_SECRET}"
         signature = hashlib.sha256(concatenation.encode('utf-8')).hexdigest()
-
         payment_data = {
             'publicKey': settings.WOMPI_PUBLIC_KEY,
             'currency': "COP",
@@ -161,17 +167,14 @@ class InitiatePaymentView(generics.GenericAPIView):
 
 class WompiWebhookView(generics.GenericAPIView):
     permission_classes = [AllowAny]
-
     def post(self, request, *args, **kwargs):
         event_data = request.data
         transaction_data = event_data.get("data", {}).get("transaction", {})
         reference = transaction_data.get("reference")
         transaction_id = transaction_data.get("id")
         transaction_status = transaction_data.get("status")
-
         if not all([reference, transaction_id, transaction_status]):
             return Response({"error": "Datos del webhook incompletos"}, status=status.HTTP_400_BAD_REQUEST)
-
         try:
             with transaction.atomic():
                 appointment = None
@@ -196,7 +199,6 @@ class WompiWebhookView(generics.GenericAPIView):
 
 
 class AvailabilityCheckView(generics.GenericAPIView):
-    # Se añade el permiso IsVerified para que solo usuarios verificados puedan consultar disponibilidad.
     permission_classes = [IsAuthenticated, IsVerified]
     serializer_class = AvailabilityCheckSerializer
 
