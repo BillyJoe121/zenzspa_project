@@ -190,9 +190,14 @@ CELERY_TIMEZONE = TIME_ZONE  # Usamos la misma zona horaria que Django
 # --- Celery Beat Settings ---
 CELERY_BEAT_SCHEDULE = {
     'check-for-reminders-every-hour': {
-        'task': 'spa.tasks.check_and_queue_reminders',  # La ruta a nuestra nueva tarea
-        # Se ejecuta cada hora, en el minuto 0.
-        'schedule': crontab(minute='*'),
+        'task': 'spa.tasks.check_and_queue_reminders',
+        # Se corrige para que se ejecute cada hora, en el minuto 0.
+        'schedule': crontab(minute='0', hour='*'),
+    },
+    'cancel-unpaid-appointments-every-10-minutes': {
+        'task': 'spa.tasks.cancel_unpaid_appointments',
+        # Se ejecuta cada 10 minutos para asegurar que las citas se cancelen a tiempo.
+        'schedule': crontab(minute='*/10'),
     },
 }
 

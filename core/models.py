@@ -12,7 +12,6 @@ class BaseModel(models.Model):
         abstract = True
         ordering = ['-created_at']
 
-
 class AuditLog(BaseModel):
     class Action(models.TextChoices):
         FLAG_NON_GRATA = 'FLAG_NON_GRATA', 'Marcar como Persona No Grata'
@@ -59,39 +58,37 @@ class AuditLog(BaseModel):
         verbose_name_plural = "Registros de Auditoría"
         ordering = ['-created_at']
 
-# --- INICIO DE LA MODIFICACIÓN ---
-
 class GlobalSettings(BaseModel):
     """
     Modelo Singleton para almacenar las configuraciones globales del sistema.
-    Solo debe existir una única instancia de este modelo.
     """
     low_supervision_capacity = models.PositiveIntegerField(
         default=1,
         verbose_name="Capacidad Máxima para Servicios de Baja Supervisión",
         help_text="Número máximo de citas de baja supervisión que pueden ocurrir simultáneamente."
     )
-    # Aquí se pueden añadir más configuraciones globales en el futuro.
-    # Ejemplo: appointment_buffer_time = models.PositiveIntegerField(default=10, ...)
+    # --- INICIO DE LA MODIFICACIÓN ---
+    advance_payment_percentage = models.PositiveIntegerField(
+        default=20,
+        verbose_name="Porcentaje de Anticipo Requerido (%)",
+        help_text="Porcentaje del costo total de la cita que se debe pagar como anticipo."
+    )
+    appointment_buffer_time = models.PositiveIntegerField(
+        default=10,
+        verbose_name="Tiempo de Limpieza entre Citas (minutos)",
+        help_text="Minutos de búfer que se añadirán después de cada cita para preparación."
+    )
+    # --- FIN DE LA MODIFICACIÓN ---
 
     def save(self, *args, **kwargs):
-        """
-        Asegura que solo exista una instancia de este modelo.
-        """
         self.pk = self.id = uuid.UUID("00000000-0000-0000-0000-000000000001")
         super().save(*args, **kwargs)
-        # Invalida la caché cada vez que se guardan las configuraciones
         cache.delete('global_settings')
 
     @classmethod
     def load(cls):
-        """
-        Carga la instancia de configuración desde la caché o la base de datos.
-        """
-        # Intenta obtener de la caché primero
         settings_instance = cache.get('global_settings')
         if settings_instance is None:
-            # Si no está en caché, obténla de la DB y guárdala en caché
             settings_instance, _ = cls.objects.get_or_create(
                 id=uuid.UUID("00000000-0000-0000-0000-000000000001")
             )
@@ -104,4 +101,3 @@ class GlobalSettings(BaseModel):
     class Meta:
         verbose_name = "Configuración Global"
         verbose_name_plural = "Configuraciones Globales"
-# --- FIN DE LA MODIFICACIÓN ---

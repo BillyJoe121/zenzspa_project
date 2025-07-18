@@ -1,7 +1,6 @@
 from django.db import models
 from django.conf import settings
-from core.models import BaseModel  # Importar BaseModel
-
+from core.models import BaseModel
 
 class ServiceCategory(BaseModel):
     """
@@ -95,13 +94,20 @@ class Appointment(BaseModel):
     """
     Represents a booking of a service by a user with a staff member.
     """
+    # --- INICIO DE LA MODIFICACIÓN ---
     class AppointmentStatus(models.TextChoices):
-        PENDING_PAYMENT = 'PENDING_PAYMENT', 'Pending Payment'
-        CONFIRMED = 'CONFIRMED', 'Confirmed'
-        COMPLETED = 'COMPLETED', 'Completed'
-        CANCELLED_UNPAID = 'CANCELLED_UNPAID', 'Cancelled (Unpaid)'
-        CANCELLED_BY_ADMIN = 'CANCELLED_BY_ADMIN', 'Cancelled by Admin'
-        REFUNDED = 'REFUNDED', 'Refunded'
+        # Flujo de creación
+        PENDING_ADVANCE = 'PENDING_ADVANCE', 'Pendiente de Pago de Anticipo'
+        CONFIRMED = 'CONFIRMED', 'Confirmada (Anticipo Pagado)'
+        
+        # Flujo de finalización
+        COMPLETED_PENDING_FINAL_PAYMENT = 'COMPLETED_PENDING_FINAL_PAYMENT', 'Completada (Pago Final Pendiente)'
+        COMPLETED = 'COMPLETED', 'Completada y Pagada'
+
+        # Flujo de cancelación
+        CANCELLED_BY_CLIENT = 'CANCELLED_BY_CLIENT', 'Cancelada por el Cliente'
+        CANCELLED_BY_SYSTEM = 'CANCELLED_BY_SYSTEM', 'Cancelada por el Sistema' # Por falta de pago de anticipo
+        CANCELLED_BY_ADMIN = 'CANCELLED_BY_ADMIN', 'Cancelada por el Administrador'
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -112,22 +118,30 @@ class Appointment(BaseModel):
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name='attended_appointments',
-        limit_choices_to={'role__in': ['STAFF', 'ADMIN']}
+        limit_choices_to={'role__in': ['STAFF', 'ADMIN']},
+        # Se permite que sea nulo para servicios de baja supervisión
+        null=True,
+        blank=True
     )
     service = models.ForeignKey(
         Service, on_delete=models.PROTECT, related_name='appointments')
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
+    
     status = models.CharField(
-        max_length=20,
+        max_length=40,
         choices=AppointmentStatus.choices,
-        default=AppointmentStatus.PENDING_PAYMENT
+        default=AppointmentStatus.PENDING_ADVANCE
     )
-    price_at_booking = models.DecimalField(max_digits=10, decimal_places=2)
+    
+    # Se renombra el campo para consistencia
+    price_at_purchase = models.DecimalField(max_digits=10, decimal_places=2)
+    
     reschedule_count = models.PositiveIntegerField(
         default=0,
         help_text="How many times this appointment has been rescheduled by the client."
     )
+    # --- FIN DE LA MODIFICACIÓN ---
 
     class Meta:
         verbose_name = "Appointment"
@@ -135,8 +149,7 @@ class Appointment(BaseModel):
         ordering = ['-start_time']
 
     def __str__(self):
-        # Se añade comentario para desactivar el falso positivo de Pylint (E1101)
-        return f"Appointment for {self.user} with {self.staff_member} at {self.start_time.strftime('%Y-%m-%d %H:%M')}"  # pylint: disable=no-member
+        return f"Appointment for {self.user} with {self.staff_member or 'N/A'} at {self.start_time.strftime('%Y-%m-%d %H:%M')}" # pylint: disable=no-member
 
 
 class Package(BaseModel):
@@ -165,6 +178,11 @@ class Payment(BaseModel):
         PENDING = 'PENDING', 'Pending'
         SUCCESSFUL = 'SUCCESSFUL', 'Successful'
         FAILED = 'FAILED', 'Failed'
+        
+    class PaymentType(models.TextChoices):
+        ADVANCE = 'ADVANCE', 'Anticipo'
+        FINAL = 'FINAL', 'Pago Final'
+        FULL = 'FULL', 'Pago Completo'
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL,
                              on_delete=models.SET_NULL, null=True)
@@ -175,6 +193,7 @@ class Payment(BaseModel):
         max_length=20, choices=PaymentStatus.choices, default=PaymentStatus.PENDING)
     transaction_id = models.CharField(
         max_length=255, unique=True, help_text="ID from the payment gateway (e.g., Wompi)")
+    payment_type = models.CharField(max_length=10, choices=PaymentType.choices, default=PaymentType.FULL)
 
     def __str__(self):
         return f"Payment {self.transaction_id} for {self.amount} ({self.status})"

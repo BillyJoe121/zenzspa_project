@@ -13,18 +13,24 @@ class AuditLogAdmin(admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         return False
 
-# --- INICIO DE LA MODIFICACIÓN ---
-
 @admin.register(GlobalSettings)
 class GlobalSettingsAdmin(admin.ModelAdmin):
     """
     Panel de administración para las Configuraciones Globales.
     """
-    def has_add_permission(self, request):
-        # Impide la creación de nuevas instancias, forzando el patrón singleton.
-        return not GlobalSettings.objects.exists()
+    # --- INICIO DE LA MODIFICACIÓN ---
+    # Se añaden los nuevos campos a la vista del admin.
+    fieldsets = (
+        ('Capacidad y Pagos', {
+            'fields': ('low_supervision_capacity', 'advance_payment_percentage')
+        }),
+        ('Gestión de Horarios', {
+            'fields': ('appointment_buffer_time',)
+        }),
+    )
+    # --- FIN DE LA MODIFICACIÓN ---
 
+    def has_add_permission(self, request):
+        return not GlobalSettings.objects.exists()
     def has_delete_permission(self, request, obj=None):
-        # Impide que la única instancia de configuración sea eliminada.
         return False
-# --- FIN DE LA MODIFICACIÓN ---

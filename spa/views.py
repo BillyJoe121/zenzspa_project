@@ -11,6 +11,7 @@ from django.shortcuts import get_object_or_404
 from users.models import CustomUser
 from users.permissions import IsVerified, IsAdminUser, IsStaff
 from profiles.permissions import IsStaffOrAdmin
+from .services import calculate_available_slots
 from .permissions import IsAdminOrOwnerOfAvailability, IsAdminOrReadOnly
 from .models import (
     ServiceCategory, Service, Package, Appointment, StaffAvailability, Payment
@@ -202,8 +203,19 @@ class AvailabilityCheckView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated, IsVerified]
     serializer_class = AvailabilityCheckSerializer
 
-    def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
+    def get(self, request, *args, **kwargs):
+        """
+        Maneja peticiones GET para consultar la disponibilidad.
+        Los parámetros se pasan como query params: ?service_id=<uuid>&date=YYYY-MM-DD
+        """
+        # Usamos el serializador para validar los query params
+        serializer = self.get_serializer(data=request.query_params)
         serializer.is_valid(raise_exception=True)
-        available_slots = serializer.get_available_slots()
+        
+        service_id = serializer.validated_data['service_id']
+        selected_date = serializer.validated_data['date']
+
+        # Llama a la lógica de negocio centralizada en el servicio
+        available_slots = calculate_available_slots(service_id, selected_date)
+        
         return Response(available_slots, status=status.HTTP_200_OK)

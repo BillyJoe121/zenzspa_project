@@ -19,14 +19,12 @@ router.register(r'staff-availability', StaffAvailabilityViewSet, basename='staff
 
 # Las URLs de la API para la app 'spa'
 urlpatterns = [
-    # Rutas gestionadas por el router (CRUD para categorías, servicios, etc.)
     path('', include(router.urls)),
-
-    # Rutas personalizadas para acciones específicas
-    path('availability-check/', AvailabilityCheckView.as_view(),
-         name='availability-check'),
-    path('appointments/<uuid:pk>/initiate-payment/',
-         InitiatePaymentView.as_view(), name='initiate-payment'),
-    path('payments/wompi-webhook/',
-         WompiWebhookView.as_view(), name='wompi-webhook'),
+    
+    # La ruta ahora es más limpia y no necesita un verbo en la URL.
+    # El método GET es el que determina la acción.
+    path('availability/', AvailabilityCheckView.as_view(), name='availability-check'),
+    
+    path('appointments/<uuid:pk>/initiate-payment/', InitiatePaymentView.as_view(), name='initiate-payment'),
+    path('payments/wompi-webhook/', WompiWebhookView.as_view(), name='wompi-webhook'),
 ]
