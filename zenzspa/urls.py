@@ -9,6 +9,6 @@ urlpatterns = [
     path('api/v1/auth/', include('users.urls')),
     path('api/v1/', include('spa.urls')),
     path('api/v1/profiles/', include('profiles.urls')),
-
+    path('api/v1/marketplace/', include('marketplace.urls')),
 
 ]

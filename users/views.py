@@ -180,7 +180,6 @@ class FlagNonGrataView(generics.UpdateAPIView):
             action=AuditLog.Action.FLAG_NON_GRATA,
             details=f"Usuario marcado como Persona Non Grata. Notas: {serializer.validated_data.get('internal_notes', 'N/A')}"
         )
-        # --- FIN DE LA MODIFICACIÓN ---
 
         instance.is_persona_non_grata = True
         instance.is_active = False
