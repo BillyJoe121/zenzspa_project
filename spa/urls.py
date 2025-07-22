@@ -1,30 +1,37 @@
-# Reemplaza todo el contenido de zenzspa_project/spa/urls.py
-
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     ServiceCategoryViewSet, ServiceViewSet, PackageViewSet,
     AppointmentViewSet, AvailabilityCheckView, WompiWebhookView,
-    InitiatePaymentView, StaffAvailabilityViewSet
+    StaffAvailabilityViewSet,
+    UserPackageViewSet,
+    VoucherViewSet,
+    InitiatePackagePurchaseView,
+    InitiateAppointmentPaymentView,
+    InitiateVipSubscriptionView,
 )
 
 router = DefaultRouter()
-router.register(r'categories', ServiceCategoryViewSet,
-                basename='service-category')
+router.register(r'categories', ServiceCategoryViewSet, basename='service-category')
 router.register(r'services', ServiceViewSet, basename='service')
 router.register(r'packages', PackageViewSet, basename='package')
 router.register(r'appointments', AppointmentViewSet, basename='appointment')
-router.register(r'staff-availability', StaffAvailabilityViewSet, basename='staff-availability') # <-- Registrado
+router.register(r'staff-availability', StaffAvailabilityViewSet, basename='staff-availability')
+router.register(r'my-packages', UserPackageViewSet, basename='my-package')
+router.register(r'my-vouchers', VoucherViewSet, basename='my-voucher')
 
 
-# Las URLs de la API para la app 'spa'
 urlpatterns = [
     path('', include(router.urls)),
     
-    # La ruta ahora es más limpia y no necesita un verbo en la URL.
-    # El método GET es el que determina la acción.
     path('availability/', AvailabilityCheckView.as_view(), name='availability-check'),
     
-    path('appointments/<uuid:pk>/initiate-payment/', InitiatePaymentView.as_view(), name='initiate-payment'),
-    path('payments/wompi-webhook/', WompiWebhookView.as_view(), name='wompi-webhook'),
+    path('purchase-package/', InitiatePackagePurchaseView.as_view(), name='purchase-package'),
+
+    path('subscribe-vip/', InitiateVipSubscriptionView.as_view(), name='subscribe-vip'),
+
+    path('payments/webhook/', WompiWebhookView.as_view(), name='payment-webhook'),
+
+    path('appointments/<uuid:pk>/initiate-advance-payment/', InitiateAppointmentPaymentView.as_view(), name='initiate-appointment-payment'),
+
 ]

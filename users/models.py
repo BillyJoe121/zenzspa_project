@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from core.models import BaseModel
+from django.utils import timezone
+
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, phone_number, email, first_name, password=None, **extra_fields):
@@ -52,6 +54,9 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
 
     role = models.CharField(
         max_length=10, choices=Role.choices, default=Role.CLIENT, verbose_name='Rol')
+    vip_expires_at = models.DateField(
+        null=True, blank=True, verbose_name="Fecha de Vencimiento VIP",
+        help_text="Indica hasta qué fecha la membresía VIP del usuario está activa.")
     is_verified = models.BooleanField(
         default=False, verbose_name='Verificado por SMS')
     is_active = models.BooleanField(default=True, verbose_name='Activo')
