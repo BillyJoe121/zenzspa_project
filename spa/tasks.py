@@ -1,3 +1,4 @@
+import logging
 from celery import shared_task
 from django.utils import timezone
 from django.core.mail import send_mail
@@ -5,6 +6,9 @@ from django.template.loader import render_to_string
 from datetime import timedelta
 from .models import Appointment
 
+# Se obtiene una instancia del logger.
+# __name__ asegura que el logger se nombre según el módulo (ej. 'spa.tasks')
+logger = logging.getLogger(__name__)
 
 @shared_task
 def send_appointment_reminder(appointment_id):
@@ -14,6 +18,7 @@ def send_appointment_reminder(appointment_id):
     try:
         appointment = Appointment.objects.get(id=appointment_id)
         if not appointment.user.email:
+            logger.warning(f"Recordatorio no enviado para cita {appointment_id}: el usuario no tiene email.")
             return f"Recordatorio no enviado para cita {appointment_id}: el usuario no tiene email."
 
         subject = f"Recordatorio de tu cita en ZenzSpa - Mañana"
@@ -34,9 +39,10 @@ def send_appointment_reminder(appointment_id):
             fail_silently=False,
         )
         
-        print(f"--- [RECORDATORIO POR EMAIL PROCESADO] para la cita {appointment_id} ---")
+        logger.info(f"Recordatorio por email procesado y enviado para la cita {appointment_id}")
         return f"Recordatorio por email procesado para la cita {appointment_id}"
     except Appointment.DoesNotExist:
+        logger.error(f"Error al procesar recordatorio: Cita con id={appointment_id} no encontrada.")
         return f"No se procesó recordatorio: Cita con id={appointment_id} no encontrada."
 
 
@@ -54,19 +60,20 @@ def check_and_queue_reminders():
         status=Appointment.AppointmentStatus.CONFIRMED
     )
     
-    print(f"--- [CELERY BEAT] Verificando recordatorios. {appointments_to_remind.count()} citas encontradas para recordar. ---")
+    count = appointments_to_remind.count()
+    if count > 0:
+        logger.info(f"Verificando recordatorios: {count} citas encontradas para recordar.")
     
     for appt in appointments_to_remind:
         send_appointment_reminder.delay(appt.id)
     
-    return f"Verificación completada. {appointments_to_remind.count()} recordatorios encolados."
+    return f"Verificación completada. {count} recordatorios encolados."
 
-# --- INICIO DE LA MODIFICACIÓN ---
 
 @shared_task
 def cancel_unpaid_appointments():
     """
-    Tarea de Celery para cancelar citas cuyo anticipo no ha sido pagado después de 20 minutos.
+    Tarea de Celery para cancelar citas cuyo anticipo no ha sido pagado después de un tiempo configurable.
     """
     # El umbral es de 20 minutos, según el nuevo requerimiento.
     time_threshold = timezone.now() - timedelta(minutes=20)
@@ -76,12 +83,25 @@ def cancel_unpaid_appointments():
         created_at__lt=time_threshold
     )
     
-    count = unpaid_appointments.count()
-    if count > 0:
-        # Se cambia el estado al nuevo 'CANCELLED_BY_SYSTEM'
-        unpaid_appointments.update(status=Appointment.AppointmentStatus.CANCELLED_BY_SYSTEM)
-        print(f"--- [CELERY BEAT] {count} citas pendientes de anticipo han sido canceladas por el sistema. ---")
+    if not unpaid_appointments.exists():
+        # Si no hay citas que cancelar, la tarea termina sin hacer nada.
+        return "No hay citas pendientes de pago para cancelar."
+        
+    # Se itera sobre las citas para poder loggear cada una individualmente.
+    cancelled_count = 0
+    for appt in unpaid_appointments:
+        appt.status = Appointment.AppointmentStatus.CANCELLED_BY_SYSTEM
+        appt.save(update_fields=['status'])
+        
+        # Se añade el logging para cada cita cancelada.
+        logger.info(
+            f"Cita ID {appt.id} para el usuario {appt.user.email} ha sido cancelada "
+            f"automáticamente por falta de pago del anticipo."
+        )
+        cancelled_count += 1
+    
+    if cancelled_count > 0:
+        logger.info(f"Tarea finalizada: {cancelled_count} citas pendientes de anticipo han sido canceladas por el sistema.")
         # Aquí se podría encolar otra tarea para notificar a los usuarios de la cancelación.
         
-    return f"{count} citas pendientes de anticipo han sido canceladas."
-# --- FIN DE LA MODIFICACIÓN ---
+    return f"{cancelled_count} citas pendientes de anticipo han sido canceladas."

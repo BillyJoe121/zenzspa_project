@@ -206,3 +206,4 @@ class StaffListView(generics.ListAPIView):
     def get_queryset(self):
         # La lógica de filtrado es correcta y debe permanecer aquí.
         return CustomUser.objects.filter(role=CustomUser.Role.STAFF)
+    

@@ -1,5 +1,3 @@
-# spa/views.py
-
 import hashlib
 import uuid
 from rest_framework import viewsets, status, generics
@@ -15,7 +13,7 @@ from django.shortcuts import get_object_or_404
 from users.models import CustomUser
 from users.permissions import IsVerified, IsAdminUser, IsStaff
 from profiles.permissions import IsStaffOrAdmin
-from .services import calculate_available_slots, PackagePurchaseService, VipSubscriptionService 
+from .services import calculate_available_slots, PackagePurchaseService, VipSubscriptionService, AppointmentService, WompiWebhookService
 from .permissions import IsAdminOrOwnerOfAvailability, IsAdminOrReadOnly
 from .models import (
     ServiceCategory, Service, Package, Appointment, StaffAvailability, Payment,
@@ -87,66 +85,68 @@ class StaffAvailabilityViewSet(viewsets.ModelViewSet):
             serializer.save()
 
 class AppointmentViewSet(viewsets.ModelViewSet):
-    # El queryset base se define en get_queryset para mayor claridad.
     queryset = Appointment.objects.all() 
     permission_classes = [IsAuthenticated, IsVerified]
 
     def get_serializer_class(self):
+        # ... (Sin cambios)
         if self.action == 'create':
             return AppointmentCreateSerializer
         if self.action == 'reschedule':
             return AppointmentRescheduleSerializer
-        # Para 'list', 'retrieve' y otras acciones.
         return AppointmentListSerializer
 
-    # --- INICIO DE LA MODIFICACIÓN ---
     def get_queryset(self):
-        """
-        Centraliza la lógica de obtención de citas, optimizando la consulta
-        y aplicando el filtrado según el rol del usuario.
-        """
-        # 1. Iniciar con la consulta optimizada
+        # ... (Sin cambios)
         queryset = Appointment.objects.select_related(
             'user', 'service', 'staff_member'
         )
-
-        # 2. Aplicar filtro basado en el rol del usuario
         user = self.request.user
         if user.is_staff or user.is_superuser:
-            # El personal y los administradores pueden ver todas las citas
             return queryset.all()
-        
-        # Los usuarios regulares solo pueden ver sus propias citas
         return queryset.filter(user=user)
-    # --- FIN DE LA MODIFICACIÓN ---
 
-    @transaction.atomic
+    # Se sobrescribe el método 'create' para usar el servicio.
     def create(self, request, *args, **kwargs):
+        # 1. Usar el serializador para validar el formato de los datos de entrada
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        # Se devuelve la instancia usando el serializador de lista para consistencia.
-        list_serializer = AppointmentListSerializer(serializer.instance, context={'request': request})
-        return Response(list_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        validated_data = serializer.validated_data
 
+        # 2. Instanciar y llamar al servicio con los datos validados
+        try:
+            service = AppointmentService(
+                user=request.user,
+                service=validated_data['service'],
+                staff_member=validated_data.get('staff_member'),
+                start_time=validated_data['start_time']
+            )
+            appointment = service.create_appointment_with_lock()
+        except ValueError as e:
+            # Capturamos los errores de validación de negocio del servicio
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 3. Serializar la respuesta y enviarla
+        response_serializer = AppointmentListSerializer(appointment, context={'request': request})
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+    
+    # El método perform_create ya no es necesario para la acción 'create'
+    # Se mantiene por si DRF lo usa en otras acciones, pero podría eliminarse si no.
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsVerified])
     @transaction.atomic
     def reschedule(self, request, pk=None):
+        # ... (Sin cambios)
         appointment = self.get_object()
-        # Simplificación del chequeo de permisos, DRF lo maneja.
-        # El get_object() ya debería fallar si no tiene permiso, pero una doble verificación es segura.
         if appointment.user != request.user and not request.user.is_staff:
             return Response(
                 {'detail': 'You do not have permission to perform this action.'},
                 status=status.HTTP_403_FORBIDDEN
             )
-        
         serializer = self.get_serializer(
-            instance=appointment, # Es importante pasar la instancia para una actualización
+            instance=appointment,
             data=request.data,
             context={'request': request, 'appointment': appointment}
         )
@@ -158,16 +158,15 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
     @transaction.atomic
     def cancel_by_admin(self, request, pk=None):
+        # ... (Sin cambios)
         appointment = self.get_object()
         if appointment.status != Appointment.AppointmentStatus.CONFIRMED:
             return Response(
                 {'error': 'Only confirmed appointments can be cancelled by an admin.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
         appointment.status = Appointment.AppointmentStatus.CANCELLED_BY_ADMIN
         appointment.save()
-
         AuditLog.objects.create(
             admin_user=request.user,
             action=AuditLog.Action.APPOINTMENT_CANCELLED_BY_ADMIN,
@@ -175,7 +174,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             target_appointment=appointment,
             details=f"Admin '{request.user.first_name}' cancelled appointment ID {appointment.id}."
         )
-        
         list_serializer = AppointmentListSerializer(appointment, context={'request': request})
         return Response(list_serializer.data, status=status.HTTP_200_OK)
 
@@ -298,49 +296,30 @@ class InitiateAppointmentPaymentView(generics.GenericAPIView):
 class WompiWebhookView(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
-    @transaction.atomic
     def post(self, request, *args, **kwargs):
-        # ... (lógica inicial del webhook sin cambios) ...
-        transaction_data = request.data.get("data", {}).get("transaction", {})
-        reference = transaction_data.get("reference")
-        transaction_id_wompi = transaction_data.get("id")
-        transaction_status = transaction_data.get("status")
-
-        if not all([reference, transaction_id_wompi, transaction_status]):
-            return Response({"error": "Datos del webhook incompletos"}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            payment = Payment.objects.select_for_update().get(transaction_id=reference)
-            
-            payment.status = transaction_status
-            payment.raw_response = transaction_data
-            if transaction_status == 'APPROVED':
-                 # Es importante actualizar el transaction_id con el definitivo de Wompi
-                payment.transaction_id = transaction_id_wompi
-            payment.save()
-
-            if transaction_status == 'APPROVED':
-                if payment.payment_type == Payment.PaymentType.PACKAGE:
-                    PackagePurchaseService.fulfill_purchase(payment)
-                
-                elif payment.payment_type == Payment.PaymentType.ADVANCE:
-                    if payment.appointment:
-                        payment.appointment.status = Appointment.AppointmentStatus.CONFIRMED
-                        payment.appointment.save()
-
-                elif payment.payment_type == Payment.PaymentType.VIP_SUBSCRIPTION:
-                    # ¡Aquí conectamos nuestro nuevo servicio!
-                    VipSubscriptionService.fulfill_subscription(payment)
-            
-            return Response(status=status.HTTP_200_OK)
+        """
+        Punto de entrada para los webhooks de Wompi.
+        Delega toda la lógica de validación y procesamiento al WompiWebhookService.
+        """
+        webhook_service = WompiWebhookService(request.data)
         
-        except Payment.DoesNotExist:
-            return Response({"error": f"Pago con referencia '{reference}' no encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        event_type = webhook_service.event_type
+        
+        try:
+            if event_type == "transaction.updated":
+                result = webhook_service.process_transaction_update()
+                # Aquí podrías loggear el resultado si lo deseas.
+                return Response({"status": "webhook processed", "result": result}, status=status.HTTP_200_OK)
+            # Aquí podrías manejar otros tipos de eventos (ej. "subscription.updated") en el futuro.
+            else:
+                return Response({"status": "event_type_not_handled"}, status=status.HTTP_200_OK)
+
+        except ValueError as e:
+            # Captura errores de validación (ej. firma inválida) del servicio.
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            # En producción, es vital loggear el error 'e'
+            # Captura cualquier otro error inesperado. Es vital loggear 'e' en producción.
             return Response({"error": "Error interno del servidor al procesar el webhook."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
 
 class AvailabilityCheckView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated, IsVerified]

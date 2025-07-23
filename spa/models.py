@@ -169,8 +169,6 @@ class Package(BaseModel):
     def __str__(self):
         return self.name
 
-# --- INICIO DE NUEVOS MODELOS Y MODIFICACIONES ---
-
 class PackageService(BaseModel):
     """
     Tabla intermedia para especificar la cantidad de sesiones
@@ -186,16 +184,17 @@ class PackageService(BaseModel):
     def __str__(self):
         return f"{self.quantity} x {self.service.name} in {self.package.name}"
 
-
 class Payment(BaseModel):
-    """
-    Represents a payment transaction, linking to an appointment or order.
-    """
+    # ... (Se añaden campos para relacionar con ClientCredit)
     class PaymentStatus(models.TextChoices):
         PENDING = 'PENDING', 'Pendiente'
         APPROVED = 'APPROVED', 'Aprobado'
         DECLINED = 'DECLINED', 'Declinado'
         ERROR = 'ERROR', 'Error'
+        # --- INICIO DE LA MODIFICACIÓN ---
+        # Nuevo estado para pagos cubiertos por crédito
+        PAID_WITH_CREDIT = 'PAID_WITH_CREDIT', 'Pagado con Saldo a Favor'
+        # --- FIN DE LA MODIFICACIÓN ---
 
     class PaymentType(models.TextChoices):
         ADVANCE = 'ADVANCE', 'Anticipo de Cita'
@@ -206,7 +205,6 @@ class Payment(BaseModel):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True
     )
-    # El appointment puede ser nulo si el pago es de un paquete
     appointment = models.ForeignKey(Appointment, on_delete=models.CASCADE, related_name='payments', null=True, blank=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(
@@ -216,9 +214,20 @@ class Payment(BaseModel):
     payment_type = models.CharField(max_length=16, choices=PaymentType.choices)
     raw_response = models.JSONField(null=True, blank=True)
 
+    # --- INICIO DE LA MODIFICACIÓN ---
+    # Campo para registrar qué crédito se usó para este pago
+    used_credit = models.ForeignKey(
+        'ClientCredit',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='payments_covered',
+        help_text="Crédito de cliente que se utilizó para cubrir este pago."
+    )
+    # --- FIN DE LA MODIFICACIÓN ---
+
     def __str__(self):
         return f"Payment {self.id} for {self.amount} ({self.status})"
-
 
 def generate_voucher_code():
     """Generates a unique, short voucher code."""
@@ -309,3 +318,54 @@ class SubscriptionLog(BaseModel):
 
     def __str__(self):
         return f"Suscripción para {self.user.first_name} válida hasta {self.end_date.strftime('%Y-%m-%d')}"
+
+class ClientCredit(BaseModel):
+    """
+    Representa un saldo a favor que un cliente puede usar en futuras compras.
+    Se genera a partir del anticipo de una cita cancelada.
+    """
+    class CreditStatus(models.TextChoices):
+        AVAILABLE = 'AVAILABLE', 'Disponible'
+        PARTIALLY_USED = 'PARTIALLY_USED', 'Parcialmente Usado'
+        FULLY_USED = 'FULLY_USED', 'Totalmente Usado'
+        EXPIRED = 'EXPIRED', 'Expirado'
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='credits'
+    )
+    # El pago original que generó este crédito (el anticipo de la cita cancelada)
+    originating_payment = models.OneToOneField(
+        Payment,
+        on_delete=models.PROTECT,
+        related_name='generated_credit'
+    )
+    initial_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    remaining_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(
+        max_length=20,
+        choices=CreditStatus.choices,
+        default=CreditStatus.AVAILABLE
+    )
+    expires_at = models.DateField()
+
+    class Meta:
+        verbose_name = "Saldo a Favor de Cliente"
+        verbose_name_plural = "Saldos a Favor de Clientes"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Crédito de {self.remaining_amount} para {self.user.get_full_name()} (Expira: {self.expires_at})"
+
+    def save(self, *args, **kwargs):
+        # Lógica para actualizar el estado automáticamente
+        if self.remaining_amount <= 0:
+            self.status = self.CreditStatus.FULLY_USED
+            self.remaining_amount = 0 # Asegurar que no sea negativo
+        elif self.remaining_amount < self.initial_amount:
+            self.status = self.CreditStatus.PARTIALLY_USED
+        else:
+            self.status = self.CreditStatus.AVAILABLE
+            
+        super().save(*args, **kwargs)

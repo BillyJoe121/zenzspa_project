@@ -100,147 +100,32 @@ class AppointmentListSerializer(serializers.ModelSerializer):
 AppointmentReadSerializer = AppointmentListSerializer
 
 class AppointmentCreateSerializer(serializers.ModelSerializer):
-    user = serializers.HiddenField(default=serializers.CurrentUserDefault())
-    advance_amount = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
-    voucher_code = serializers.CharField(max_length=8, required=False, write_only=True, allow_blank=True)
-
+    """
+    Serializador para validar los datos de entrada al crear una cita.
+    La lógica de negocio compleja (validación de reglas, creación) ha sido
+    movida a la capa de servicios (AppointmentService).
+    """
     class Meta:
         model = Appointment
-        fields = [
-            'id', 'user', 'service', 'staff_member', 'start_time',
-            'status', 'price_at_purchase', 'end_time',
-            'advance_amount', 'voucher_code'
-        ]
-        read_only_fields = ['status', 'price_at_purchase', 'end_time', 'advance_amount']
-    
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Accedemos a 'data' a través del contexto del serializador si es para una creación
-        if 'request' in self.context:
-            service_id = self.context['request'].data.get('service')
-            if service_id:
-                try:
-                    service = Service.objects.get(id=service_id)
-                    if service.category.is_low_supervision:
-                        self.fields['staff_member'].required = False
-                        self.fields['staff_member'].allow_null = True
-                except Service.DoesNotExist:
-                    pass
+        # Solo incluimos los campos que el usuario debe enviar.
+        fields = ['service', 'staff_member', 'start_time']
 
     def validate(self, data):
-        service = data['service']
-        start_time = data['start_time']
-        user = data['user']
-        voucher_code = data.get('voucher_code')
+        """
+        Validación básica de los datos de entrada.
+        """
+        service = data.get('service')
+        staff_member = data.get('staff_member')
+
+        # Regla simple: si el servicio no es de baja supervisión, el staff es obligatorio.
+        if not service.category.is_low_supervision and not staff_member:
+            raise serializers.ValidationError({"staff_member": "Este servicio requiere seleccionar un miembro del personal."})
         
-        if voucher_code:
-            try:
-                voucher = Voucher.objects.get(code__iexact=voucher_code, user=user)
-                if not voucher.is_redeemable:
-                    raise serializers.ValidationError({"voucher_code": "Este voucher no es válido, ya ha sido usado o ha expirado."})
-                if voucher.service.id != service.id:
-                    raise serializers.ValidationError({"voucher_code": f"Este voucher es para el servicio '{voucher.service.name}' y no puede ser usado para '{service.name}'."})
-                # El voucher es válido, se adjunta a los datos validados.
-                data['voucher'] = voucher
-            except Voucher.DoesNotExist:
-                raise serializers.ValidationError({"voucher_code": "El código del voucher no es válido."})
-
-        if Appointment.objects.filter(
-            user=user,
-            status=Appointment.AppointmentStatus.COMPLETED_PENDING_FINAL_PAYMENT
-        ).exists():
-            raise serializers.ValidationError(
-                "No puedes agendar una nueva cita porque tienes un pago final pendiente. Por favor, completa el pago de tu cita anterior."
-            )
-
-        if start_time < timezone.now():
-            raise serializers.ValidationError("No se puede reservar una cita en el pasado.")
-
-        available_slots = calculate_available_slots(service.id, start_time.date())
-        requested_time_str = start_time.strftime('%H:%M')
-
-        if requested_time_str not in available_slots:
-            raise serializers.ValidationError("El horario seleccionado ya no está disponible.")
-
-        if not service.category.is_low_supervision:
-            staff_member = data.get('staff_member')
-            if not staff_member:
-                raise serializers.ValidationError({"staff_member": "Este servicio requiere seleccionar un miembro del personal."})
-
-            staff_is_available = any(
-                slot['staff_id'] == staff_member.id
-                for slot in available_slots[requested_time_str]
-            )
-            if not staff_is_available:
-                raise serializers.ValidationError("El miembro del personal seleccionado ya no está disponible en este horario.")
-        else:
+        # Si es de baja supervisión, nos aseguramos que staff_member sea nulo.
+        if service.category.is_low_supervision:
             data['staff_member'] = None
-
-        active_appointments = Appointment.objects.filter(
-            user=user,
-            status__in=[Appointment.AppointmentStatus.CONFIRMED, Appointment.AppointmentStatus.PENDING_ADVANCE]
-        ).count()
-
-        if user.role == CustomUser.Role.CLIENT and active_appointments >= 1:
-            raise serializers.ValidationError("Como CLIENTE, solo puedes tener 1 cita activa.")
-        if user.role == CustomUser.Role.VIP and active_appointments >= 4:
-            raise serializers.ValidationError("Como VIP, puedes tener hasta 4 citas activas.")
-
+            
         return data
-
-    @transaction.atomic # Aseguramos que la creación de cita y pago sea atómica
-    def create(self, validated_data):
-        voucher = validated_data.pop('voucher', None)
-        validated_data.pop('voucher_code', None)
-
-        # La lógica de calcular el end_time es común para ambos casos
-        validated_data['end_time'] = validated_data['start_time'] + timedelta(minutes=validated_data['service'].duration)
-
-        if voucher:
-            validated_data['price_at_purchase'] = 0
-            validated_data['status'] = Appointment.AppointmentStatus.REDEEMED_WITH_VOUCHER
-            appointment = super().create(validated_data)
-            
-            # Marcamos el voucher como usado
-            voucher.status = Voucher.VoucherStatus.REDEEMED
-            voucher.redeemed_appointment = appointment
-            voucher.save()
-
-        else: # Lógica para citas que requieren pago
-            service = validated_data['service']
-            user = validated_data['user']
-            settings = GlobalSettings.load()
-            price = service.vip_price if user.role == CustomUser.Role.VIP and service.vip_price is not None else service.price
-            validated_data['price_at_purchase'] = price
-            validated_data['status'] = Appointment.AppointmentStatus.PENDING_ADVANCE
-            
-            # --- INICIO DE LA MODIFICACIÓN ---
-            # 1. Creamos la cita primero
-            appointment = super().create(validated_data)
-
-            # 2. Calculamos el anticipo y creamos el Payment asociado
-            advance_percentage = Decimal(settings.advance_payment_percentage / 100)
-            advance_amount = price * advance_percentage
-            
-            # Guardamos el monto en el contexto para la respuesta de la API
-            self.context['advance_amount'] = advance_amount
-            
-            Payment.objects.create(
-                user=user,
-                appointment=appointment,
-                amount=advance_amount,
-                status=Payment.PaymentStatus.PENDING,
-                payment_type=Payment.PaymentType.ADVANCE
-                # El transaction_id se puede dejar nulo aquí, se asignará en la vista de pago
-            )
-
-        return appointment
-    
-    def to_representation(self, instance):
-        list_representation = AppointmentListSerializer(instance).data
-        if 'advance_amount' in self.context:
-            list_representation['advance_amount'] = f"{self.context['advance_amount']:.2f}"
-        return list_representation
     
 class AppointmentStatusUpdateSerializer(serializers.ModelSerializer):
     class Meta:

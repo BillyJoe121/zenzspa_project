@@ -50,6 +50,38 @@ class ClinicalProfile(BaseModel):
     general_notes = models.TextField(
         blank=True, verbose_name="Notas Generales del Terapeuta")
 
+    def calculate_dominant_dosha(self):
+        """
+        Calcula el Dosha dominante sumando los pesos de las opciones seleccionadas
+        en las respuestas del cliente y actualiza el campo 'dosha'.
+        """
+        scores = {
+            self.Dosha.VATA: 0,
+            self.Dosha.PITTA: 0,
+            self.Dosha.KAPHA: 0,
+        }
+
+        answers = self.dosha_answers.select_related('selected_option').all()
+
+        if not answers.exists():
+            # Si no hay respuestas, el Dosha es desconocido
+            self.dosha = self.Dosha.UNKNOWN
+            self.save(update_fields=['dosha'])
+            return
+
+        for answer in answers:
+            option = answer.selected_option
+            if option.associated_dosha in scores:
+                scores[option.associated_dosha] += option.weight
+        
+        # Encontramos el Dosha con la puntuación más alta
+        # Si hay un empate, max() devolverá la primera clave que encuentre
+        dominant_dosha = max(scores, key=scores.get)
+
+        self.dosha = dominant_dosha
+        self.save(update_fields=['dosha'])
+
+
     def __str__(self):
         return f"Perfil Clínico de {self.user.first_name}"
 
@@ -86,8 +118,6 @@ class LocalizedPain(BaseModel):
         verbose_name = "Dolor Localizado"
         verbose_name_plural = "Dolores Localizados"
 
-# --- INICIO DE LA MODIFICACIÓN ---
-# Se elimina la estructura anterior y se implementa la nueva arquitectura de modelos.
 
 class Dosha(models.TextChoices):
     VATA = 'VATA', 'Vata'
@@ -135,4 +165,4 @@ class ClientDoshaAnswer(BaseModel):
         verbose_name = "Respuesta de Cliente al Cuestionario"
         verbose_name_plural = "Respuestas de Clientes al Cuestionario"
         unique_together = ('profile', 'question')
-# --- FIN DE LA MODIFICACIÓN ---
+
