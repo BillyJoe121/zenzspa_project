@@ -106,8 +106,10 @@ class Appointment(BaseModel):
         CANCELLED_BY_CLIENT = 'CANCELLED_BY_CLIENT', 'Cancelada por el Cliente'
         CANCELLED_BY_SYSTEM = 'CANCELLED_BY_SYSTEM', 'Cancelada por el Sistema'
         CANCELLED_BY_ADMIN = 'CANCELLED_BY_ADMIN', 'Cancelada por el Administrador'
-        REDEEMED_WITH_VOUCHER = 'REDEEMED_WITH_VOUCHER', 'Redimida con Voucher' # Nuevo estado
-
+        REDEEMED_WITH_VOUCHER = 'REDEEMED_WITH_VOUCHER', 'Redimida con Voucher'
+        NO_SHOW = 'NO_SHOW', 'No Asistió'
+        REFUNDED = 'REFUNDED', 'Reembolsada'
+        
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,

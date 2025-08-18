@@ -1,50 +1,59 @@
+from __future__ import annotations
+
+from typing import Dict, Iterable, List, Optional, Sequence
 from rest_framework import serializers
 
 
 class DynamicFieldsModelSerializer(serializers.ModelSerializer):
     """
-    Un ModelSerializer que elimina campos dinámicamente basados en el rol del usuario.
+    ModelSerializer que oculta campos dinámicamente según el rol del usuario.
 
-    Para usarlo, define un diccionario `role_based_fields` en la clase Meta del serializador hijo.
-    Este diccionario mapea un rol a una lista de campos que SOLO los usuarios con ese rol (o superior) pueden ver.
+    Cómo funciona:
+      - Define en Meta.role_based_fields un dict {ROL: [campos]} indicando
+        qué campos SOLO están visibles para ese rol (y roles superiores).
+      - La jerarquía es: CLIENT < VIP < STAFF < ADMIN.
+      - Si el request no existe o el usuario no está autenticado, se asume CLIENT.
 
-    Ejemplo en la clase Meta de un serializador hijo:
-    role_based_fields = {
-        'STAFF': ['campo_privado_staff'],
-        'ADMIN': ['campo_super_secreto_admin']
-    }
+    También respeta, si se proveen en context:
+      - context['include_fields']: lista blanca explícita de campos a mantener.
+      - context['exclude_fields']: lista negra explícita de campos a remover.
     """
 
+    ROLE_HIERARCHY: Dict[str, Sequence[str]] = {
+        "CLIENT": ("CLIENT",),
+        "VIP": ("CLIENT", "VIP"),
+        "STAFF": ("CLIENT", "VIP", "STAFF"),
+        "ADMIN": ("CLIENT", "VIP", "STAFF", "ADMIN"),
+    }
+
     def __init__(self, *args, **kwargs):
-        # Llama al __init__ original
         super().__init__(*args, **kwargs)
 
-        # Si no hay un request en el contexto, no podemos hacer nada.
-        request = self.context.get('request')
-        if not request or not hasattr(request, 'user'):
-            return
+        request = self.context.get("request")
+        user_role = getattr(getattr(request, "user", None), "role", "CLIENT") or "CLIENT"
+        allowed_roles = set(self.ROLE_HIERARCHY.get(user_role, ("CLIENT",)))
 
-        user = request.user
+        # Listas de control opcionales desde el contexto
+        include_fields: Optional[Iterable[str]] = self.context.get("include_fields")
+        exclude_fields: Optional[Iterable[str]] = self.context.get("exclude_fields")
 
-        # Jerarquía de roles: un rol superior puede ver los campos de los roles inferiores.
-        allowed_roles = {
-            'CLIENT': ['CLIENT'],
-            'VIP': ['CLIENT', 'VIP'],
-            'STAFF': ['CLIENT', 'VIP', 'STAFF'],
-            'ADMIN': ['CLIENT', 'VIP', 'STAFF', 'ADMIN']
-        }
-        user_allowed_set = set(allowed_roles.get(user.role, []))
-
-        # Obtenemos la configuración de campos por rol del serializador hijo.
-        # CORRECCIÓN: Añadimos un comentario para que Pylint ignore este falso positivo.
-        # La clase Meta existirá en las subclases que hereden de esta.
-        role_config = getattr(self.Meta, 'role_based_fields', # pylint: disable=no-member
-                              {})  # pylint: disable=no-member
-
-        # Iteramos sobre la configuración de campos restringidos
-        for role, fields in role_config.items():
-            # Si el rol requerido no está en los roles permitidos para el usuario actual...
-            if role not in user_allowed_set:
-                # ...eliminamos esos campos del serializador.
-                for field_name in fields:
+        # 1) Aplica include_fields si está definida (lista blanca)
+        if include_fields:
+            include_set = set(include_fields)
+            for field_name in list(self.fields.keys()):
+                if field_name not in include_set:
                     self.fields.pop(field_name, None)
+
+        # 2) Aplica exclude_fields explícitos
+        if exclude_fields:
+            for field_name in exclude_fields:
+                self.fields.pop(field_name, None)
+
+        # 3) Aplica visibilidad por rol definida en el Meta del hijo
+        role_config: Dict[str, List[str]] = getattr(self.Meta, "role_based_fields", {})  # type: ignore[attr-defined]
+        if role_config:
+            # Si el usuario NO tiene un rol requerido para ver ciertos campos, se ocultan
+            for required_role, fields in role_config.items():
+                if required_role not in allowed_roles:
+                    for field_name in fields:
+                        self.fields.pop(field_name, None)
