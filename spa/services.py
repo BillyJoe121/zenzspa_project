@@ -228,6 +228,7 @@ class WompiWebhookService:
         event_body_str = json.dumps(self.data, separators=(',', ':'))
         
         # La cadena a firmar es: body + timestamp + secreto_de_eventos
+        # Asegúrate de tener WOMPI_EVENTS_SECRET en tu settings.py
         concatenation = f"{event_body_str}{self.timestamp}{settings.WOMPI_EVENTS_SECRET}"
         
         calculated_signature = hashlib.sha256(concatenation.encode('utf-8')).hexdigest()
@@ -251,20 +252,21 @@ class WompiWebhookService:
         if not reference or not transaction_status:
             raise ValueError("Referencia o estado de la transacción ausentes en el webhook.")
         
-        # 2. Obtener y bloquear el pago para asegurar la atomicidad.
+        # 2. Obtener y bloquear el pago para asegurar la atomicidad e idempotencia.
         try:
+            # Clave de la idempotencia: solo buscamos pagos que aún están PENDIENTES.
             payment = Payment.objects.select_for_update().get(transaction_id=reference, status=Payment.PaymentStatus.PENDING)
         except Payment.DoesNotExist:
-            # Esto puede ocurrir si el evento llega dos veces.
-            # Si no encontramos un pago PENDIENTE, significa que ya fue procesado.
-            # Lo tratamos como un éxito silencioso para asegurar la idempotencia.
-            return {"status": "already_processed"}
+            # Si no encontramos un pago PENDIENTE, significa que ya fue procesado
+            # o que la referencia es inválida. En ambos casos, no hacemos nada.
+            return {"status": "already_processed_or_invalid"}
 
         # 3. Actualizar el pago con los datos de Wompi.
         payment.status = transaction_status
         payment.raw_response = transaction_data # Guardar la respuesta completa para auditoría
 
         if transaction_status == 'APPROVED':
+            # Es importante actualizar el transaction_id con el definitivo de Wompi
             payment.transaction_id = transaction_data.get("id", payment.transaction_id)
             payment.save()
             
@@ -348,3 +350,5 @@ class PaymentService:
         appointment.save(update_fields=['status'])
         
         return payment
+    
+

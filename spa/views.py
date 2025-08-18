@@ -10,6 +10,7 @@ from core.models import AuditLog
 from core.models import AuditLog, GlobalSettings
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from users.models import CustomUser
 from users.permissions import IsVerified, IsAdminUser, IsStaff
 from profiles.permissions import IsStaffOrAdmin
@@ -138,7 +139,6 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsVerified])
     @transaction.atomic
     def reschedule(self, request, pk=None):
-        # ... (Sin cambios)
         appointment = self.get_object()
         if appointment.user != request.user and not request.user.is_staff:
             return Response(
@@ -158,8 +158,9 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
     @transaction.atomic
     def cancel_by_admin(self, request, pk=None):
-        # ... (Sin cambios)
         appointment = self.get_object()
+        mark_as_refunded = request.data.get('mark_as_refunded', False)
+
         if appointment.status != Appointment.AppointmentStatus.CONFIRMED:
             return Response(
                 {'error': 'Only confirmed appointments can be cancelled by an admin.'},
@@ -174,6 +175,55 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             target_appointment=appointment,
             details=f"Admin '{request.user.first_name}' cancelled appointment ID {appointment.id}."
         )
+        if mark_as_refunded:
+            appointment.status = Appointment.AppointmentStatus.REFUNDED
+            appointment.save(update_fields=['status'])
+            
+            # (Opcional pero recomendado) Crear un nuevo tipo de acción en AuditLog para reembolsos.
+            # Por ahora, usamos la misma acción con detalles adicionales.
+            AuditLog.objects.create(
+                admin_user=request.user,
+                action=AuditLog.Action.APPOINTMENT_CANCELLED_BY_ADMIN, # Considerar crear 'APPOINTMENT_REFUNDED'
+                target_user=appointment.user,
+                target_appointment=appointment,
+                details=f"Admin '{request.user.first_name}' marked appointment ID {appointment.id} as REFUNDED."
+            )
+        list_serializer = AppointmentListSerializer(appointment, context={'request': request})
+        return Response(list_serializer.data, status=status.HTTP_200_OK)
+    
+    @action(detail=True, methods=['post'], permission_classes=[IsStaffOrAdmin])
+    def mark_as_no_show(self, request, pk=None):
+        """
+        Permite al personal marcar una cita confirmada como 'No Asistió'.
+        """
+        appointment = self.get_object()
+
+        # Validación 1: Solo se puede marcar si la cita estaba confirmada.
+        if appointment.status != Appointment.AppointmentStatus.CONFIRMED:
+            return Response(
+                {'error': 'Solo las citas confirmadas pueden ser marcadas como "No Asistió".'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validación 2: Solo se puede marcar si la hora de la cita ya pasó.
+        if appointment.start_time > timezone.now():
+            return Response(
+                {'error': 'No se puede marcar como "No Asistió" una cita que aún no ha ocurrido.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        appointment.status = Appointment.AppointmentStatus.NO_SHOW
+        appointment.save(update_fields=['status'])
+
+        # (Opcional pero recomendado) Crear un log de auditoría para esta acción.
+        AuditLog.objects.create(
+            admin_user=request.user,
+            action=AuditLog.Action.APPOINTMENT_CANCELLED_BY_ADMIN, # Considerar crear 'APPOINTMENT_NO_SHOW'
+            target_user=appointment.user,
+            target_appointment=appointment,
+            details=f"Staff '{request.user.first_name}' marked appointment ID {appointment.id} as NO SHOW."
+        )
+
         list_serializer = AppointmentListSerializer(appointment, context={'request': request})
         return Response(list_serializer.data, status=status.HTTP_200_OK)
 
@@ -291,8 +341,7 @@ class InitiateAppointmentPaymentView(generics.GenericAPIView):
             'redirectUrl': settings.WOMPI_REDIRECT_URL
         }
         return Response(payment_data, status=status.HTTP_200_OK)
-
-
+    
 class WompiWebhookView(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
@@ -302,16 +351,15 @@ class WompiWebhookView(generics.GenericAPIView):
         Delega toda la lógica de validación y procesamiento al WompiWebhookService.
         """
         webhook_service = WompiWebhookService(request.data)
-        
         event_type = webhook_service.event_type
         
         try:
             if event_type == "transaction.updated":
                 result = webhook_service.process_transaction_update()
-                # Aquí podrías loggear el resultado si lo deseas.
                 return Response({"status": "webhook processed", "result": result}, status=status.HTTP_200_OK)
-            # Aquí podrías manejar otros tipos de eventos (ej. "subscription.updated") en el futuro.
             else:
+                # Respondemos con 200 OK incluso para eventos no manejados,
+                # para que Wompi no siga reintentando.
                 return Response({"status": "event_type_not_handled"}, status=status.HTTP_200_OK)
 
         except ValueError as e:
