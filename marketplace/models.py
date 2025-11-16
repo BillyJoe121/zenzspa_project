@@ -1,20 +1,13 @@
-import uuid
 from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from core.models import BaseModel
 from spa.models import Appointment, Voucher, ServiceCategory
 
 class Product(BaseModel):
     name = models.CharField(max_length=255, verbose_name="Nombre del Producto")
     description = models.TextField(verbose_name="Descripción")
-    price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio Regular")
-    vip_price = models.DecimalField(
-        max_digits=10, decimal_places=2, null=True, blank=True,
-        verbose_name="Precio para VIPs",
-        help_text="Precio con descuento para miembros VIP. Dejar en blanco si no aplica."
-    )
-    stock = models.PositiveIntegerField(default=0, verbose_name="Cantidad en Stock")
     is_active = models.BooleanField(
         default=True,
         verbose_name="Activo",
@@ -37,15 +30,92 @@ class Product(BaseModel):
         ordering = ['name']
         indexes = [
             models.Index(fields=['is_active']),
-            models.Index(fields=['stock']),
         ]
 
     def __str__(self):
         return self.name
 
+class ProductVariant(BaseModel):
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name='variants',
+        verbose_name="Producto"
+    )
+    name = models.CharField(
+        max_length=120,
+        verbose_name="Nombre de la Variante",
+        help_text="Identifica la presentación, por ejemplo 50ml."
+    )
+    sku = models.CharField(
+        max_length=60,
+        unique=True,
+        verbose_name="SKU",
+        help_text="Identificador único para integraciones y carrito."
+    )
+    price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio Regular")
+    vip_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Precio para VIPs",
+        help_text="Precio con descuento para miembros VIP. Dejar en blanco si no aplica."
+    )
+    stock = models.PositiveIntegerField(default=0, verbose_name="Cantidad en Stock")
+
+    class Meta:
+        verbose_name = "Variante de Producto"
+        verbose_name_plural = "Variantes de Producto"
+        ordering = ['product__name', 'name']
+        indexes = [
+            models.Index(fields=['sku']),
+            models.Index(fields=['product', 'stock']),
+        ]
+
+    def __str__(self):
+        return f"{self.product.name} - {self.name}"
+
     def clean(self):
         if self.vip_price and self.vip_price >= self.price:
             raise ValidationError("El precio VIP debe ser menor que el precio regular")
+
+
+class InventoryMovement(BaseModel):
+    class MovementType(models.TextChoices):
+        SALE = 'SALE', 'Venta'
+        RETURN = 'RETURN', 'Devolución'
+        RESTOCK = 'RESTOCK', 'Reabastecimiento'
+        ADJUSTMENT = 'ADJUSTMENT', 'Ajuste'
+        EXPIRED_RESERVATION = 'EXPIRED_RESERVATION', 'Reserva expirada'
+
+    variant = models.ForeignKey(
+        ProductVariant,
+        on_delete=models.CASCADE,
+        related_name='inventory_movements',
+    )
+    quantity = models.IntegerField()
+    movement_type = models.CharField(max_length=20, choices=MovementType.choices)
+    reference_order = models.ForeignKey(
+        'Order',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='inventory_movements',
+    )
+    description = models.CharField(max_length=255, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='inventory_movements_created',
+    )
+
+    class Meta:
+        verbose_name = "Movimiento de Inventario"
+        verbose_name_plural = "Movimientos de Inventario"
+        ordering = ['-created_at']
 
 class ProductImage(BaseModel):
     product = models.ForeignKey(
@@ -106,9 +176,10 @@ class CartItem(BaseModel):
         on_delete=models.CASCADE,
         related_name='items'
     )
-    product = models.ForeignKey(
-        Product,
-        on_delete=models.CASCADE
+    variant = models.ForeignKey(
+        ProductVariant,
+        on_delete=models.CASCADE,
+        related_name='cart_items'
     )
     quantity = models.PositiveIntegerField(default=1)
 
@@ -117,13 +188,13 @@ class CartItem(BaseModel):
         verbose_name_plural = "Ítems de Carrito"
         constraints = [
             models.UniqueConstraint(
-                fields=['cart', 'product'],
-                name='unique_product_in_cart'
+                fields=['cart', 'variant'],
+                name='unique_variant_in_cart'
             )
         ]
 
     def __str__(self):
-        return f"{self.quantity}x {self.product.name}"
+        return f"{self.quantity}x {self.variant}"
 
 class Order(BaseModel):
     class OrderStatus(models.TextChoices):
@@ -133,7 +204,11 @@ class Order(BaseModel):
         SHIPPED = 'SHIPPED', 'Enviada'
         DELIVERED = 'DELIVERED', 'Entregada'
         CANCELLED = 'CANCELLED', 'Cancelada'
-        RETURNED = 'RETURNED', 'Devuelta'
+        RETURN_REQUESTED = 'RETURN_REQUESTED', 'Devolución Solicitada'
+        RETURN_APPROVED = 'RETURN_APPROVED', 'Devolución Aprobada'
+        RETURN_REJECTED = 'RETURN_REJECTED', 'Devolución Rechazada'
+        REFUNDED = 'REFUNDED', 'Reembolsada'
+        FRAUD_ALERT = 'FRAUD_ALERT', 'Alerta de Fraude'
 
     class DeliveryOptions(models.TextChoices):
         PICKUP = 'PICKUP', 'Recogida en Local'
@@ -191,6 +266,11 @@ class Order(BaseModel):
         blank=True,
         verbose_name="ID Transacción Wompi"
     )
+    return_reason = models.TextField(blank=True, verbose_name="Motivo de devolución")
+    return_requested_at = models.DateTimeField(null=True, blank=True)
+    return_request_data = models.JSONField(default=list, blank=True)
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    fraud_reason = models.TextField(blank=True)
 
     class Meta:
         verbose_name = "Orden"
@@ -211,10 +291,11 @@ class OrderItem(BaseModel):
         related_name='items',
         verbose_name="Orden"
     )
-    product = models.ForeignKey(
-        Product,
+    variant = models.ForeignKey(
+        ProductVariant,
         on_delete=models.PROTECT,
-        verbose_name="Producto"
+        related_name='order_items',
+        verbose_name="Variante"
     )
     quantity = models.PositiveIntegerField(default=1, verbose_name="Cantidad")
     price_at_purchase = models.DecimalField(
@@ -231,7 +312,7 @@ class OrderItem(BaseModel):
         verbose_name_plural = "Ítems de Órdenes"
 
     def __str__(self):
-        return f"{self.quantity} x {self.product.name}"
+        return f"{self.quantity} x {self.variant}"
 
     def clean(self):
         if self.quantity_returned > self.quantity:

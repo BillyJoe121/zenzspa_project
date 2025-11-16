@@ -1,29 +1,35 @@
 # spa/admin.py
 
 from django.contrib import admin
+from simple_history.admin import SimpleHistoryAdmin
+
 from .models import (
     ServiceCategory,
     Service,
     StaffAvailability,
+    AvailabilityExclusion,
     Appointment,
+    AppointmentItem,
     Package,
     Payment,
     # --- INICIO DE LA MODIFICACIÓN: Importar nuevos modelos ---
     PackageService,
     UserPackage,
-    Voucher
+    Voucher,
+    WebhookEvent,
+    LoyaltyRewardLog,
     # --- FIN DE LA MODIFICACIÓN ---
 )
 
 
 @admin.register(ServiceCategory)
-class ServiceCategoryAdmin(admin.ModelAdmin):
+class ServiceCategoryAdmin(SimpleHistoryAdmin):
     list_display = ('name', 'is_low_supervision')
     search_fields = ('name',)
 
 
 @admin.register(Service)
-class ServiceAdmin(admin.ModelAdmin):
+class ServiceAdmin(SimpleHistoryAdmin):
     list_display = ('name', 'category', 'duration',
                     'price', 'vip_price', 'is_active')
     list_filter = ('category', 'is_active')
@@ -42,16 +48,58 @@ class StaffAvailabilityAdmin(admin.ModelAdmin):
     get_day_of_week_display.short_description = 'Day of Week'
 
 
+@admin.register(AvailabilityExclusion)
+class AvailabilityExclusionAdmin(admin.ModelAdmin):
+    list_display = (
+        'staff_member',
+        'date',
+        'get_day_of_week_display',
+        'start_time',
+        'end_time',
+        'reason',
+    )
+    list_filter = ('staff_member', 'day_of_week')
+    search_fields = ('staff_member__first_name', 'staff_member__last_name', 'reason')
+    autocomplete_fields = ('staff_member',)
+
+    @admin.display(description='Día de la semana')
+    def get_day_of_week_display(self, obj):
+        return obj.get_day_of_week_display()
+
+
+class AppointmentItemInline(admin.TabularInline):
+    model = AppointmentItem
+    extra = 0
+    autocomplete_fields = ['service']
+    readonly_fields = ('duration', 'price_at_purchase')
+
+
 @admin.register(Appointment)
 class AppointmentAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'service', 'staff_member',
-                    'start_time', 'status', 'reschedule_count')
-    list_filter = ('status', 'staff_member', 'service', 'start_time')
-    search_fields = ('user__phone_number', 'user__first_name',
-                     'user__last_name', 'service__name')
-    list_select_related = ('user', 'service', 'staff_member')
-    raw_id_fields = ('user', 'staff_member', 'service')
+    list_display = (
+        'id',
+        'user',
+        'get_services',
+        'staff_member',
+        'start_time',
+        'status',
+        'reschedule_count',
+    )
+    list_filter = ('status', 'staff_member', 'start_time')
+    search_fields = (
+        'user__phone_number',
+        'user__first_name',
+        'user__last_name',
+        'items__service__name',
+    )
+    list_select_related = ('user', 'staff_member')
+    raw_id_fields = ('user', 'staff_member')
     date_hierarchy = 'start_time'
+    inlines = [AppointmentItemInline]
+
+    @admin.display(description='Servicios')
+    def get_services(self, obj):
+        return obj.get_service_names()
 
 
 # --- INICIO DE LA MODIFICACIÓN: Usar Inlines para el PackageAdmin ---
@@ -107,3 +155,16 @@ class VoucherAdmin(admin.ModelAdmin):
         return obj.user_package.expires_at
 
 # --- FIN DE LA MODIFICACIÓN ---
+
+
+@admin.register(WebhookEvent)
+class WebhookEventAdmin(admin.ModelAdmin):
+    list_display = ('id', 'event_type', 'status', 'created_at')
+    search_fields = ('event_type', 'error_message')
+    list_filter = ('status', 'event_type')
+
+
+@admin.register(LoyaltyRewardLog)
+class LoyaltyRewardLogAdmin(admin.ModelAdmin):
+    list_display = ('user', 'rewarded_at', 'voucher')
+    search_fields = ('user__first_name', 'user__last_name')

@@ -1,21 +1,33 @@
-from rest_framework import generics, viewsets, status
-from rest_framework.decorators import action
-from rest_framework.response import Response
+from datetime import timedelta
+
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from django.core.cache import cache
-import secrets
-from datetime import timedelta
-from .models import ClinicalProfile, DoshaQuestion, ClientDoshaAnswer
-from .serializers import (
-    ClinicalProfileSerializer, DoshaQuestionSerializer,
-    DoshaQuizSubmissionSerializer, KioskStartSessionSerializer
-)
-from users.models import CustomUser
-from .services import calculate_dominant_dosha_and_element
-from users.permissions import IsAdminUser, IsVerified, IsStaffOrAdmin
-from .permissions import ClinicalProfileAccessPermission, IsKioskSession, IsVerifiedUserOrKioskSession 
+from django.utils import timezone
+from rest_framework import generics, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from .models import ClinicalProfile, ConsentTemplate, DoshaQuestion, ClientDoshaAnswer, KioskSession
+from .permissions import (
+    ClinicalProfileAccessPermission,
+    IsKioskSession,
+    IsVerifiedUserOrKioskSession,
+    load_kiosk_session_from_request,
+)
+from .serializers import (
+    ClinicalProfileHistorySerializer,
+    ClinicalProfileSerializer,
+    ConsentTemplateSerializer,
+    DoshaQuestionSerializer,
+    DoshaQuizSubmissionSerializer,
+    KioskSessionStatusSerializer,
+    KioskStartSessionSerializer,
+)
+from .services import calculate_dominant_dosha_and_element
+from users.models import CustomUser
+from users.permissions import IsAdminUser, IsStaffOrAdmin, IsVerified
 
 class ClinicalProfileViewSet(viewsets.ModelViewSet):
     """
@@ -24,16 +36,31 @@ class ClinicalProfileViewSet(viewsets.ModelViewSet):
     """
     queryset = ClinicalProfile.objects.select_related('user').prefetch_related('pains', 'dosha_answers')
     serializer_class = ClinicalProfileSerializer
-    permission_classes = [IsAuthenticated, ClinicalProfileAccessPermission]
+    permission_classes = [IsVerifiedUserOrKioskSession, ClinicalProfileAccessPermission]
     
     lookup_field = 'user__phone_number'
     lookup_url_kwarg = 'phone_number'
+
+    def get_queryset(self):
+        base_queryset = self.queryset
+        kiosk_client = getattr(self.request, 'kiosk_client', None)
+        if kiosk_client:
+            return base_queryset.filter(user=kiosk_client)
+        user = getattr(self.request, 'user', None)
+        if not user or not user.is_authenticated:
+            return base_queryset.none()
+        if user.role in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
+            return base_queryset
+        return base_queryset.filter(user=user)
 
     def get_object(self):
         phone_number = self.kwargs.get(self.lookup_url_kwarg)
         queryset = self.get_queryset()
         filter_kwargs = {self.lookup_field: phone_number}
         obj = get_object_or_404(queryset, **filter_kwargs)
+        kiosk_client = getattr(self.request, 'kiosk_client', None)
+        if kiosk_client and obj.user != kiosk_client:
+            raise PermissionDenied("La sesión de quiosco no puede acceder a este perfil.")
         return obj
 
     # Se añade una acción personalizada para el endpoint /me/
@@ -43,7 +70,10 @@ class ClinicalProfileViewSet(viewsets.ModelViewSet):
         Endpoint para que el usuario autenticado vea o actualice su propio perfil.
         """
         # Obtenemos el perfil del usuario que hace la petición
-        profile = get_object_or_404(ClinicalProfile, user=request.user)
+        profile_owner = getattr(request, 'kiosk_client', None) or request.user
+        if not profile_owner or not getattr(profile_owner, 'is_authenticated', True):
+            raise PermissionDenied("No se pudo determinar el perfil del usuario.")
+        profile = get_object_or_404(ClinicalProfile, user=profile_owner)
         
         if request.method == 'GET':
             serializer = self.get_serializer(profile)
@@ -58,6 +88,12 @@ class ClinicalProfileViewSet(viewsets.ModelViewSet):
 class DoshaQuestionViewSet(viewsets.ModelViewSet):
     queryset = DoshaQuestion.objects.all().prefetch_related('options')
     serializer_class = DoshaQuestionSerializer
+    permission_classes = [IsAdminUser]
+
+
+class ConsentTemplateViewSet(viewsets.ModelViewSet):
+    queryset = ConsentTemplate.objects.all()
+    serializer_class = ConsentTemplateSerializer
     permission_classes = [IsAdminUser]
 
 
@@ -81,6 +117,7 @@ class DoshaQuizSubmitView(generics.GenericAPIView):
         answers_data = serializer.validated_data.get('answers', [])
         
         # Lógica bimodal: Determinar el perfil a actualizar.
+        kiosk_session = getattr(request, 'kiosk_session', None)
         if hasattr(request, 'kiosk_client'):
             # MODO QUIOSCO: La petición fue validada por IsKioskSession,
             # que adjuntó el cliente a la petición.
@@ -116,9 +153,8 @@ class DoshaQuizSubmitView(generics.GenericAPIView):
 
         # Si la sesión es de quiosco, podríamos invalidar el token aquí
         # para que no se pueda usar de nuevo.
-        kiosk_token = request.headers.get('X-Kiosk-Token')
-        if kiosk_token:
-            cache.delete(f"kiosk_session_{kiosk_token}")
+        if kiosk_session:
+            kiosk_session.deactivate()
 
         return Response(result, status=status.HTTP_200_OK)
 
@@ -135,13 +171,98 @@ class KioskStartSessionView(generics.GenericAPIView):
         
         client_phone = serializer.validated_data['client_phone_number']
         client = CustomUser.objects.get(phone_number=client_phone)
+        profile, _ = ClinicalProfile.objects.get_or_create(user=client)
         staff_member = request.user
 
-        # Generar un token seguro y temporal
-        kiosk_token = secrets.token_hex(20)
-        
-        # Guardar la información de la sesión en la caché de Redis por 30 minutos
-        session_data = {'client_id': str(client.id), 'staff_id': str(staff_member.id)}
-        cache.set(f"kiosk_session_{kiosk_token}", session_data, timeout=timedelta(minutes=30).total_seconds())
+        expires_at = timezone.now() + timedelta(minutes=10)
+        session = KioskSession.objects.create(
+            profile=profile,
+            staff_member=staff_member,
+            expires_at=expires_at,
+        )
+        return Response(
+            {
+                'kiosk_token': session.token,
+                'session_id': str(session.id),
+                'expires_at': session.expires_at.isoformat(),
+                'status': session.status,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
-        return Response({'kiosk_token': kiosk_token}, status=status.HTTP_200_OK)
+
+class KioskSessionStatusView(generics.GenericAPIView):
+    permission_classes = []
+    serializer_class = KioskSessionStatusSerializer
+
+    def get(self, request, *args, **kwargs):
+        session = load_kiosk_session_from_request(request, allow_inactive=True)
+        if not session:
+            return Response({'detail': 'Sesión de quiosco no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        if session.has_expired:
+            session.mark_expired()
+        serializer = self.get_serializer(session)
+        return Response(serializer.data)
+
+
+class KioskSessionHeartbeatView(generics.GenericAPIView):
+    permission_classes = [IsKioskSession]
+
+    def post(self, request, *args, **kwargs):
+        session = request.kiosk_session
+        session.heartbeat()
+        return Response({"detail": "Heartbeat registrado."}, status=status.HTTP_200_OK)
+
+
+class KioskSessionLockView(generics.GenericAPIView):
+    permission_classes = [IsKioskSession]
+
+    def post(self, request, *args, **kwargs):
+        session = request.kiosk_session
+        session.lock()
+        return Response({"detail": "Sesión bloqueada."}, status=status.HTTP_200_OK)
+
+
+class KioskSessionDiscardChangesView(generics.GenericAPIView):
+    permission_classes = []
+
+    def post(self, request, *args, **kwargs):
+        session = load_kiosk_session_from_request(request, allow_inactive=True)
+        if not session:
+            return Response({'detail': 'Sesión de quiosco no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        session.lock()
+        return Response(
+            {"detail": "Cambios descartados y sesión finalizada.", "status": session.status},
+            status=status.HTTP_200_OK,
+        )
+
+
+class ClinicalProfileHistoryViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Provee acceso de solo lectura al historial versionado de los perfiles.
+    """
+
+    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+    serializer_class = ClinicalProfileHistorySerializer
+
+    def get_queryset(self):
+        queryset = ClinicalProfile.history.select_related('history_user')
+        profile_id = self.request.query_params.get('profile_id')
+        if profile_id:
+            queryset = queryset.filter(id=profile_id)
+        user_id = self.request.query_params.get('user_id')
+        if user_id:
+            queryset = queryset.filter(user_id=user_id)
+        return queryset.order_by('-history_date')
+
+
+class AnonymizeProfileView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+
+    def post(self, request, phone_number, *args, **kwargs):
+        profile = get_object_or_404(
+            ClinicalProfile.objects.select_related('user'),
+            user__phone_number=phone_number,
+        )
+        profile.anonymize(performed_by=request.user)
+        return Response({"detail": "Perfil anonimizado correctamente."}, status=status.HTTP_200_OK)

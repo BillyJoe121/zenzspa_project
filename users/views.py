@@ -1,25 +1,79 @@
+import math
+
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from django.core.cache import cache
 from datetime import timedelta
 from rest_framework import generics, status, views
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.token_blacklist.models import (BlacklistedToken,
                                                              OutstandingToken)
 from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import CustomUser
+from .models import CustomUser, UserSession, OTPAttempt
 from .permissions import IsVerified, IsAdminUser, IsStaff
 from .serializers import (CustomTokenObtainPairSerializer,
                           FlagNonGrataSerializer,
                           PasswordResetConfirmSerializer,
                           PasswordResetRequestSerializer, SimpleUserSerializer,
-                          UserRegistrationSerializer, VerifySMSSerializer, StaffListSerializer)
-from .services import TwilioService
+                          UserRegistrationSerializer, VerifySMSSerializer, StaffListSerializer,
+                          UserSessionSerializer)
+from .services import TwilioService, verify_recaptcha
 from spa.models import Appointment
 from core.models import AuditLog
 
+OTP_PHONE_RECAPTCHA_THRESHOLD = getattr(settings, "OTP_PHONE_RECAPTCHA_THRESHOLD", 3)
+OTP_IP_RECAPTCHA_THRESHOLD = getattr(settings, "OTP_IP_RECAPTCHA_THRESHOLD", 5)
+
+
+def _get_client_ip(request):
+    forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR')
+
+
+def _log_otp_attempt(phone_number, attempt_type, success, request, metadata=None):
+    OTPAttempt.objects.create(
+        phone_number=phone_number,
+        attempt_type=attempt_type,
+        is_successful=success,
+        ip_address=_get_client_ip(request),
+        metadata=metadata or {},
+    )
+
+
+def _requires_recaptcha(phone_number, ip_address, attempt_type):
+    since = timezone.now() - timedelta(hours=1)
+    phone_attempts = OTPAttempt.objects.filter(
+        phone_number=phone_number,
+        attempt_type=attempt_type,
+        created_at__gte=since,
+    ).count()
+    ip_attempts = OTPAttempt.objects.filter(
+        ip_address=ip_address,
+        attempt_type=attempt_type,
+        created_at__gte=since,
+    ).count()
+    return phone_attempts >= OTP_PHONE_RECAPTCHA_THRESHOLD or ip_attempts >= OTP_IP_RECAPTCHA_THRESHOLD
+
+
+def _deactivate_session_for_jti(user, jti):
+    UserSession.objects.filter(user=user, refresh_token_jti=jti, is_active=True).update(is_active=False, updated_at=timezone.now())
+
+
+def _revoke_all_sessions(user):
+    tokens = OutstandingToken.objects.filter(user=user)
+    for token in tokens:
+        try:
+            BlacklistedToken.objects.get_or_create(token=token)
+        except Exception:
+            continue
+    UserSession.objects.filter(user=user, is_active=True).update(is_active=False, updated_at=timezone.now())
 
 class UserRegistrationView(generics.CreateAPIView):
     queryset = CustomUser.objects.all()
@@ -27,13 +81,21 @@ class UserRegistrationView(generics.CreateAPIView):
     permission_classes = [AllowAny]
 
     def perform_create(self, serializer):
+        request = self.request
+        phone_number = serializer.validated_data['phone_number']
+        ip = _get_client_ip(request)
+        if _requires_recaptcha(phone_number, ip, OTPAttempt.AttemptType.REQUEST):
+            recaptcha_token = request.data.get('recaptcha_token')
+            if not recaptcha_token or not verify_recaptcha(recaptcha_token, ip):
+                raise ValidationError({"recaptcha_token": "Se requiere verificación adicional para continuar."})
         user = serializer.save()
         try:
             twilio_service = TwilioService()
             twilio_service.send_verification_code(user.phone_number)
+            _log_otp_attempt(user.phone_number, OTPAttempt.AttemptType.REQUEST, True, request, {"context": "registration"})
         except Exception as e:
-            print(
-                f"Error enviando SMS de verificación al usuario {user.phone_number}: {e}")
+            _log_otp_attempt(user.phone_number, OTPAttempt.AttemptType.REQUEST, False, request, {"context": "registration", "error": str(e)})
+            raise
 
 
 class VerifySMSView(views.APIView):
@@ -41,23 +103,39 @@ class VerifySMSView(views.APIView):
 
     MAX_ATTEMPTS = 3
     LOCKOUT_PERIOD_MINUTES = 10
+    RECAPTCHA_FAILURE_THRESHOLD = 2
 
     def post(self, request, *args, **kwargs):
         serializer = VerifySMSSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         phone_number = serializer.validated_data['phone_number']
         code = serializer.validated_data['code']
+        ip = _get_client_ip(request)
 
         cache_key_attempts = f'otp_attempts_{phone_number}'
         cache_key_lockout = f'otp_lockout_{phone_number}'
 
         if cache.get(cache_key_lockout):
+            ttl_seconds = None
+            if hasattr(cache, 'ttl'):
+                try:
+                    ttl_seconds = cache.ttl(cache_key_lockout)
+                except Exception:
+                    ttl_seconds = None
+            if not ttl_seconds:
+                ttl_seconds = self.LOCKOUT_PERIOD_MINUTES * 60
+            minutes = max(1, math.ceil(ttl_seconds / 60))
             return Response(
-                {"error": f"Demasiados intentos. Por favor, intente de nuevo en {self.LOCKOUT_PERIOD_MINUTES} minutos."},
+                {"error": f"Demasiados intentos. Por favor, inténtalo de nuevo en aproximadamente {minutes} minuto(s)."},
                 status=status.HTTP_429_TOO_MANY_REQUESTS
             )
 
         attempts = cache.get(cache_key_attempts, 0)
+
+        if attempts >= self.RECAPTCHA_FAILURE_THRESHOLD or _requires_recaptcha(phone_number, ip, OTPAttempt.AttemptType.VERIFY):
+            recaptcha_token = serializer.validated_data.get('recaptcha_token')
+            if not recaptcha_token or not verify_recaptcha(recaptcha_token, ip):
+                return Response({"error": "Debes completar la verificación reCAPTCHA para continuar."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             twilio_service = TwilioService()
@@ -72,6 +150,7 @@ class VerifySMSView(views.APIView):
                 if not user.is_verified:
                     user.is_verified = True
                     user.save(update_fields=['is_verified'])
+                _log_otp_attempt(phone_number, OTPAttempt.AttemptType.VERIFY, True, request)
                 return Response({"detail": "Usuario verificado correctamente."}, status=status.HTTP_200_OK)
             else:
                 attempts += 1
@@ -80,11 +159,13 @@ class VerifySMSView(views.APIView):
                     cache.delete(cache_key_attempts)
                 else:
                     cache.set(cache_key_attempts, attempts, timeout=timedelta(minutes=self.LOCKOUT_PERIOD_MINUTES).total_seconds())
-
+                _log_otp_attempt(phone_number, OTPAttempt.AttemptType.VERIFY, False, request, {"reason": "invalid_code"})
                 return Response({"error": "El código de verificación es inválido o ha expirado."}, status=status.HTTP_400_BAD_REQUEST)
         except CustomUser.DoesNotExist:
+            _log_otp_attempt(phone_number, OTPAttempt.AttemptType.VERIFY, False, request, {"reason": "user_not_found"})
             return Response({"error": "No se encontró un usuario con ese número de teléfono."}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
+            _log_otp_attempt(phone_number, OTPAttempt.AttemptType.VERIFY, False, request, {"error": str(e)})
             return Response({"error": f"Ha ocurrido un error inesperado: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -99,13 +180,20 @@ class PasswordResetRequestView(views.APIView):
         serializer = PasswordResetRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         phone_number = serializer.validated_data['phone_number']
+        ip = _get_client_ip(request)
+
+        if _requires_recaptcha(phone_number, ip, OTPAttempt.AttemptType.REQUEST):
+            recaptcha_token = request.data.get('recaptcha_token')
+            if not recaptcha_token or not verify_recaptcha(recaptcha_token, ip):
+                raise ValidationError({"recaptcha_token": "Verificación reCAPTCHA requerida para continuar."})
 
         try:
             twilio_service = TwilioService()
             twilio_service.send_verification_code(phone_number)
+            _log_otp_attempt(phone_number, OTPAttempt.AttemptType.REQUEST, True, request, {"context": "password_reset"})
         except Exception as e:
-            print(
-                f"Error al enviar SMS de reseteo (vía Verify) a {phone_number}: {e}")
+            _log_otp_attempt(phone_number, OTPAttempt.AttemptType.REQUEST, False, request, {"context": "password_reset", "error": str(e)})
+            print(f"Error al enviar SMS de reseteo (vía Verify) a {phone_number}: {e}")
 
         return Response(
             {"detail": "Si existe una cuenta asociada a este número, recibirás un código de verificación."},
@@ -135,8 +223,9 @@ class PasswordResetConfirmView(views.APIView):
             user = CustomUser.objects.get(phone_number=phone_number)
             user.set_password(password)
             user.save()
+            _revoke_all_sessions(user)
 
-            return Response({"detail": "Contraseña actualizada correctamente."}, status=status.HTTP_200_OK)
+            return Response({"detail": "Contraseña actualizada correctamente. Por favor inicia sesión nuevamente."}, status=status.HTTP_200_OK)
 
         except CustomUser.DoesNotExist:
             return Response({"error": "No se encontró un usuario con ese número de teléfono."}, status=status.HTTP_404_NOT_FOUND)
@@ -150,6 +239,31 @@ class CurrentUserView(generics.RetrieveAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class LogoutView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        refresh = request.data.get('refresh')
+        if not refresh:
+            return Response({"error": "Se requiere el token refresh."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            token = RefreshToken(refresh)
+            token.blacklist()
+            jti = str(token['jti'])
+            _deactivate_session_for_jti(request.user, jti)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except Exception as exc:
+            return Response({"error": f"No se pudo cerrar la sesión: {exc}"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class LogoutAllView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        _revoke_all_sessions(request.user)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class FlagNonGrataView(generics.UpdateAPIView):
@@ -168,7 +282,7 @@ class FlagNonGrataView(generics.UpdateAPIView):
             user=instance,
             start_time__gte=now,
             status__in=[Appointment.AppointmentStatus.CONFIRMED,
-                        Appointment.AppointmentStatus.PENDING_PAYMENT]
+                        Appointment.AppointmentStatus.PENDING_ADVANCE]
         )
         future_appointments.update(status=Appointment.AppointmentStatus.CANCELLED_BY_ADMIN)
 
@@ -200,10 +314,33 @@ class FlagNonGrataView(generics.UpdateAPIView):
 
 class StaffListView(generics.ListAPIView):
     serializer_class = StaffListSerializer
-    # Ya usaba IsAuthenticated, lo cual es correcto y permite a cualquier usuario ver la lista
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # La lógica de filtrado es correcta y debe permanecer aquí.
         return CustomUser.objects.filter(role=CustomUser.Role.STAFF)
-    
+
+
+class UserSessionListView(generics.ListAPIView):
+    serializer_class = UserSessionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return UserSession.objects.filter(user=self.request.user, is_active=True).order_by('-last_activity')
+
+
+class UserSessionDeleteView(generics.DestroyAPIView):
+    serializer_class = UserSessionSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = 'id'
+
+    def get_queryset(self):
+        return UserSession.objects.filter(user=self.request.user, is_active=True)
+
+    def perform_destroy(self, instance):
+        try:
+            token = OutstandingToken.objects.get(jti=instance.refresh_token_jti)
+            BlacklistedToken.objects.get_or_create(token=token)
+        except OutstandingToken.DoesNotExist:
+            pass
+        instance.is_active = False
+        instance.save(update_fields=['is_active', 'updated_at'])

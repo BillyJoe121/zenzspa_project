@@ -25,6 +25,10 @@ class AuditLog(BaseModel):
         FLAG_NON_GRATA = "FLAG_NON_GRATA", "Marcar como Persona No Grata"
         ADMIN_CANCEL_APPOINTMENT = "ADMIN_CANCEL_APPOINTMENT", "Admin cancela cita pagada"
         APPOINTMENT_CANCELLED_BY_ADMIN = "APPOINTMENT_CANCELLED_BY_ADMIN", "Appointment Cancelled by Admin"
+        CLINICAL_PROFILE_ANONYMIZED = "CLINICAL_PROFILE_ANONYMIZED", "Perfil clínico anonimizado"
+        VOUCHER_REDEEMED = "VOUCHER_REDEEMED", "Voucher redimido"
+        LOYALTY_REWARD_ISSUED = "LOYALTY_REWARD_ISSUED", "Recompensa de lealtad otorgada"
+        VIP_DOWNGRADED = "VIP_DOWNGRADED", "VIP degradado"
 
     action = models.CharField(
         max_length=64,
@@ -92,6 +96,53 @@ class GlobalSettings(BaseModel):
         verbose_name="Tiempo de Limpieza entre Citas (minutos)",
         help_text="Minutos de búfer que se añadirán después de cada cita para preparación.",
     )
+    vip_monthly_price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        verbose_name="Precio Mensual VIP",
+        help_text="Costo en COP para una suscripción mensual VIP.",
+    )
+    advance_expiration_minutes = models.PositiveIntegerField(
+        default=20,
+        verbose_name="Minutos para cancelar citas sin pago",
+        help_text="Tiempo máximo para pagar el anticipo antes de cancelar automáticamente.",
+    )
+    credit_expiration_days = models.PositiveIntegerField(
+        default=365,
+        verbose_name="Días de vigencia para créditos",
+        help_text="Número de días antes de que un saldo a favor expire.",
+    )
+    return_window_days = models.PositiveIntegerField(
+        default=30,
+        verbose_name="Ventana de devoluciones (días)",
+        help_text="Número máximo de días para aceptar devoluciones desde la entrega.",
+    )
+
+    class NoShowCreditPolicy(models.TextChoices):
+        NONE = "NONE", "Sin crédito"
+        PARTIAL = "PARTIAL", "Crédito parcial"
+        FULL = "FULL", "Crédito total"
+
+    no_show_credit_policy = models.CharField(
+        max_length=10,
+        choices=NoShowCreditPolicy.choices,
+        default=NoShowCreditPolicy.NONE,
+        help_text="Regla para convertir anticipos en crédito cuando hay No-Show.",
+    )
+    loyalty_months_required = models.PositiveIntegerField(
+        default=3,
+        verbose_name="Meses continuos para recompensa VIP",
+        help_text="Cantidad de meses continuos como VIP para recibir un beneficio.",
+    )
+    loyalty_voucher_service = models.ForeignKey(
+        "spa.Service",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Servicio de recompensa VIP",
+        help_text="Servicio que se otorga como voucher al cumplir la lealtad.",
+    )
 
     # Validaciones de dominio (evita valores absurdos en producción)
     def clean(self):
@@ -102,6 +153,16 @@ class GlobalSettings(BaseModel):
             errors["low_supervision_capacity"] = "Debe ser al menos 1."
         if self.appointment_buffer_time > 180:
             errors["appointment_buffer_time"] = "No debería exceder 180 minutos."
+        if self.vip_monthly_price is not None and self.vip_monthly_price < 0:
+            errors["vip_monthly_price"] = "Debe ser un valor positivo."
+        if self.advance_expiration_minutes < 1:
+            errors["advance_expiration_minutes"] = "Debe ser al menos 1 minuto."
+        if self.credit_expiration_days < 1:
+            errors["credit_expiration_days"] = "Debe ser al menos 1 día."
+        if self.return_window_days < 0:
+            errors["return_window_days"] = "No puede ser negativo."
+        if self.loyalty_months_required < 1:
+            errors["loyalty_months_required"] = "Debe ser al menos 1."
         if errors:
             raise ValidationError(errors)
 
@@ -140,3 +201,50 @@ class GlobalSettings(BaseModel):
         indexes = [
             models.Index(fields=["updated_at"]),
         ]
+
+
+class IdempotencyKey(BaseModel):
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "Pendiente"
+        COMPLETED = "COMPLETED", "Completado"
+
+    key = models.CharField(max_length=255, unique=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="idempotency_keys",
+    )
+    endpoint = models.CharField(max_length=255)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    response_body = models.JSONField(null=True, blank=True)
+    status_code = models.PositiveIntegerField(null=True, blank=True)
+    locked_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    request_hash = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        verbose_name = "Idempotency Key"
+        verbose_name_plural = "Idempotency Keys"
+        ordering = ["-created_at"]
+
+    def mark_processing(self):
+        self.status = self.Status.PENDING
+        self.locked_at = timezone.now()
+        self.save(update_fields=["status", "locked_at", "updated_at"])
+
+    def mark_completed(self, *, response_body, status_code):
+        self.status = self.Status.COMPLETED
+        self.response_body = response_body
+        self.status_code = status_code
+        self.completed_at = timezone.now()
+        self.save(
+            update_fields=[
+                "status",
+                "response_body",
+                "status_code",
+                "completed_at",
+                "updated_at",
+            ]
+        )

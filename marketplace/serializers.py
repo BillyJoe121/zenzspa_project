@@ -1,6 +1,16 @@
+from decimal import Decimal
+
 from rest_framework import serializers
-from .models import Product, ProductImage, Cart, CartItem, Order, OrderItem
-from users.models import CustomUser
+
+from .models import (
+    Product,
+    ProductImage,
+    ProductVariant,
+    Cart,
+    CartItem,
+    Order,
+    OrderItem,
+)
 
 # --- Serializadores de Lectura (Para mostrar datos) ---
 
@@ -10,12 +20,23 @@ class ProductImageSerializer(serializers.ModelSerializer):
         model = ProductImage
         fields = ['image', 'is_primary', 'alt_text']
 
+class ProductVariantSerializer(serializers.ModelSerializer):
+    """Serializador para variantes individuales."""
+
+    class Meta:
+        model = ProductVariant
+        fields = ['id', 'sku', 'name', 'price', 'vip_price', 'stock']
+
+
 class ProductListSerializer(serializers.ModelSerializer):
     """
     Serializador para listar productos en el catálogo.
     Muestra solo la imagen principal para mantener la respuesta ligera.
     """
     main_image = serializers.SerializerMethodField()
+    price = serializers.SerializerMethodField()
+    vip_price = serializers.SerializerMethodField()
+    stock = serializers.SerializerMethodField()
 
     class Meta:
         model = Product
@@ -30,35 +51,64 @@ class ProductListSerializer(serializers.ModelSerializer):
             return ProductImageSerializer(primary_image).data
         return None
 
+    def _get_price_candidate(self, obj, attr):
+        candidates = [
+            getattr(variant, attr)
+            for variant in obj.variants.all()
+            if getattr(variant, attr) is not None
+        ]
+        return min(candidates) if candidates else None
+
+    def get_price(self, obj):
+        return self._get_price_candidate(obj, 'price')
+
+    def get_vip_price(self, obj):
+        return self._get_price_candidate(obj, 'vip_price')
+
+    def get_stock(self, obj):
+        return sum(variant.stock for variant in obj.variants.all())
+
 class ProductDetailSerializer(ProductListSerializer):
     """
     Serializador para ver el detalle de un solo producto.
     Muestra todas las imágenes y la descripción completa.
     """
     images = ProductImageSerializer(many=True, read_only=True)
+    variants = ProductVariantSerializer(many=True, read_only=True)
 
-    class Meta:
-        model = Product
-        fields = [
-            'id', 'name', 'description', 'price', 'vip_price', 'stock',
-            'category', 'preparation_days', 'images'
+    class Meta(ProductListSerializer.Meta):
+        fields = ProductListSerializer.Meta.fields + [
+            'description',
+            'category',
+            'preparation_days',
+            'images',
+            'variants',
         ]
 
 class CartItemSerializer(serializers.ModelSerializer):
     """Serializador para mostrar los ítems dentro de un carrito."""
-    product = ProductListSerializer(read_only=True)
+    variant = ProductVariantSerializer(read_only=True)
+    product = serializers.SerializerMethodField()
     subtotal = serializers.SerializerMethodField()
 
     class Meta:
         model = CartItem
-        fields = ['id', 'product', 'quantity', 'subtotal']
+        fields = ['id', 'product', 'variant', 'quantity', 'subtotal']
+
+    def get_product(self, obj):
+        product = obj.variant.product
+        return {
+            'id': product.id,
+            'name': product.name,
+        }
 
     def get_subtotal(self, obj):
         # Calcula el subtotal basado en el rol del usuario que ve el carrito
-        user = self.context['request'].user
-        price = obj.product.price
-        if user.is_vip and obj.product.vip_price:
-            price = obj.product.vip_price
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        price = obj.variant.price
+        if user and getattr(user, "is_vip", False) and obj.variant.vip_price:
+            price = obj.variant.vip_price
         return obj.quantity * price
 
 class CartSerializer(serializers.ModelSerializer):
@@ -71,25 +121,35 @@ class CartSerializer(serializers.ModelSerializer):
         fields = ['id', 'user', 'is_active', 'items', 'total']
     
     def get_total(self, obj):
-        # Suma los subtotales de todos los ítems para obtener el total del carrito
-        return sum(self.context['view'].get_serializer(item).data['subtotal'] for item in obj.items.all())
+        # Calcula el total aplicando el precio VIP si corresponde.
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        total = Decimal('0')
+        for item in obj.items.select_related('variant'):
+            price = item.variant.price
+            if user and getattr(user, "is_vip", False) and item.variant.vip_price:
+                price = item.variant.vip_price
+            total += price * item.quantity
+        return total
 
 # --- Serializadores de Escritura (Para crear/actualizar datos) ---
 
 class CartItemCreateUpdateSerializer(serializers.ModelSerializer):
     """
-    Serializador para añadir o actualizar un producto en el carrito.
-    Solo necesita el ID del producto y la cantidad.
+    Serializador para añadir o actualizar una variante en el carrito.
+    Soporta tanto variant_id como sku.
     """
-    product_id = serializers.PrimaryKeyRelatedField(
-        queryset=Product.objects.filter(is_active=True),
-        source='product',
-        write_only=True
+    variant_id = serializers.PrimaryKeyRelatedField(
+        queryset=ProductVariant.objects.select_related('product').filter(product__is_active=True),
+        source='variant',
+        write_only=True,
+        required=False,
     )
+    sku = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = CartItem
-        fields = ['product_id', 'quantity']
+        fields = ['variant_id', 'sku', 'quantity']
 
     def validate_quantity(self, value):
         if value <= 0:
@@ -97,23 +157,51 @@ class CartItemCreateUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        product = data['product']
-        quantity = data['quantity']
-        if quantity > product.stock:
+        sku = data.pop('sku', None)
+        variant = data.get('variant')
+        instance = getattr(self, 'instance', None)
+
+        if sku and variant:
+            raise serializers.ValidationError("Envía solo variant_id o sku, no ambos.")
+
+        if not variant and sku:
+            try:
+                variant = ProductVariant.objects.select_related('product').get(
+                    sku=sku,
+                    product__is_active=True,
+                )
+            except ProductVariant.DoesNotExist:
+                raise serializers.ValidationError("SKU inválido o producto inactivo.")
+            data['variant'] = variant
+        elif not variant and instance:
+            variant = instance.variant
+
+        if not variant:
+            raise serializers.ValidationError("Debes especificar una variante válida.")
+
+        if not variant.product.is_active:
+            raise serializers.ValidationError("El producto asociado está inactivo.")
+
+        quantity = data.get('quantity')
+        if quantity is None and instance:
+            quantity = instance.quantity
+
+        if quantity and quantity > variant.stock:
             raise serializers.ValidationError(
-                f"No hay suficiente stock para '{product.name}'. Disponible: {product.stock}."
+                f"No hay suficiente stock para '{variant}'. Disponible: {variant.stock}."
             )
+
         return data
-    
 
 class OrderItemSerializer(serializers.ModelSerializer):
     """Serializador para mostrar los ítems dentro de una orden."""
-    # Usamos un serializador más simple para el producto aquí
-    product_name = serializers.CharField(source='product.name')
+    product_name = serializers.CharField(source='variant.product.name', read_only=True)
+    variant_name = serializers.CharField(source='variant.name', read_only=True)
+    sku = serializers.CharField(source='variant.sku', read_only=True)
 
     class Meta:
         model = OrderItem
-        fields = ['id', 'product_name', 'quantity', 'price_at_purchase']
+        fields = ['id', 'product_name', 'variant_name', 'sku', 'quantity', 'price_at_purchase']
 
 
 class OrderSerializer(serializers.ModelSerializer):
@@ -126,6 +214,7 @@ class OrderSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'user_email', 'status', 'total_amount', 'delivery_option',
             'delivery_address', 'associated_appointment', 'tracking_number',
+            'return_reason', 'return_requested_at',
             'created_at', 'items'
         ]
 
@@ -144,3 +233,17 @@ class CheckoutSerializer(serializers.Serializer):
         if data['delivery_option'] == Order.DeliveryOptions.ASSOCIATE_TO_APPOINTMENT and not data.get('associated_appointment_id'):
             raise serializers.ValidationError("Debe seleccionar una cita para asociar la entrega.")
         return data
+
+
+class ReturnItemInputSerializer(serializers.Serializer):
+    order_item_id = serializers.UUIDField()
+    quantity = serializers.IntegerField(min_value=1)
+
+
+class ReturnRequestSerializer(serializers.Serializer):
+    items = ReturnItemInputSerializer(many=True)
+    reason = serializers.CharField()
+
+
+class ReturnDecisionSerializer(serializers.Serializer):
+    approved = serializers.BooleanField()

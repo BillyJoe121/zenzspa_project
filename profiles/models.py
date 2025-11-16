@@ -1,6 +1,16 @@
-from django.db import models
+import hashlib
+import logging
+import secrets
+import uuid
+
 from django.conf import settings
+from django.db import models, transaction
+from django.utils import timezone
+from simple_history.models import HistoricalRecords
+
 from core.models import BaseModel
+
+logger = logging.getLogger(__name__)
 
 class ClinicalProfile(BaseModel):
     class Dosha(models.TextChoices):
@@ -49,6 +59,16 @@ class ClinicalProfile(BaseModel):
         blank=True, verbose_name="Notas sobre Accidentes")
     general_notes = models.TextField(
         blank=True, verbose_name="Notas Generales del Terapeuta")
+    medical_conditions = models.TextField(
+        blank=True, verbose_name="Condiciones médicas o diagnósticos relevantes"
+    )
+    allergies = models.TextField(
+        blank=True, verbose_name="Alergias conocidas"
+    )
+    contraindications = models.TextField(
+        blank=True, verbose_name="Contraindicaciones"
+    )
+    history = HistoricalRecords(inherit=True)
 
     def calculate_dominant_dosha(self):
         """
@@ -81,6 +101,67 @@ class ClinicalProfile(BaseModel):
         self.dosha = dominant_dosha
         self.save(update_fields=['dosha'])
 
+    def anonymize(self, *, performed_by=None):
+        """
+        Limpia información sensible del perfil y elimina registros relacionados,
+        cumpliendo con el derecho al olvido.
+        """
+        from core.models import AuditLog
+        with transaction.atomic():
+            unique_suffix = uuid.uuid4().hex[:8]
+            user = self.user
+            if user:
+                user.first_name = "ANONIMIZADO"
+                user.last_name = ""
+                user.phone_number = f"ANON-{unique_suffix}"
+                user.email = f"anon-{unique_suffix}@anonymous.local"
+                user.is_active = False
+                user.is_verified = False
+                user.save(update_fields=[
+                    'first_name',
+                    'last_name',
+                    'phone_number',
+                    'email',
+                    'is_active',
+                    'is_verified',
+                    'updated_at',
+                ])
+
+            self.accidents_notes = ''
+            self.general_notes = ''
+            self.medical_conditions = ''
+            self.allergies = ''
+            self.contraindications = ''
+            self.dosha = self.Dosha.UNKNOWN
+            self.element = ''
+            self.diet_type = ''
+            self.sleep_quality = ''
+            self.activity_level = ''
+            self.save(update_fields=[
+                'accidents_notes',
+                'general_notes',
+                'medical_conditions',
+                'allergies',
+                'contraindications',
+                'dosha',
+                'element',
+                'diet_type',
+                'sleep_quality',
+                'activity_level',
+                'updated_at',
+            ])
+
+            self.pains.all().delete()
+            self.consents.all().delete()
+            self.dosha_answers.all().delete()
+
+            AuditLog.objects.create(
+                admin_user=performed_by,
+                target_user=user,
+                action=AuditLog.Action.CLINICAL_PROFILE_ANONYMIZED,
+                details=f"Perfil {self.id} anonimizado",
+            )
+            logger.info("Perfil clínico %s anonimizado por %s", self.id, getattr(performed_by, 'id', None))
 
     def __str__(self):
         return f"Perfil Clínico de {self.user.first_name}"
@@ -166,3 +247,134 @@ class ClientDoshaAnswer(BaseModel):
         verbose_name_plural = "Respuestas de Clientes al Cuestionario"
         unique_together = ('profile', 'question')
 
+
+class ConsentTemplate(BaseModel):
+    """
+    Representa una versión del texto legal que los clientes deben firmar.
+    """
+    version = models.PositiveIntegerField(unique=True)
+    title = models.CharField(max_length=255)
+    body = models.TextField()
+    is_active = models.BooleanField(default=True)
+    history = HistoricalRecords(inherit=True)
+
+    class Meta:
+        verbose_name = "Plantilla de Consentimiento"
+        verbose_name_plural = "Plantillas de Consentimiento"
+        ordering = ['-version']
+
+    def __str__(self):
+        return f"Consentimiento v{self.version} - {self.title}"
+
+
+class ConsentDocument(BaseModel):
+    profile = models.ForeignKey(
+        ClinicalProfile,
+        on_delete=models.CASCADE,
+        related_name='consents'
+    )
+    template = models.ForeignKey(
+        ConsentTemplate,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='documents',
+    )
+    template_version = models.PositiveIntegerField(null=True, blank=True)
+    document_text = models.TextField(verbose_name="Texto legal presentado")
+    is_signed = models.BooleanField(default=False)
+    signed_at = models.DateTimeField(null=True, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    signature_hash = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "Consentimiento Clínico"
+        verbose_name_plural = "Consentimientos Clínicos"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        status = "Firmado" if self.is_signed else "Pendiente"
+        return f"Consentimiento {status} para {self.profile.user}"
+
+    def save(self, *args, **kwargs):
+        if self.template and not self.template_version:
+            self.template_version = self.template.version
+        if self.template and not self.document_text:
+            self.document_text = self.template.body
+        if self.document_text:
+            payload = f"{self.profile_id}:{self.template_version}:{self.document_text}"
+            self.signature_hash = hashlib.sha256(payload.encode('utf-8')).hexdigest()
+        super().save(*args, **kwargs)
+
+
+class KioskSession(BaseModel):
+    class Status(models.TextChoices):
+        ACTIVE = 'ACTIVE', 'Activa'
+        LOCKED = 'LOCKED', 'Bloqueada'
+        COMPLETED = 'COMPLETED', 'Completada'
+
+    profile = models.ForeignKey(
+        ClinicalProfile,
+        on_delete=models.CASCADE,
+        related_name='kiosk_sessions'
+    )
+    staff_member = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='kiosk_sessions_started'
+    )
+    token = models.CharField(max_length=64, unique=True, editable=False)
+    expires_at = models.DateTimeField()
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
+    is_active = models.BooleanField(default=True)
+    locked = models.BooleanField(default=False)
+    last_activity = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Sesión de Quiosco"
+        verbose_name_plural = "Sesiones de Quiosco"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Sesión para {self.profile.user} expira {self.expires_at}"
+
+    def save(self, *args, **kwargs):
+        if not self.token:
+            self.token = secrets.token_hex(20)
+        if self.status == self.Status.ACTIVE:
+            self.is_active = True
+            self.locked = False
+        elif self.status == self.Status.LOCKED:
+            self.is_active = False
+            self.locked = True
+        else:
+            self.is_active = False
+            self.locked = False
+        super().save(*args, **kwargs)
+
+    @property
+    def is_valid(self):
+        return self.status == self.Status.ACTIVE and not self.has_expired
+
+    @property
+    def has_expired(self):
+        return self.expires_at <= timezone.now()
+
+    def deactivate(self):
+        if self.status != self.Status.COMPLETED:
+            self.status = self.Status.COMPLETED
+            self.save(update_fields=['status', 'is_active', 'locked', 'updated_at'])
+
+    def lock(self):
+        if self.status != self.Status.LOCKED:
+            self.status = self.Status.LOCKED
+            self.save(update_fields=['status', 'is_active', 'locked', 'updated_at'])
+
+    def mark_expired(self):
+        if self.has_expired and self.status == self.Status.ACTIVE:
+            self.lock()
+
+    def heartbeat(self):
+        if self.status == self.Status.ACTIVE:
+            self.last_activity = timezone.now()
+            self.save(update_fields=['last_activity', 'updated_at'])

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Optional, Dict, Any
 
 from django.db import transaction
@@ -13,6 +14,7 @@ class SettingsDTO:
     low_supervision_capacity: int
     advance_payment_percentage: int
     appointment_buffer_time: int
+    vip_monthly_price: Decimal
 
 def get_global_settings() -> SettingsDTO:
     obj = GlobalSettings.load()
@@ -20,6 +22,7 @@ def get_global_settings() -> SettingsDTO:
         low_supervision_capacity=obj.low_supervision_capacity,
         advance_payment_percentage=obj.advance_payment_percentage,
         appointment_buffer_time=obj.appointment_buffer_time,
+        vip_monthly_price=obj.vip_monthly_price,
     )
 
 @transaction.atomic

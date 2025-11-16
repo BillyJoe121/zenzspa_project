@@ -19,9 +19,12 @@ SECRET_KEY = os.getenv("SECRET_KEY", "!!dev-only-not-secure!!")
 DEBUG = os.getenv("DEBUG", "0") in ("1", "true", "True")
 
 # Hosts/CSRF/CORS: admite coma o espacio
+
+
 def _split_env(name, default=""):
     raw = os.getenv(name, default)
     return [x.strip() for x in raw.replace(",", " ").split() if x.strip()]
+
 
 ALLOWED_HOSTS = _split_env("ALLOWED_HOSTS", "localhost 127.0.0.1")
 CSRF_TRUSTED_ORIGINS = _split_env(
@@ -50,7 +53,8 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
     "corsheaders",                  # CORS
-    "django_csp",                   # Content Security Policy
+    "csp",                   # Content Security Policy
+    "simple_history",
     # "axes",                       # Descomenta si usas django-axes para login clásico
 
     # Tus apps
@@ -59,11 +63,15 @@ INSTALLED_APPS = [
     "profiles",
     "core",
     "marketplace",
+    "notifications",
+    "analytics",
+    "bot",
 ]
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "corsheaders.middleware.CorsMiddleware",          # CORS antes de CommonMiddleware
+    # CORS antes de CommonMiddleware
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -71,6 +79,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "csp.middleware.CSPMiddleware",
+    "simple_history.middleware.HistoryRequestMiddleware",
     # "axes.middleware.AxesMiddleware",               # Habilita si usas django-axes
 ]
 
@@ -139,6 +148,7 @@ REST_FRAMEWORK = {
         "auth_login": os.getenv("THROTTLE_AUTH_LOGIN", "5/min"),
         "auth_verify": os.getenv("THROTTLE_AUTH_VERIFY", "3/10min"),
         "payments": os.getenv("THROTTLE_PAYMENTS", "60/min"),
+        "bot": os.getenv("THROTTLE_BOT", "10/min"),
     },
 }
 
@@ -221,7 +231,8 @@ TWILIO_VERIFY_SERVICE_SID = os.getenv("TWILIO_VERIFY_SERVICE_SID")
 WOMPI_PUBLIC_KEY = os.getenv("WOMPI_PUBLIC_KEY", "")
 WOMPI_INTEGRITY_SECRET = os.getenv("WOMPI_INTEGRITY_SECRET", "")
 WOMPI_EVENT_SECRET = os.getenv("WOMPI_EVENT_SECRET", "")
-WOMPI_REDIRECT_URL = os.getenv("WOMPI_REDIRECT_URL", "http://localhost:3000/payment-result")
+WOMPI_REDIRECT_URL = os.getenv(
+    "WOMPI_REDIRECT_URL", "http://localhost:3000/payment-result")
 
 # --------------------------------------------------------------------------------------
 # CORS/CSRF
@@ -243,20 +254,26 @@ if not DEBUG:
     SECURE_HSTS_PRELOAD = True
 
 # --------------------------------------------------------------------------------------
-# CSP (django-csp) básica. Ajusta orígenes para tu frontend/CDN.
+# CSP (django-csp) V4.0+
 # --------------------------------------------------------------------------------------
-CSP_DEFAULT_SRC = ("'self'",)
-CSP_SCRIPT_SRC = ("'self'", "'unsafe-inline'", "cdn.jsdelivr.net", "unpkg.com")
-CSP_STYLE_SRC = ("'self'", "'unsafe-inline'", "fonts.googleapis.com", "cdn.jsdelivr.net", "unpkg.com")
-CSP_IMG_SRC = ("'self'", "data:", "blob:")
-CSP_FONT_SRC = ("'self'", "fonts.gstatic.com", "cdn.jsdelivr.net", "unpkg.com")
-CSP_CONNECT_SRC = tuple(["'self'"] + CORS_ALLOWED_ORIGINS)
+CONTENT_SECURITY_POLICY = {
+    "DIRECTIVES": {
+        "default-src": ["'self'"],
+        "script-src": ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net", "unpkg.com"],
+        "style-src": ["'self'", "'unsafe-inline'", "fonts.googleapis.com", "cdn.jsdelivr.net", "unpkg.com"],
+        "img-src": ["'self'", "data:", "blob:"],
+        "font-src": ["'self'", "fonts.gstatic.com", "cdn.jsdelivr.net", "unpkg.com"],
+        # Usamos tu variable CORS_ALLOWED_ORIGINS para mantenerlo dinámico
+        "connect-src": ["'self'"] + CORS_ALLOWED_ORIGINS,
+    }
+}
 
 # --------------------------------------------------------------------------------------
 # Celery
 # --------------------------------------------------------------------------------------
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/0")
+CELERY_RESULT_BACKEND = os.getenv(
+    "CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/0")
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
@@ -281,14 +298,16 @@ CELERY_BEAT_SCHEDULE = {
 if DEBUG:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 else:
-    EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+    EMAIL_BACKEND = os.getenv(
+        "EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
     EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.sendgrid.net")
     EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
     EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "1") in ("1", "true", "True")
     EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
     EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "ZenzSpa <no-reply@zenzspa.com>")
+DEFAULT_FROM_EMAIL = os.getenv(
+    "DEFAULT_FROM_EMAIL", "ZenzSpa <no-reply@zenzspa.com>")
 
 # --------------------------------------------------------------------------------------
 # Logging: útil para producción y depuración
@@ -328,9 +347,11 @@ if SENTRY_DSN:
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         integrations=[DjangoIntegration()],
-        traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+        traces_sample_rate=float(
+            os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
         send_default_pii=False,
-        environment=os.getenv("SENTRY_ENV", "production" if not DEBUG else "development"),
+        environment=os.getenv(
+            "SENTRY_ENV", "production" if not DEBUG else "development"),
     )
 
 # --------------------------------------------------------------------------------------
@@ -355,7 +376,9 @@ else:
 # --------------------------------------------------------------------------------------
 AXES_ENABLED = os.getenv("AXES_ENABLED", "0") in ("1", "true", "True")
 if AXES_ENABLED:
-    AXES_FAILURE_LIMIT = int(os.getenv("AXES_FAILURE_LIMIT", "5"))          # 5/min login
-    AXES_COOLOFF_TIME = int(os.getenv("AXES_COOLOFF_TIME_MIN", "10"))       # 10 minutos
+    AXES_FAILURE_LIMIT = int(
+        os.getenv("AXES_FAILURE_LIMIT", "5"))          # 5/min login
+    AXES_COOLOFF_TIME = int(
+        os.getenv("AXES_COOLOFF_TIME_MIN", "10"))       # 10 minutos
     AXES_ONLY_USER_FAILURES = False
     AXES_LOCK_OUT_BY_COMBINATION_USER_AND_IP = True

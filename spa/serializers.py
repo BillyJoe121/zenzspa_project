@@ -1,16 +1,27 @@
+from datetime import datetime, timedelta
+from decimal import Decimal
+
 from rest_framework import serializers
 from django.utils import timezone
 from django.db import transaction
+from django.contrib.auth import get_user_model
+
+from core.models import GlobalSettings
 from .models import (
-    ServiceCategory, Service, Package, StaffAvailability, Appointment, Payment,
-    UserPackage, Voucher, PackageService # <-- 'PackageService' AHORA ESTÁ INCLUIDO AQUÍ
+    ServiceCategory,
+    Service,
+    Package,
+    StaffAvailability,
+    Appointment,
+    AppointmentItem,
+    Payment,
+    UserPackage,
+    Voucher,
+    PackageService,
+    FinancialAdjustment,
 )
 from users.serializers import SimpleUserSerializer # Se mantiene tu import original
-from django.contrib.auth import get_user_model
-from datetime import datetime, timedelta
-from core.models import GlobalSettings
-from decimal import Decimal
-from .services import calculate_available_slots
+from .services import AvailabilityService
 
 CustomUser = get_user_model()
 
@@ -68,6 +79,15 @@ class PackageSerializer(serializers.ModelSerializer):
                   'grants_vip_months', 'is_active', 'services', 'validity_days']
 
 
+class AppointmentItemSerializer(serializers.ModelSerializer):
+    """Serializador para mostrar los servicios incluidos en una cita."""
+    service = ServiceSummarySerializer(read_only=True)
+
+    class Meta:
+        model = AppointmentItem
+        fields = ['id', 'service', 'duration', 'price_at_purchase']
+
+
 class AppointmentListSerializer(serializers.ModelSerializer):
     """
     Serializador CONSOLIDADO para leer (listar y detallar) citas.
@@ -75,57 +95,113 @@ class AppointmentListSerializer(serializers.ModelSerializer):
     Este serializador reemplaza a los antiguos AppointmentReadSerializer y AppointmentListSerializer.
     """
     user = UserSummarySerializer(read_only=True)
-    service = ServiceSummarySerializer(read_only=True)
     staff_member = UserSummarySerializer(read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
+    services = AppointmentItemSerializer(source='items', many=True, read_only=True)
+    total_duration_minutes = serializers.SerializerMethodField()
 
     class Meta:
         model = Appointment
         fields = [
             'id',
             'user',
-            'service',
+            'services',
             'staff_member',
             'start_time',
             'end_time',
             'status',
             'status_display', # Campo útil para el frontend
             'price_at_purchase',
+            'total_duration_minutes',
             'reschedule_count',
             'created_at',
             'updated_at'
         ]
         read_only_fields = fields
 
+    def get_total_duration_minutes(self, obj):
+        return obj.total_duration_minutes
+
 AppointmentReadSerializer = AppointmentListSerializer
 
-class AppointmentCreateSerializer(serializers.ModelSerializer):
+class AppointmentCreateSerializer(serializers.Serializer):
     """
-    Serializador para validar los datos de entrada al crear una cita.
-    La lógica de negocio compleja (validación de reglas, creación) ha sido
-    movida a la capa de servicios (AppointmentService).
+    Serializador para la creación de citas multi-servicio.
     """
-    class Meta:
-        model = Appointment
-        # Solo incluimos los campos que el usuario debe enviar.
-        fields = ['service', 'staff_member', 'start_time']
+
+    service_ids = serializers.PrimaryKeyRelatedField(
+        queryset=Service.objects.filter(is_active=True),
+        many=True,
+        write_only=True,
+    )
+    staff_member = serializers.PrimaryKeyRelatedField(
+        queryset=CustomUser.objects.filter(role__in=[CustomUser.Role.STAFF, CustomUser.Role.ADMIN]),
+        required=False,
+        allow_null=True,
+    )
+    start_time = serializers.DateTimeField()
+
+    def validate_start_time(self, value):
+        if value < timezone.now():
+            raise serializers.ValidationError("La cita no puede programarse en el pasado.")
+        if value.minute % AvailabilityService.SLOT_INTERVAL_MINUTES != 0 or value.second or value.microsecond:
+            raise serializers.ValidationError(
+                f"Las citas deben comenzar en intervalos de {AvailabilityService.SLOT_INTERVAL_MINUTES} minutos."
+            )
+        return value
 
     def validate(self, data):
-        """
-        Validación básica de los datos de entrada.
-        """
-        service = data.get('service')
-        staff_member = data.get('staff_member')
+        services = data.pop('service_ids')
+        if not services:
+            raise serializers.ValidationError({"service_ids": "Debes seleccionar al menos un servicio."})
 
-        # Regla simple: si el servicio no es de baja supervisión, el staff es obligatorio.
-        if not service.category.is_low_supervision and not staff_member:
-            raise serializers.ValidationError({"staff_member": "Este servicio requiere seleccionar un miembro del personal."})
-        
-        # Si es de baja supervisión, nos aseguramos que staff_member sea nulo.
-        if service.category.is_low_supervision:
+        staff_member = data.get('staff_member')
+        requires_staff = any(not service.category.is_low_supervision for service in services)
+
+        if requires_staff and not staff_member:
+            raise serializers.ValidationError({"staff_member": "Estos servicios requieren un terapeuta asignado."})
+
+        if not requires_staff:
             data['staff_member'] = None
-            
+
+        # Validar que el slot siga disponible.
+        start_time = data['start_time']
+        normalized_start = start_time.replace(second=0, microsecond=0)
+        service_ids = [service.id for service in services]
+        staff_id = staff_member.id if staff_member else None
+
+        try:
+            available_slots = AvailabilityService.get_available_slots(
+                normalized_start.date(),
+                service_ids,
+                staff_member_id=staff_id,
+            )
+        except ValueError as exc:
+            raise serializers.ValidationError({"service_ids": str(exc)})
+
+        slot_is_available = any(
+            slot['start_time'] == normalized_start and (not staff_id or slot['staff_id'] == staff_id)
+            for slot in available_slots
+        )
+
+        if not slot_is_available:
+            raise serializers.ValidationError({"start_time": "El horario seleccionado ya no está disponible."})
+
+        data['services'] = services
         return data
+
+
+class TipCreateSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
+
+
+class AppointmentCancelSerializer(serializers.Serializer):
+    cancellation_reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=255,
+        help_text="Motivo opcional de la cancelación.",
+    )
     
 class AppointmentStatusUpdateSerializer(serializers.ModelSerializer):
     class Meta:
@@ -175,15 +251,46 @@ class StaffAvailabilitySerializer(serializers.ModelSerializer):
 
 
 class AvailabilityCheckSerializer(serializers.Serializer):
-    service_id = serializers.UUIDField()
+    service_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=False,
+    )
+    service_id = serializers.UUIDField(required=False)
     date = serializers.DateField()
+    staff_member_id = serializers.UUIDField(required=False)
 
-    # Se mueve la lógica a un método de servicio para mantener el serializador limpio
+    def validate(self, data):
+        service_ids = data.get('service_ids')
+        if service_ids and isinstance(service_ids, str):
+            service_ids = [value.strip() for value in service_ids.split(',') if value.strip()]
+        if not service_ids:
+            single = data.get('service_id')
+            if not single:
+                raise serializers.ValidationError({"service_ids": "Debes proporcionar al menos un servicio."})
+            service_ids = [single]
+        data['service_ids'] = service_ids
+        data.pop('service_id', None)
+        return data
+
     def get_available_slots(self):
-        service_id = self.validated_data['service_id']
-        selected_date = self.validated_data['date']
-        # La lógica pesada ahora vive en un servicio, el serializador solo lo llama
-        return calculate_available_slots(service_id, selected_date)
+        try:
+            slots = AvailabilityService.get_available_slots(
+                self.validated_data['date'],
+                self.validated_data['service_ids'],
+                staff_member_id=self.validated_data.get('staff_member_id'),
+            )
+        except ValueError as exc:
+            raise serializers.ValidationError({"service_ids": str(exc)})
+
+        return [
+            {
+                "start_time": slot['start_time'].isoformat(),
+                "staff_id": slot['staff_id'],
+                "staff_name": slot['staff_name'],
+            }
+            for slot in slots
+        ]
 
 
 class AppointmentRescheduleSerializer(serializers.Serializer):
@@ -198,49 +305,45 @@ class AppointmentRescheduleSerializer(serializers.Serializer):
         appointment = self.context['appointment']
         new_start_time = data['new_start_time']
 
+        if new_start_time.minute % AvailabilityService.SLOT_INTERVAL_MINUTES != 0 or new_start_time.second or new_start_time.microsecond:
+            raise serializers.ValidationError(
+                {"new_start_time": f"Las citas deben comenzar en intervalos de {AvailabilityService.SLOT_INTERVAL_MINUTES} minutos."}
+            )
+
         if appointment.status != Appointment.AppointmentStatus.CONFIRMED:
-            raise serializers.ValidationError("Solo las citas confirmadas (con anticipo pagado) pueden ser reagendadas.")
+            raise serializers.ValidationError("Solo las citas confirmadas pueden ser reagendadas.")
 
-        if appointment.reschedule_count >= 2:
-            raise serializers.ValidationError("Esta cita ya ha sido reagendada el número máximo de veces (2).")
+        service_ids = list(appointment.services.values_list('id', flat=True))
+        if not service_ids:
+            raise serializers.ValidationError("La cita no tiene servicios asociados para reagendar.")
 
-        if appointment.start_time - timezone.now() < timedelta(hours=24):
-            raise serializers.ValidationError("Las citas solo pueden ser reagendadas con más de 24 horas de antelación.")
+        staff_id = appointment.staff_member_id
+        normalized_start = new_start_time.replace(second=0, microsecond=0)
 
-        available_slots = calculate_available_slots(appointment.service.id, new_start_time.date())
-        requested_time_str = new_start_time.strftime('%H:%M')
+        try:
+            available_slots = AvailabilityService.get_available_slots(
+                normalized_start.date(),
+                service_ids,
+                staff_member_id=staff_id,
+            )
+        except ValueError as exc:
+            raise serializers.ValidationError({"new_start_time": str(exc)})
 
-        if requested_time_str not in available_slots:
+        slot_is_available = any(
+            slot['start_time'] == normalized_start and (not staff_id or slot['staff_id'] == staff_id)
+            for slot in available_slots
+        )
+
+        if not slot_is_available:
             raise serializers.ValidationError("El nuevo horario seleccionado ya no está disponible.")
 
-        if appointment.staff_member:
-            staff_is_available = any(
-                slot['staff_id'] == appointment.staff_member.id
-                for slot in available_slots[requested_time_str]
-            )
-            if not staff_is_available:
-                raise serializers.ValidationError("El miembro del personal ya no está disponible en el nuevo horario.")
-
+        data['new_start_time'] = normalized_start
         return data
-
-    def save(self, **kwargs):
-        appointment = self.context['appointment']
-        new_start_time = self.validated_data['new_start_time']
-
-        appointment.start_time = new_start_time
-        appointment.end_time = new_start_time + timedelta(minutes=appointment.service.duration)
-        appointment.reschedule_count += 1
-        appointment.save(
-            update_fields=['start_time', 'end_time', 'reschedule_count', 'updated_at'])
-
-        return appointment
     
 
 class VoucherSerializer(serializers.ModelSerializer):
     """Serializador para mostrar los Vouchers de un usuario."""
     service_name = serializers.CharField(source='service.name', read_only=True)
-    # Usamos la fecha de expiración del paquete comprado
-    expires_at = serializers.DateField(source='user_package.expires_at', read_only=True)
     is_redeemable = serializers.BooleanField(read_only=True)
 
     class Meta:
@@ -267,7 +370,8 @@ class PackagePurchaseCreateSerializer(serializers.Serializer):
     """
     package_id = serializers.PrimaryKeyRelatedField(
         queryset=Package.objects.filter(is_active=True),
-        write_only=True
+        source="package",
+        write_only=True,
     )
     user = serializers.HiddenField(default=serializers.CurrentUserDefault())
 
@@ -275,3 +379,63 @@ class PackagePurchaseCreateSerializer(serializers.Serializer):
         # La lógica de creación del pago y el UserPackage se manejará en la vista
         # Este serializador solo valida la entrada.
         return validated_data
+
+
+class FinancialAdjustmentSerializer(serializers.ModelSerializer):
+    user = SimpleUserSerializer(read_only=True)
+    created_by = SimpleUserSerializer(read_only=True)
+
+    class Meta:
+        model = FinancialAdjustment
+        fields = [
+            'id',
+            'user',
+            'amount',
+            'adjustment_type',
+            'reason',
+            'related_payment',
+            'created_by',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
+class FinancialAdjustmentCreateSerializer(serializers.Serializer):
+    user_id = serializers.UUIDField()
+    amount = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
+    adjustment_type = serializers.ChoiceField(choices=FinancialAdjustment.AdjustmentType.choices)
+    reason = serializers.CharField()
+    related_payment_id = serializers.UUIDField(required=False, allow_null=True)
+
+    def validate_user_id(self, value):
+        try:
+            return CustomUser.objects.get(id=value)
+        except CustomUser.DoesNotExist:
+            raise serializers.ValidationError("Usuario no encontrado.")
+
+    def validate_related_payment_id(self, value):
+        if not value:
+            return None
+        try:
+            return Payment.objects.get(id=value)
+        except Payment.DoesNotExist:
+            raise serializers.ValidationError("Pago relacionado no encontrado.")
+
+
+class WaitlistJoinSerializer(serializers.Serializer):
+    desired_date = serializers.DateField()
+    service_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+    )
+    notes = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_desired_date(self, value):
+        if value < timezone.now().date():
+            raise serializers.ValidationError("La fecha deseada debe ser futura.")
+        return value
+
+
+class WaitlistConfirmSerializer(serializers.Serializer):
+    accept = serializers.BooleanField(default=True)

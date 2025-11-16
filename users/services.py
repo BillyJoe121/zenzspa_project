@@ -1,7 +1,12 @@
 # Reemplaza todo el contenido de zenzspa_project/users/services.py
+import logging
+
+import requests
 from django.conf import settings
-from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
+from twilio.rest import Client
+
+logger = logging.getLogger(__name__)
 
 
 class TwilioService:
@@ -59,3 +64,31 @@ class TwilioService:
             else:
                 print(f"Error desde la API de Twilio al verificar código: {e}")
                 raise e
+
+
+def verify_recaptcha(token, remote_ip=None, threshold=0.5):
+    secret = getattr(settings, "RECAPTCHA_SECRET_KEY", None)
+    if not secret or not token:
+        logger.warning("No se puede verificar reCAPTCHA: faltan credenciales o token.")
+        return False
+
+    payload = {
+        'secret': secret,
+        'response': token,
+    }
+    if remote_ip:
+        payload['remoteip'] = remote_ip
+
+    try:
+        response = requests.post("https://www.google.com/recaptcha/api/siteverify", data=payload, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+    except requests.RequestException as exc:
+        logger.error("Error verificando reCAPTCHA: %s", exc)
+        return False
+
+    if not data.get('success'):
+        return False
+
+    score = data.get('score', 1)
+    return score >= threshold

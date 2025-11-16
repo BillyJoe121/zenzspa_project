@@ -1,24 +1,44 @@
 import hashlib
 import uuid
+from decimal import Decimal
 from rest_framework import viewsets, status, generics
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import action
 from django.conf import settings
 from django.db.models import ProtectedError
-from core.models import AuditLog
 from core.models import AuditLog, GlobalSettings
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.http import HttpResponse
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 from users.models import CustomUser
 from users.permissions import IsVerified, IsAdminUser, IsStaff
 from profiles.permissions import IsStaffOrAdmin
-from .services import calculate_available_slots, PackagePurchaseService, VipSubscriptionService, AppointmentService, WompiWebhookService
+from .services import (
+    PackagePurchaseService,
+    VipSubscriptionService,
+    AppointmentService,
+    PaymentService,
+    WaitlistService,
+    FinancialAdjustmentService,
+    WompiWebhookService,
+    CreditService,
+)
 from .permissions import IsAdminOrOwnerOfAvailability, IsAdminOrReadOnly
+from core.decorators import idempotent_view
 from .models import (
-    ServiceCategory, Service, Package, Appointment, StaffAvailability, Payment,
-    UserPackage, Voucher # Nuevos modelos
+    ServiceCategory,
+    Service,
+    Package,
+    Appointment,
+    StaffAvailability,
+    Payment,
+    UserPackage,
+    Voucher,
+    WaitlistEntry,
+    WebhookEvent,
 )
 from .serializers import (
     ServiceCategorySerializer, ServiceSerializer, PackageSerializer,
@@ -26,10 +46,16 @@ from .serializers import (
     AppointmentStatusUpdateSerializer, StaffAvailabilitySerializer,
     AvailabilityCheckSerializer, AppointmentListSerializer,
     AppointmentRescheduleSerializer,
+    TipCreateSerializer,
+    AppointmentCancelSerializer,
     # Nuevos serializadores
     UserPackageDetailSerializer,
     VoucherSerializer,
-    PackagePurchaseCreateSerializer
+    PackagePurchaseCreateSerializer,
+    FinancialAdjustmentCreateSerializer,
+    FinancialAdjustmentSerializer,
+    WaitlistJoinSerializer,
+    WaitlistConfirmSerializer,
 )
 
 
@@ -98,16 +124,16 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         return AppointmentListSerializer
 
     def get_queryset(self):
-        # ... (Sin cambios)
         queryset = Appointment.objects.select_related(
-            'user', 'service', 'staff_member'
-        )
+            'user', 'staff_member'
+        ).prefetch_related('items__service')
         user = self.request.user
         if user.is_staff or user.is_superuser:
             return queryset.all()
         return queryset.filter(user=user)
 
     # Se sobrescribe el método 'create' para usar el servicio.
+    @idempotent_view(timeout=60)
     def create(self, request, *args, **kwargs):
         # 1. Usar el serializador para validar el formato de los datos de entrada
         serializer = self.get_serializer(data=request.data)
@@ -118,7 +144,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         try:
             service = AppointmentService(
                 user=request.user,
-                service=validated_data['service'],
+                services=validated_data['services'],
                 staff_member=validated_data.get('staff_member'),
                 start_time=validated_data['start_time']
             )
@@ -130,17 +156,28 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         # 3. Serializar la respuesta y enviarla
         response_serializer = AppointmentListSerializer(appointment, context={'request': request})
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-    
-    # El método perform_create ya no es necesario para la acción 'create'
-    # Se mantiene por si DRF lo usa en otras acciones, pero podría eliminarse si no.
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
 
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, IsVerified], url_path='suggestions')
+    def suggestions(self, request):
+        """
+        Devuelve los slots disponibles para una combinación de servicios.
+        """
+        params = request.query_params.copy()
+        if 'service_ids' in params:
+            params.setlist('service_ids', request.query_params.getlist('service_ids'))
+        serializer = AvailabilityCheckSerializer(data=params)
+        serializer.is_valid(raise_exception=True)
+        slots = serializer.get_available_slots()
+        body = {"slots": slots}
+        if not slots:
+            body["message"] = "No hay terapeutas disponibles para la duración solicitada en este horario."
+        return Response(body, status=status.HTTP_200_OK)
+    
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsVerified])
     @transaction.atomic
     def reschedule(self, request, pk=None):
         appointment = self.get_object()
-        if appointment.user != request.user and not request.user.is_staff:
+        if appointment.user != request.user and request.user.role not in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
             return Response(
                 {'detail': 'You do not have permission to perform this action.'},
                 status=status.HTTP_403_FORBIDDEN
@@ -151,14 +188,60 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             context={'request': request, 'appointment': appointment}
         )
         serializer.is_valid(raise_exception=True)
-        updated_appointment = serializer.save()
+        new_start_time = serializer.validated_data['new_start_time']
+        try:
+            updated_appointment = AppointmentService.reschedule_appointment(
+                appointment=appointment,
+                new_start_time=new_start_time,
+                acting_user=request.user,
+            )
+        except ValidationError as exc:
+            message = exc.message or (exc.messages[0] if getattr(exc, 'messages', None) else str(exc))
+            return Response({'error': message}, status=422)
+
         list_serializer = AppointmentListSerializer(updated_appointment, context={'request': request})
         return Response(list_serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsVerified], url_path='tip')
+    @transaction.atomic
+    def add_tip(self, request, pk=None):
+        appointment = self.get_object()
+        if appointment.user != request.user and request.user.role not in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
+            return Response(
+                {'detail': 'You do not have permission to perform this action.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = TipCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        amount = serializer.validated_data['amount']
+
+        try:
+            payment = PaymentService.create_tip_payment(
+                appointment=appointment,
+                user=request.user,
+                amount=amount,
+            )
+        except ValidationError as exc:
+            message = exc.message or (exc.messages[0] if getattr(exc, 'messages', None) else str(exc))
+            return Response({'error': message}, status=422)
+
+        return Response(
+            {
+                'tip_payment_id': str(payment.id),
+                'amount': str(payment.amount),
+                'status': payment.status,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
     @transaction.atomic
     def cancel_by_admin(self, request, pk=None):
         appointment = self.get_object()
+        serializer = AppointmentCancelSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data.get('cancellation_reason', '')
         mark_as_refunded = request.data.get('mark_as_refunded', False)
 
         if appointment.status != Appointment.AppointmentStatus.CONFIRMED:
@@ -173,23 +256,135 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             action=AuditLog.Action.APPOINTMENT_CANCELLED_BY_ADMIN,
             target_user=appointment.user,
             target_appointment=appointment,
-            details=f"Admin '{request.user.first_name}' cancelled appointment ID {appointment.id}."
+            details=f"Admin '{request.user.first_name}' cancelled appointment ID {appointment.id}. Motivo: {reason or 'N/A'}."
         )
         if mark_as_refunded:
             appointment.status = Appointment.AppointmentStatus.REFUNDED
             appointment.save(update_fields=['status'])
-            
-            # (Opcional pero recomendado) Crear un nuevo tipo de acción en AuditLog para reembolsos.
-            # Por ahora, usamos la misma acción con detalles adicionales.
+            from .services import CreditService
+            CreditService.create_credit_from_appointment(
+                appointment=appointment,
+                percentage=Decimal('1'),
+                created_by=request.user,
+                reason=f"Reembolso admin cita {appointment.id}",
+            )
             AuditLog.objects.create(
                 admin_user=request.user,
-                action=AuditLog.Action.APPOINTMENT_CANCELLED_BY_ADMIN, # Considerar crear 'APPOINTMENT_REFUNDED'
+                action=AuditLog.Action.APPOINTMENT_CANCELLED_BY_ADMIN,
                 target_user=appointment.user,
                 target_appointment=appointment,
                 details=f"Admin '{request.user.first_name}' marked appointment ID {appointment.id} as REFUNDED."
             )
+        WaitlistService.offer_slot_for_appointment(appointment)
         list_serializer = AppointmentListSerializer(appointment, context={'request': request})
         return Response(list_serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated, IsVerified], url_path='waitlist/join')
+    def waitlist_join(self, request):
+        serializer = WaitlistJoinSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        service_ids = serializer.validated_data.get('service_ids') or []
+        services = Service.objects.filter(id__in=service_ids, is_active=True)
+        if service_ids and services.count() != len(set(service_ids)):
+            return Response({'error': 'Alguno de los servicios no existe o está inactivo.'}, status=422)
+
+        entry = WaitlistEntry.objects.create(
+            user=request.user,
+            desired_date=serializer.validated_data['desired_date'],
+            notes=serializer.validated_data.get('notes', ''),
+        )
+        if services:
+            entry.services.set(services)
+        response = {
+            'id': str(entry.id),
+            'status': entry.status,
+            'desired_date': entry.desired_date,
+        }
+        return Response(response, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=False,
+        methods=['post'],
+        permission_classes=[IsAuthenticated, IsVerified],
+        url_path=r'waitlist/(?P<waitlist_id>[0-9a-fA-F-]+)/confirm',
+    )
+    def waitlist_confirm(self, request, waitlist_id=None):
+        with transaction.atomic():
+            entry = get_object_or_404(
+                WaitlistEntry.objects.select_for_update(),
+                id=waitlist_id,
+                user=request.user,
+            )
+            serializer = WaitlistConfirmSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            accept = serializer.validated_data['accept']
+
+            if entry.status != WaitlistEntry.Status.OFFERED:
+                return Response({'error': 'La lista de espera no tiene una oferta activa.'}, status=400)
+
+            now = timezone.now()
+            if entry.offer_expires_at and now > entry.offer_expires_at:
+                entry.status = WaitlistEntry.Status.EXPIRED
+                entry.save(update_fields=['status', 'updated_at'])
+                WaitlistService.offer_slot_for_appointment(entry.offered_appointment)
+                return Response({'error': 'La oferta ya no está disponible.'}, status=409)
+
+            if not accept:
+                entry.reset_offer()
+                WaitlistService.offer_slot_for_appointment(entry.offered_appointment)
+                return Response({'detail': 'Has rechazado el turno. Avisaremos al siguiente cliente.'}, status=status.HTTP_200_OK)
+
+            entry.status = WaitlistEntry.Status.CONFIRMED
+            entry.save(update_fields=['status', 'updated_at'])
+        return Response({'detail': 'Has confirmado el turno disponible.'}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsVerified])
+    @transaction.atomic
+    def cancel(self, request, pk=None):
+        appointment = self.get_object()
+        user = request.user
+        if appointment.user != user and user.role not in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
+            return Response(
+                {'detail': 'You do not have permission to perform this action.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if appointment.status == Appointment.AppointmentStatus.CONFIRMED and user.role not in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
+            return Response(
+                {'error': 'Esta cita ya fue pagada. Por favor usa la opción de reagendar.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        serializer = AppointmentCancelSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data.get('cancellation_reason', '')
+        previous_status = appointment.status
+        appointment.status = (
+            Appointment.AppointmentStatus.CANCELLED_BY_ADMIN
+            if user.role in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]
+            else Appointment.AppointmentStatus.CANCELLED_BY_CLIENT
+        )
+        appointment.save(update_fields=['status'])
+        AuditLog.objects.create(
+            admin_user=user if user.role in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF] else None,
+            target_user=appointment.user,
+            target_appointment=appointment,
+            action=AuditLog.Action.APPOINTMENT_CANCELLED_BY_ADMIN,
+            details=f"Cita {appointment.id} cancelada por {'staff/admin' if user.role in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF] else 'cliente'}. Motivo: {reason or 'N/A'}",
+        )
+        WaitlistService.offer_slot_for_appointment(appointment)
+        list_serializer = AppointmentListSerializer(appointment, context={'request': request})
+        response_payload = list_serializer.data
+        if appointment.status == Appointment.AppointmentStatus.CANCELLED_BY_CLIENT and previous_status == Appointment.AppointmentStatus.CONFIRMED:
+            if appointment.start_time - timezone.now() >= timedelta(hours=24):
+                credit_generated = CreditService.create_credit_from_appointment(
+                    appointment=appointment,
+                    percentage=Decimal('1'),
+                    created_by=user,
+                    reason=f"Cancelación con anticipación cita {appointment.id}",
+                )
+                if credit_generated > 0:
+                    response_payload['credit_generated'] = str(credit_generated)
+        return Response(response_payload, status=status.HTTP_200_OK)
     
     @action(detail=True, methods=['post'], permission_classes=[IsStaffOrAdmin])
     def mark_as_no_show(self, request, pk=None):
@@ -215,7 +410,16 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appointment.status = Appointment.AppointmentStatus.NO_SHOW
         appointment.save(update_fields=['status'])
 
-        # (Opcional pero recomendado) Crear un log de auditoría para esta acción.
+        settings_obj = GlobalSettings.load()
+        if settings_obj.no_show_credit_policy != GlobalSettings.NoShowCreditPolicy.NONE:
+            percentage = Decimal('1') if settings_obj.no_show_credit_policy == GlobalSettings.NoShowCreditPolicy.FULL else Decimal('0.5')
+            CreditService.create_credit_from_appointment(
+                appointment=appointment,
+                percentage=percentage,
+                created_by=request.user,
+                reason=f"Crédito generado por No-Show cita {appointment.id}",
+            )
+
         AuditLog.objects.create(
             admin_user=request.user,
             action=AuditLog.Action.APPOINTMENT_CANCELLED_BY_ADMIN, # Considerar crear 'APPOINTMENT_NO_SHOW'
@@ -226,6 +430,26 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         list_serializer = AppointmentListSerializer(appointment, context={'request': request})
         return Response(list_serializer.data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated, IsVerified], url_path='ical')
+    def download_ical(self, request, pk=None):
+        appointment = self.get_object()
+        if appointment.user != request.user and request.user.role not in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
+            return Response(
+                {'detail': 'You do not have permission to perform this action.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        if appointment.status != Appointment.AppointmentStatus.CONFIRMED:
+            return Response(
+                {'error': 'Solo se pueden exportar citas confirmadas.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        ics_payload = AppointmentService.build_ical_event(appointment)
+        response = HttpResponse(ics_payload, content_type='text/calendar')
+        response['Content-Disposition'] = f'attachment; filename=appointment-{appointment.id}.ics'
+        return response
 
 class UserPackageViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -350,7 +574,7 @@ class WompiWebhookView(generics.GenericAPIView):
         Punto de entrada para los webhooks de Wompi.
         Delega toda la lógica de validación y procesamiento al WompiWebhookService.
         """
-        webhook_service = WompiWebhookService(request.data)
+        webhook_service = WompiWebhookService(request.data, headers=request.headers)
         event_type = webhook_service.event_type
         
         try:
@@ -360,6 +584,7 @@ class WompiWebhookView(generics.GenericAPIView):
             else:
                 # Respondemos con 200 OK incluso para eventos no manejados,
                 # para que Wompi no siga reintentando.
+                webhook_service._update_event_status(WebhookEvent.Status.IGNORED, "Evento no manejado.")
                 return Response({"status": "event_type_not_handled"}, status=status.HTTP_200_OK)
 
         except ValueError as e:
@@ -376,16 +601,15 @@ class AvailabilityCheckView(generics.GenericAPIView):
     def get(self, request, *args, **kwargs):
         """
         Maneja peticiones GET para consultar la disponibilidad.
-        Los parámetros se pasan como query params: ?service_id=<uuid>&date=YYYY-MM-DD
+        Soporta múltiples servicios vía query params: ?service_ids=<uuid>&date=YYYY-MM-DD
         """
-        serializer = self.get_serializer(data=request.query_params)
+        params = request.query_params.copy()
+        if 'service_ids' in params:
+            params.setlist('service_ids', request.query_params.getlist('service_ids'))
+        serializer = self.get_serializer(data=params)
         serializer.is_valid(raise_exception=True)
-        
-        service_id = serializer.validated_data['service_id']
-        selected_date = serializer.validated_data['date']
 
-        available_slots = calculate_available_slots(service_id, selected_date)
-        
+        available_slots = serializer.get_available_slots()
         return Response(available_slots, status=status.HTTP_200_OK)
     
 class InitiateVipSubscriptionView(generics.GenericAPIView):
@@ -397,8 +621,8 @@ class InitiateVipSubscriptionView(generics.GenericAPIView):
     @transaction.atomic
     def post(self, request, *args, **kwargs):
         user = request.user
-        settings = GlobalSettings.load()
-        vip_price = settings.vip_monthly_price
+        global_settings = GlobalSettings.load()
+        vip_price = global_settings.vip_monthly_price
 
         if vip_price is None or vip_price <= 0:
             return Response(
@@ -432,3 +656,39 @@ class InitiateVipSubscriptionView(generics.GenericAPIView):
             'redirectUrl': settings.WOMPI_REDIRECT_URL
         }
         return Response(payment_data, status=status.HTTP_200_OK)    
+
+
+class CancelVipSubscriptionView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated, IsVerified]
+
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        user.vip_auto_renew = False
+        user.save(update_fields=['vip_auto_renew', 'updated_at'])
+        return Response({"detail": "La renovación automática ha sido desactivada."}, status=status.HTTP_200_OK)
+
+
+class FinancialAdjustmentView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    serializer_class = FinancialAdjustmentCreateSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.validated_data['user_id']
+        amount = serializer.validated_data['amount']
+        adjustment_type = serializer.validated_data['adjustment_type']
+        reason = serializer.validated_data['reason']
+        related_payment = serializer.validated_data.get('related_payment_id')
+
+        adjustment = FinancialAdjustmentService.create_adjustment(
+            user=user,
+            amount=amount,
+            adjustment_type=adjustment_type,
+            reason=reason,
+            created_by=request.user,
+            related_payment=related_payment,
+        )
+        output = FinancialAdjustmentSerializer(adjustment, context={'request': request})
+        return Response(output.data, status=status.HTTP_201_CREATED)

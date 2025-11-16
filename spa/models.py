@@ -1,10 +1,16 @@
 # spa/models.py
 
-from django.db import models
+from datetime import timedelta
+
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.db import models
+from django.db.models import Q
+from django.utils import timezone  # Importar timezone para la fecha de expiración
+from simple_history.models import HistoricalRecords
+
 from core.models import BaseModel
 import uuid
-from django.utils import timezone # Importar timezone para la fecha de expiración
 
 class ServiceCategory(BaseModel):
     """
@@ -16,6 +22,7 @@ class ServiceCategory(BaseModel):
         default=False,
         help_text="Enable optimized booking for services not requiring constant supervision."
     )
+    history = HistoricalRecords(inherit=True)
 
     class Meta:
         verbose_name = "Service Category"
@@ -50,6 +57,7 @@ class Service(BaseModel):
         default=True,
         help_text="Whether the service is available for booking."
     )
+    history = HistoricalRecords(inherit=True)
 
     class Meta:
         verbose_name = "Service"
@@ -58,6 +66,15 @@ class Service(BaseModel):
 
     def __str__(self):
         return f"{self.name} ({self.duration} min)"
+
+    def clean(self):
+        super().clean()
+        errors = {}
+        if self.vip_price is not None and self.price is not None:
+            if self.vip_price >= self.price:
+                errors['vip_price'] = "El precio VIP debe ser menor que el precio regular."
+        if errors:
+            raise ValidationError(errors)
 
 
 class StaffAvailability(BaseModel):
@@ -93,11 +110,79 @@ class StaffAvailability(BaseModel):
     def __str__(self):
         return f"{self.staff_member.first_name} - {self.get_day_of_week_display()}: {self.start_time} - {self.end_time}"
 
+    def clean(self):
+        super().clean()
+        if self.start_time >= self.end_time:
+            raise ValidationError({"start_time": "La hora de inicio debe ser menor a la hora de fin."})
+        if not self.staff_member_id or self.day_of_week is None:
+            return
+        overlap_exists = (
+            StaffAvailability.objects.filter(
+                staff_member=self.staff_member,
+                day_of_week=self.day_of_week,
+            )
+            .exclude(id=self.id)
+            .filter(
+                Q(start_time__lt=self.end_time) &
+                Q(end_time__gt=self.start_time)
+            )
+            .exists()
+        )
+        if overlap_exists:
+            raise ValidationError({
+                "start_time": "El horario se solapa con otro bloque existente.",
+                "end_time": "El horario se solapa con otro bloque existente.",
+            })
+
+
+class AvailabilityExclusion(BaseModel):
+    """
+    Representa bloqueos temporales o recurrentes (almuerzos/ausencias) en la agenda.
+    """
+    staff_member = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        limit_choices_to={'role__in': ['STAFF', 'ADMIN']},
+        related_name='availability_exclusions',
+    )
+    date = models.DateField(null=True, blank=True, help_text="Fecha específica del bloqueo.")
+    day_of_week = models.IntegerField(
+        choices=StaffAvailability.DayOfWeek.choices,
+        null=True,
+        blank=True,
+        help_text="Día de la semana para bloqueos recurrentes.",
+    )
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    reason = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "Availability Exclusion"
+        verbose_name_plural = "Availability Exclusions"
+        ordering = ['staff_member', 'date', 'day_of_week', 'start_time']
+
+    def __str__(self):
+        target = self.date or self.get_day_of_week_display()
+        return f"{self.staff_member} - {target}: {self.start_time}-{self.end_time}"
+
+    def clean(self):
+        super().clean()
+        if self.start_time >= self.end_time:
+            raise ValidationError({"start_time": "La hora de inicio debe ser menor a la hora de fin."})
+        if not self.date and self.day_of_week is None:
+            raise ValidationError("Debe especificar una fecha o un día de la semana para la exclusión.")
+
+    def get_day_of_week_display(self):
+        if self.day_of_week is None:
+            return None
+        return StaffAvailability.DayOfWeek(self.day_of_week).label
+
 
 class Appointment(BaseModel):
     """
-    Represents a booking of a service by a user with a staff member.
+    Represents a booking of one or multiple services by a user with a staff member.
     """
+
     class AppointmentStatus(models.TextChoices):
         PENDING_ADVANCE = 'PENDING_ADVANCE', 'Pendiente de Pago de Anticipo'
         CONFIRMED = 'CONFIRMED', 'Confirmada (Anticipo Pagado)'
@@ -109,7 +194,7 @@ class Appointment(BaseModel):
         REDEEMED_WITH_VOUCHER = 'REDEEMED_WITH_VOUCHER', 'Redimida con Voucher'
         NO_SHOW = 'NO_SHOW', 'No Asistió'
         REFUNDED = 'REFUNDED', 'Reembolsada'
-        
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -123,19 +208,23 @@ class Appointment(BaseModel):
         null=True,
         blank=True
     )
-    service = models.ForeignKey(
-        Service, on_delete=models.PROTECT, related_name='appointments')
     start_time = models.DateTimeField()
     end_time = models.DateTimeField()
-    
+    services = models.ManyToManyField(
+        Service,
+        through='AppointmentItem',
+        related_name='appointments'
+    )
     status = models.CharField(
         max_length=40,
         choices=AppointmentStatus.choices,
         default=AppointmentStatus.PENDING_ADVANCE
     )
-    
-    price_at_purchase = models.DecimalField(max_digits=10, decimal_places=2, help_text="Final price for the service. Can be 0 if paid with a voucher.")
-    
+    price_at_purchase = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        help_text="Final price for all the services booked in this appointment."
+    )
     reschedule_count = models.PositiveIntegerField(
         default=0,
         help_text="How many times this appointment has been rescheduled by the client."
@@ -147,7 +236,99 @@ class Appointment(BaseModel):
         ordering = ['-start_time']
 
     def __str__(self):
-        return f"Appointment for {self.user} with {self.staff_member or 'N/A'} at {self.start_time.strftime('%Y-%m-%d %H:%M')}"
+        services = ", ".join(item.service.name for item in self.items.all())
+        return f"Appointment for {self.user} ({services or 'No services'}) at {self.start_time.strftime('%Y-%m-%d %H:%M')}"
+
+    @property
+    def service_duration_minutes(self):
+        return sum(item.duration for item in self.items.all())
+
+    @property
+    def total_duration_minutes(self):
+        return self.service_duration_minutes
+
+    def get_service_names(self):
+        return ", ".join(item.service.name for item in self.items.select_related('service'))
+
+
+class AppointmentItem(BaseModel):
+    appointment = models.ForeignKey(
+        Appointment,
+        on_delete=models.CASCADE,
+        related_name='items'
+    )
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.PROTECT,
+        related_name='appointment_items'
+    )
+    duration = models.PositiveIntegerField(help_text="Duration in minutes captured at booking time.")
+    price_at_purchase = models.DecimalField(max_digits=10, decimal_places=2)
+
+    class Meta:
+        verbose_name = "Appointment Item"
+        verbose_name_plural = "Appointment Items"
+
+    def __str__(self):
+        return f"{self.service.name} ({self.duration} min)"
+
+
+class WaitlistEntry(BaseModel):
+    class Status(models.TextChoices):
+        WAITING = 'WAITING', 'En espera'
+        OFFERED = 'OFFERED', 'Oferta enviada'
+        EXPIRED = 'EXPIRED', 'Oferta expirada'
+        CONFIRMED = 'CONFIRMED', 'Confirmada'
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='waitlist_entries'
+    )
+    services = models.ManyToManyField(
+        Service,
+        related_name='waitlist_entries',
+        blank=True,
+    )
+    desired_date = models.DateField()
+    notes = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.WAITING,
+    )
+    offered_at = models.DateTimeField(null=True, blank=True)
+    offer_expires_at = models.DateTimeField(null=True, blank=True)
+    offered_appointment = models.ForeignKey(
+        'Appointment',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='waitlist_offers',
+    )
+
+    class Meta:
+        verbose_name = "Entrada de Lista de Espera"
+        verbose_name_plural = "Lista de Espera"
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"Waitlist {self.user} para {self.desired_date}"
+
+    def mark_offered(self, appointment, ttl_minutes):
+        now = timezone.now()
+        self.status = self.Status.OFFERED
+        self.offered_at = now
+        self.offer_expires_at = now + timedelta(minutes=ttl_minutes)
+        self.offered_appointment = appointment
+        self.save(update_fields=['status', 'offered_at', 'offer_expires_at', 'offered_appointment', 'updated_at'])
+
+    def reset_offer(self):
+        self.status = self.Status.WAITING
+        self.offered_at = None
+        self.offer_expires_at = None
+        self.offered_appointment = None
+        self.save(update_fields=['status', 'offered_at', 'offer_expires_at', 'offered_appointment', 'updated_at'])
 
 
 class Package(BaseModel):
@@ -193,6 +374,7 @@ class Payment(BaseModel):
         APPROVED = 'APPROVED', 'Aprobado'
         DECLINED = 'DECLINED', 'Declinado'
         ERROR = 'ERROR', 'Error'
+        TIMEOUT = 'TIMEOUT', 'Sin confirmación'
         # --- INICIO DE LA MODIFICACIÓN ---
         # Nuevo estado para pagos cubiertos por crédito
         PAID_WITH_CREDIT = 'PAID_WITH_CREDIT', 'Pagado con Saldo a Favor'
@@ -203,6 +385,7 @@ class Payment(BaseModel):
         FINAL = 'FINAL', 'Pago Final de Cita'
         PACKAGE = 'PACKAGE', 'Compra de Paquete'
         VIP_SUBSCRIPTION = 'VIP_SUBSCRIPTION', 'Suscripción VIP'
+        TIP = 'TIP', 'Propina'
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True
@@ -277,6 +460,7 @@ class Voucher(BaseModel):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='vouchers')
     service = models.ForeignKey(Service, on_delete=models.PROTECT, related_name='vouchers')
     status = models.CharField(max_length=10, choices=VoucherStatus.choices, default=VoucherStatus.AVAILABLE)
+    expires_at = models.DateField(null=True, blank=True)
     
     # El appointment donde se canjeó este voucher
     redeemed_appointment = models.OneToOneField(
@@ -294,10 +478,66 @@ class Voucher(BaseModel):
     @property
     def is_redeemable(self):
         """Checks if the voucher can be used."""
-        return (
-            self.status == self.VoucherStatus.AVAILABLE and
-            self.user_package.expires_at >= timezone.now().date()
-        )
+        valid_until = self.expires_at
+        if not valid_until and self.user_package:
+            valid_until = self.user_package.expires_at
+        return self.status == self.VoucherStatus.AVAILABLE and (not valid_until or valid_until >= timezone.now().date())
+
+    def save(self, *args, **kwargs):
+        from core.models import AuditLog
+        previous_status = None
+        if self.pk:
+            previous_status = Voucher.objects.filter(pk=self.pk).values_list('status', flat=True).first()
+        if not self.expires_at and self.user_package:
+            self.expires_at = self.user_package.expires_at
+        super().save(*args, **kwargs)
+        if previous_status and previous_status != self.status and self.status == self.VoucherStatus.REDEEMED:
+            AuditLog.objects.create(
+                admin_user=None,
+                target_user=self.user,
+                target_appointment=self.redeemed_appointment,
+                action=AuditLog.Action.VOUCHER_REDEEMED,
+                details=f"Voucher {self.code} redimido por {self.user_id}",
+            )
+
+
+class WebhookEvent(BaseModel):
+    class Status(models.TextChoices):
+        PROCESSED = 'PROCESSED', 'Procesado'
+        FAILED = 'FAILED', 'Fallido'
+        IGNORED = 'IGNORED', 'Ignorado'
+
+    payload = models.JSONField()
+    headers = models.JSONField(default=dict, blank=True)
+    event_type = models.CharField(max_length=100, blank=True)
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PROCESSED)
+    error_message = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "Evento de Webhook"
+        verbose_name_plural = "Eventos de Webhook"
+        ordering = ['-created_at']
+
+
+class LoyaltyRewardLog(BaseModel):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='loyalty_rewards',
+    )
+    voucher = models.ForeignKey(
+        Voucher,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='loyalty_reward',
+    )
+    rewarded_at = models.DateField(default=timezone.now)
+
+    class Meta:
+        verbose_name = "Recompensa de Lealtad"
+        verbose_name_plural = "Recompensas de Lealtad"
+        ordering = ['-rewarded_at']
 
 class SubscriptionLog(BaseModel):
     """
@@ -341,7 +581,9 @@ class ClientCredit(BaseModel):
     originating_payment = models.OneToOneField(
         Payment,
         on_delete=models.PROTECT,
-        related_name='generated_credit'
+        related_name='generated_credit',
+        null=True,
+        blank=True,
     )
     initial_amount = models.DecimalField(max_digits=10, decimal_places=2)
     remaining_amount = models.DecimalField(max_digits=10, decimal_places=2)
@@ -371,3 +613,38 @@ class ClientCredit(BaseModel):
             self.status = self.CreditStatus.AVAILABLE
             
         super().save(*args, **kwargs)
+
+
+class FinancialAdjustment(BaseModel):
+    class AdjustmentType(models.TextChoices):
+        CREDIT = 'CREDIT', 'Nota Crédito'
+        DEBIT = 'DEBIT', 'Nota Débito'
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='financial_adjustments',
+    )
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    adjustment_type = models.CharField(max_length=6, choices=AdjustmentType.choices)
+    reason = models.TextField()
+    related_payment = models.ForeignKey(
+        Payment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='financial_adjustments',
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name='financial_adjustments_created',
+    )
+
+    class Meta:
+        verbose_name = "Ajuste Financiero"
+        verbose_name_plural = "Ajustes Financieros"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.adjustment_type} {self.amount} para {self.user}"

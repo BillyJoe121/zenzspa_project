@@ -1,5 +1,14 @@
 from rest_framework import serializers
-from .models import ClinicalProfile, LocalizedPain, DoshaQuestion, DoshaOption, ClientDoshaAnswer
+from .models import (
+    ClinicalProfile,
+    LocalizedPain,
+    DoshaQuestion,
+    DoshaOption,
+    ClientDoshaAnswer,
+    ConsentDocument,
+    ConsentTemplate,
+    KioskSession,
+)
 from users.serializers import SimpleUserSerializer
 from users.models import CustomUser
 
@@ -11,16 +20,45 @@ class LocalizedPainSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
 
+class ConsentDocumentSerializer(serializers.ModelSerializer):
+    template = serializers.PrimaryKeyRelatedField(read_only=True)
+    template_version = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = ConsentDocument
+        fields = [
+            'id',
+            'template',
+            'template_version',
+            'document_text',
+            'is_signed',
+            'signed_at',
+            'ip_address',
+            'signature_hash',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
+class ConsentTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConsentTemplate
+        fields = ['id', 'version', 'title', 'body', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
 class ClinicalProfileSerializer(serializers.ModelSerializer):
     user = SimpleUserSerializer(read_only=True)
     pains = LocalizedPainSerializer(many=True, required=False)
+    consents = ConsentDocumentSerializer(many=True, read_only=True)
 
     class Meta:
         model = ClinicalProfile
         fields = [
             'user', 'dosha', 'element', 'diet_type',
             'sleep_quality', 'activity_level', 'accidents_notes',
-            'general_notes', 'pains'
+            'general_notes', 'medical_conditions', 'allergies',
+            'contraindications', 'pains', 'consents'
         ]
 
     def update(self, instance, validated_data):
@@ -120,4 +158,60 @@ class KioskStartSessionSerializer(serializers.Serializer):
         if not CustomUser.objects.filter(phone_number=value, role__in=[CustomUser.Role.CLIENT, CustomUser.Role.VIP]).exists():
             raise serializers.ValidationError("No se encontró un cliente con el número de teléfono proporcionado.")
         return value
+    
+
+class KioskSessionStatusSerializer(serializers.ModelSerializer):
+    expired = serializers.SerializerMethodField()
+
+    class Meta:
+        model = KioskSession
+        fields = [
+            'id',
+            'expires_at',
+            'status',
+            'is_active',
+            'locked',
+            'last_activity',
+            'expired',
+        ]
+        read_only_fields = fields
+
+    def get_expired(self, obj):
+        return obj.has_expired
+
+class ClinicalProfileHistorySerializer(serializers.ModelSerializer):
+    changed_by = serializers.SerializerMethodField()
+    delta = serializers.SerializerMethodField()
+    profile_id = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ClinicalProfile.history.model
+        fields = [
+            'id',
+            'profile_id',
+            'history_id',
+            'history_date',
+            'history_type',
+            'changed_by',
+            'delta',
+        ]
+        read_only_fields = fields
+
+    def get_changed_by(self, obj):
+        if obj.history_user:
+            return obj.history_user.get_full_name() or obj.history_user.email or str(obj.history_user_id)
+        return None
+
+    def get_profile_id(self, obj):
+        return getattr(obj, 'id', None)
+
+    def get_delta(self, obj):
+        prev = obj.prev_record
+        if not prev:
+            return []
+        diff = obj.diff_against(prev)
+        return [
+            {'field': change.field, 'old': change.old, 'new': change.new}
+            for change in diff.changes
+        ]
     

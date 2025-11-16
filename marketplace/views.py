@@ -1,21 +1,26 @@
 # marketplace/views.py
 
-from rest_framework import viewsets, permissions, status, mixins
+from rest_framework import permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from .models import Product, Cart, CartItem
-from .models import Order
-from .serializers import OrderSerializer
-from .services import OrderCreationService
+
+from spa.models import Appointment
+from users.models import CustomUser
+from core.decorators import idempotent_view
+
+from .models import Product, Cart, CartItem, Order
 from .serializers import (
     ProductListSerializer,
     ProductDetailSerializer,
+    ProductVariantSerializer,
     CartSerializer,
     CartItemCreateUpdateSerializer,
-    OrderSerializer,          # <--- Importado
-    CheckoutSerializer
+    OrderSerializer,
+    CheckoutSerializer,
+    ReturnRequestSerializer,
+    ReturnDecisionSerializer,
 )
-from .services import OrderCreationService
+from .services import OrderCreationService, ReturnService
 
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     """
@@ -23,7 +28,10 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     Permite listar todos los productos activos y ver el detalle de uno solo.
     """
     permission_classes = [permissions.AllowAny]
-    queryset = Product.objects.filter(is_active=True).prefetch_related('images')
+    queryset = (
+        Product.objects.filter(is_active=True)
+        .prefetch_related('images', 'variants')
+    )
 
     def get_serializer_class(self):
         """
@@ -33,6 +41,16 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
         if self.action == 'retrieve':
             return ProductDetailSerializer
         return ProductListSerializer
+
+    @action(detail=True, methods=['get'])
+    def variants(self, request, pk=None):
+        """
+        Lista las variantes del producto solicitado.
+        GET /api/v1/products/{id}/variants/
+        """
+        product = self.get_object()
+        serializer = ProductVariantSerializer(product.variants.all(), many=True)
+        return Response(serializer.data)
 
 class CartViewSet(viewsets.GenericViewSet):
     """
@@ -65,21 +83,21 @@ class CartViewSet(viewsets.GenericViewSet):
     @action(detail=False, methods=['post'], url_path='add-item')
     def add_item(self, request):
         """
-        Añade un producto al carrito o actualiza su cantidad si ya existe.
+        Añade una variante al carrito o actualiza su cantidad si ya existe.
         POST /api/v1/marketplace/cart/add-item/
-        Body: { "product_id": "uuid", "quantity": 1 }
+        Body: { "variant_id": "uuid", "quantity": 1 } o { "sku": "ABC123", "quantity": 1 }
         """
         cart = self.get_cart()
         serializer = CartItemCreateUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        product = serializer.validated_data['product']
+        variant = serializer.validated_data['variant']
         quantity = serializer.validated_data['quantity']
 
         # Buscamos si el ítem ya existe en el carrito para actualizarlo
         cart_item, created = CartItem.objects.get_or_create(
             cart=cart,
-            product=product,
+            variant=variant,
             defaults={'quantity': quantity}
         )
 
@@ -87,9 +105,9 @@ class CartViewSet(viewsets.GenericViewSet):
             # Si ya existía, actualizamos la cantidad
             cart_item.quantity += quantity
             # Validar stock total
-            if cart_item.quantity > product.stock:
+            if cart_item.quantity > variant.stock:
                  return Response(
-                    {"error": f"No hay suficiente stock para '{product.name}'. Disponible: {product.stock}."},
+                    {"error": f"No hay suficiente stock para '{variant}'. Disponible: {variant.stock}."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
             cart_item.save()
@@ -132,6 +150,7 @@ class CartViewSet(viewsets.GenericViewSet):
             return Response({"error": "Ítem de carrito no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         
     @action(detail=False, methods=['post'], url_path='checkout')
+    @idempotent_view(timeout=60)
     def checkout(self, request):
         """
         Crea una orden a partir del carrito y la prepara para el pago.
@@ -165,15 +184,9 @@ class CartViewSet(viewsets.GenericViewSet):
             
             # 3. Preparar la respuesta
             order_serializer = OrderSerializer(order)
-            
-            # --- PUNTO DE INTEGRACIÓN CON WOMPI ---
-            # Aquí iría la lógica para generar el link de pago de Wompi
-            # y añadirlo a la respuesta.
-            # wompi_payment_url = WompiService.create_payment_link(order)
-            # response_data = order_serializer.data
-            # response_data['payment_url'] = wompi_payment_url
-            
-            return Response(order_serializer.data, status=status.HTTP_201_CREATED)
+            response_data = order_serializer.data
+            response_data['wompi_reference'] = order.wompi_transaction_id
+            return Response(response_data, status=status.HTTP_201_CREATED)
 
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -187,5 +200,49 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         """Asegura que cada usuario solo pueda ver sus propias órdenes."""
-        return Order.objects.filter(user=self.request.user).prefetch_related('items')
+        queryset = Order.objects.prefetch_related('items__variant__product')
+        user = self.request.user
+        if getattr(user, 'role', None) in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
+            return queryset
+        return queryset.filter(user=user)
+
+    @action(detail=True, methods=['post'], url_path='request-return')
+    def request_return(self, request, pk=None):
+        order = self.get_object()
+        if order.user != request.user:
+            return Response(
+                {"detail": "Solo el dueño de la orden puede solicitar devoluciones."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        serializer = ReturnRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            updated_order = ReturnService.request_return(
+                order,
+                serializer.validated_data['items'],
+                serializer.validated_data['reason'],
+            )
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(OrderSerializer(updated_order).data, status=status.HTTP_200_OK)
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path='process-return',
+        permission_classes=[permissions.IsAdminUser],
+    )
+    def process_return(self, request, pk=None):
+        order = self.get_object()
+        serializer = ReturnDecisionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            updated_order = ReturnService.process_return(
+                order,
+                approved=serializer.validated_data['approved'],
+                processed_by=request.user,
+            )
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(OrderSerializer(updated_order).data, status=status.HTTP_200_OK)
 
