@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.conf import settings
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -62,6 +63,13 @@ class ClinicalProfileViewSet(viewsets.ModelViewSet):
         if kiosk_client and obj.user != kiosk_client:
             raise PermissionDenied("La sesión de quiosco no puede acceder a este perfil.")
         return obj
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        kiosk_session = getattr(self.request, 'kiosk_session', None)
+        if kiosk_session:
+            kiosk_session.clear_pending_changes()
+        return instance
 
     # Se añade una acción personalizada para el endpoint /me/
     @action(detail=False, methods=['get', 'put', 'patch'], url_path='me')
@@ -174,7 +182,8 @@ class KioskStartSessionView(generics.GenericAPIView):
         profile, _ = ClinicalProfile.objects.get_or_create(user=client)
         staff_member = request.user
 
-        expires_at = timezone.now() + timedelta(minutes=10)
+        timeout_minutes = getattr(settings, "KIOSK_SESSION_TIMEOUT_MINUTES", 10)
+        expires_at = timezone.now() + timedelta(minutes=timeout_minutes)
         session = KioskSession.objects.create(
             profile=profile,
             staff_member=staff_member,
@@ -210,8 +219,24 @@ class KioskSessionHeartbeatView(generics.GenericAPIView):
 
     def post(self, request, *args, **kwargs):
         session = request.kiosk_session
+        if session.has_expired:
+            session.lock()
+            return Response(
+                {
+                    "detail": "Sesión expirada. Mostrar pantalla segura.",
+                    "secure_screen_url": getattr(settings, "KIOSK_SECURE_SCREEN_URL", "/kiosk/secure"),
+                    "status": session.status,
+                },
+                status=440,
+            )
         session.heartbeat()
-        return Response({"detail": "Heartbeat registrado."}, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "detail": "Heartbeat registrado.",
+                "remaining_seconds": session.remaining_seconds,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class KioskSessionLockView(generics.GenericAPIView):
@@ -220,7 +245,14 @@ class KioskSessionLockView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         session = request.kiosk_session
         session.lock()
-        return Response({"detail": "Sesión bloqueada."}, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "detail": "Sesión bloqueada.",
+                "secure_screen_url": getattr(settings, "KIOSK_SECURE_SCREEN_URL", "/kiosk/secure"),
+                "status": session.status,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class KioskSessionDiscardChangesView(generics.GenericAPIView):
@@ -231,10 +263,51 @@ class KioskSessionDiscardChangesView(generics.GenericAPIView):
         if not session:
             return Response({'detail': 'Sesión de quiosco no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
         session.lock()
+        session.clear_pending_changes()
         return Response(
-            {"detail": "Cambios descartados y sesión finalizada.", "status": session.status},
+            {
+                "detail": "Cambios descartados y sesión finalizada.",
+                "status": session.status,
+                "secure_screen_url": getattr(settings, "KIOSK_SECURE_SCREEN_URL", "/kiosk/secure"),
+            },
             status=status.HTTP_200_OK,
         )
+
+
+class KioskSessionSecureScreenView(generics.GenericAPIView):
+    permission_classes = []
+
+    def post(self, request, *args, **kwargs):
+        session = load_kiosk_session_from_request(request, allow_inactive=True)
+        if not session:
+            return Response({'detail': 'Sesión de quiosco no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        session.lock()
+        return Response(
+            {
+                "detail": "Pantalla segura activada.",
+                "status": session.status,
+                "secure_screen_url": getattr(settings, "KIOSK_SECURE_SCREEN_URL", "/kiosk/secure"),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class KioskSessionPendingChangesView(generics.GenericAPIView):
+    permission_classes = [IsKioskSession]
+
+    def get(self, request, *args, **kwargs):
+        session = request.kiosk_session
+        return Response({"has_pending_changes": session.has_pending_changes}, status=status.HTTP_200_OK)
+
+    def post(self, request, *args, **kwargs):
+        session = request.kiosk_session
+        session.mark_pending_changes()
+        return Response({"has_pending_changes": True}, status=status.HTTP_200_OK)
+
+    def delete(self, request, *args, **kwargs):
+        session = request.kiosk_session
+        session.clear_pending_changes()
+        return Response({"has_pending_changes": False}, status=status.HTTP_200_OK)
 
 
 class ClinicalProfileHistoryViewSet(viewsets.ReadOnlyModelViewSet):

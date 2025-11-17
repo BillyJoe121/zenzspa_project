@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import serializers
 from .models import (
     ClinicalProfile,
@@ -162,6 +163,9 @@ class KioskStartSessionSerializer(serializers.Serializer):
 
 class KioskSessionStatusSerializer(serializers.ModelSerializer):
     expired = serializers.SerializerMethodField()
+    secure_screen_url = serializers.SerializerMethodField()
+    force_secure_screen = serializers.SerializerMethodField()
+    remaining_seconds = serializers.SerializerMethodField()
 
     class Meta:
         model = KioskSession
@@ -173,11 +177,24 @@ class KioskSessionStatusSerializer(serializers.ModelSerializer):
             'locked',
             'last_activity',
             'expired',
+            'has_pending_changes',
+            'secure_screen_url',
+            'force_secure_screen',
+            'remaining_seconds',
         ]
         read_only_fields = fields
 
     def get_expired(self, obj):
         return obj.has_expired
+
+    def get_secure_screen_url(self, obj):
+        return getattr(settings, "KIOSK_SECURE_SCREEN_URL", "/kiosk/secure")
+
+    def get_force_secure_screen(self, obj):
+        return not obj.is_valid
+
+    def get_remaining_seconds(self, obj):
+        return obj.remaining_seconds
 
 class ClinicalProfileHistorySerializer(serializers.ModelSerializer):
     changed_by = serializers.SerializerMethodField()

@@ -14,6 +14,8 @@ from .views import (
     KioskSessionDiscardChangesView,
     KioskSessionHeartbeatView,
     KioskSessionLockView,
+    KioskSessionPendingChangesView,
+    KioskSessionSecureScreenView,
     KioskSessionStatusView,
     KioskStartSessionView,
     AnonymizeProfileView,
@@ -40,6 +42,8 @@ urlpatterns = [
     path('kiosk/heartbeat/', KioskSessionHeartbeatView.as_view(), name='kiosk-heartbeat'),
     path('kiosk/lock/', KioskSessionLockView.as_view(), name='kiosk-lock'),
     path('kiosk/discard/', KioskSessionDiscardChangesView.as_view(), name='kiosk-discard'),
+    path('kiosk/secure-screen/', KioskSessionSecureScreenView.as_view(), name='kiosk-secure-screen'),
+    path('kiosk/pending-changes/', KioskSessionPendingChangesView.as_view(), name='kiosk-pending-changes'),
     path('anonymize/<str:phone_number>/', AnonymizeProfileView.as_view(), name='clinical-profile-anonymize'),
     
     # Se incluye el router al final para que maneje todas las rutas registradas.

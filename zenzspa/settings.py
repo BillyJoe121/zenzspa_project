@@ -1,6 +1,7 @@
 from pathlib import Path
 import os
 from datetime import timedelta
+from typing import Dict
 
 from dotenv import load_dotenv
 
@@ -24,6 +25,23 @@ DEBUG = os.getenv("DEBUG", "0") in ("1", "true", "True")
 def _split_env(name, default=""):
     raw = os.getenv(name, default)
     return [x.strip() for x in raw.replace(",", " ").split() if x.strip()]
+
+
+def _parse_action_scores(raw: str) -> Dict[str, float]:
+    """
+    Convierte una cadena tipo 'otp:0.7,verify:0.3' en un dict.
+    Ignora pares malformados para no frenar el arranque.
+    """
+    mapping: dict[str, float] = {}
+    for chunk in raw.split(","):
+        if ":" not in chunk:
+            continue
+        action, score = chunk.split(":", 1)
+        try:
+            mapping[action.strip()] = float(score.strip())
+        except ValueError:
+            continue
+    return mapping
 
 
 ALLOWED_HOSTS = _split_env("ALLOWED_HOSTS", "localhost 127.0.0.1")
@@ -76,6 +94,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "profiles.middleware.KioskFlowEnforcementMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "csp.middleware.CSPMiddleware",
@@ -227,6 +246,26 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_VERIFY_SERVICE_SID = os.getenv("TWILIO_VERIFY_SERVICE_SID")
+
+RECAPTCHA_V3_SITE_KEY = os.getenv("RECAPTCHA_V3_SITE_KEY", "")
+RECAPTCHA_V3_SECRET_KEY = os.getenv("RECAPTCHA_V3_SECRET_KEY") or os.getenv("RECAPTCHA_SECRET_KEY", "")
+RECAPTCHA_V3_DEFAULT_SCORE = float(os.getenv("RECAPTCHA_V3_DEFAULT_SCORE", "0.5"))
+RECAPTCHA_V3_ACTION_SCORES = _parse_action_scores(os.getenv("RECAPTCHA_V3_ACTION_SCORES", ""))
+
+KIOSK_SESSION_TIMEOUT_MINUTES = int(os.getenv("KIOSK_SESSION_TIMEOUT_MINUTES", "10"))
+KIOSK_SECURE_SCREEN_URL = os.getenv("KIOSK_SECURE_SCREEN_URL", "/kiosk/secure")
+KIOSK_ALLOWED_PATH_PREFIXES = tuple(
+    _split_env(
+        "KIOSK_ALLOWED_PATH_PREFIXES",
+        "/api/v1/kiosk/ /api/v1/users/ /api/v1/dosha-quiz/",
+    )
+)
+KIOSK_ALLOWED_VIEW_NAMES = set(
+    _split_env(
+        "KIOSK_ALLOWED_VIEW_NAMES",
+        "clinical-profile-me clinical-profile-list clinical-profile-detail clinical-profile-update",
+    )
+)
 
 WOMPI_PUBLIC_KEY = os.getenv("WOMPI_PUBLIC_KEY", "")
 WOMPI_INTEGRITY_SECRET = os.getenv("WOMPI_INTEGRITY_SECRET", "")

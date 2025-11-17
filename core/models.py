@@ -20,11 +20,74 @@ class BaseModel(models.Model):
         ordering = ["-created_at"]
 
 
+class SoftDeleteQuerySet(models.QuerySet):
+    def delete(self):
+        return super().update(is_deleted=True, deleted_at=timezone.now())
+
+    def hard_delete(self):
+        return super().delete()
+
+    def alive(self):
+        return self.filter(is_deleted=False)
+
+    def dead(self):
+        return self.filter(is_deleted=True)
+
+
+class SoftDeleteManager(models.Manager):
+    use_in_migrations = True
+
+    def __init__(self, *args, include_deleted=False, **kwargs):
+        self.include_deleted = include_deleted
+        super().__init__(*args, **kwargs)
+
+    def get_queryset(self):
+        qs = SoftDeleteQuerySet(self.model, using=self._db)
+        if not self.include_deleted:
+            qs = qs.filter(is_deleted=False)
+        return qs
+
+    def hard_delete(self):
+        return self.get_queryset().hard_delete()
+
+
+class SoftDeleteModel(BaseModel):
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    objects = SoftDeleteManager()
+    all_objects = SoftDeleteManager(include_deleted=True)
+
+    class Meta(BaseModel.Meta):
+        abstract = True
+        base_manager_name = "all_objects"
+        default_manager_name = "objects"
+
+    def delete(self, using=None, keep_parents=False):
+        if self.is_deleted:
+            return
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        self.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
+
+    def hard_delete(self, using=None, keep_parents=False):
+        return super().delete(using=using, keep_parents=keep_parents)
+
+    def restore(self):
+        if not self.is_deleted:
+            return
+        self.is_deleted = False
+        self.deleted_at = None
+        self.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
+
+
 class AuditLog(BaseModel):
     class Action(models.TextChoices):
         FLAG_NON_GRATA = "FLAG_NON_GRATA", "Marcar como Persona No Grata"
         ADMIN_CANCEL_APPOINTMENT = "ADMIN_CANCEL_APPOINTMENT", "Admin cancela cita pagada"
         APPOINTMENT_CANCELLED_BY_ADMIN = "APPOINTMENT_CANCELLED_BY_ADMIN", "Appointment Cancelled by Admin"
+        SYSTEM_CANCEL = "SYSTEM_CANCEL", "Cancelación automática del sistema"
+        APPOINTMENT_RESCHEDULE_FORCE = "APPOINTMENT_RESCHEDULE_FORCE", "Reagendamiento forzado por staff"
         CLINICAL_PROFILE_ANONYMIZED = "CLINICAL_PROFILE_ANONYMIZED", "Perfil clínico anonimizado"
         VOUCHER_REDEEMED = "VOUCHER_REDEEMED", "Voucher redimido"
         LOYALTY_REWARD_ISSUED = "LOYALTY_REWARD_ISSUED", "Recompensa de lealtad otorgada"

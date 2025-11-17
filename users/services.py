@@ -1,5 +1,6 @@
 # Reemplaza todo el contenido de zenzspa_project/users/services.py
 import logging
+from typing import Optional
 
 import requests
 from django.conf import settings
@@ -66,18 +67,31 @@ class TwilioService:
                 raise e
 
 
-def verify_recaptcha(token, remote_ip=None, threshold=0.5):
-    secret = getattr(settings, "RECAPTCHA_SECRET_KEY", None)
+def _resolve_recaptcha_secret():
+    return getattr(settings, "RECAPTCHA_V3_SECRET_KEY", None) or getattr(settings, "RECAPTCHA_SECRET_KEY", None)
+
+
+def _resolve_threshold(action: Optional[str], explicit: Optional[float]) -> float:
+    if explicit is not None:
+        return explicit
+    action_scores = getattr(settings, "RECAPTCHA_V3_ACTION_SCORES", {}) or {}
+    if action and action in action_scores:
+        return action_scores[action]
+    return getattr(settings, "RECAPTCHA_V3_DEFAULT_SCORE", 0.5)
+
+
+def verify_recaptcha(token, remote_ip=None, action=None, min_score=None):
+    secret = _resolve_recaptcha_secret()
     if not secret or not token:
         logger.warning("No se puede verificar reCAPTCHA: faltan credenciales o token.")
         return False
 
     payload = {
-        'secret': secret,
-        'response': token,
+        "secret": secret,
+        "response": token,
     }
     if remote_ip:
-        payload['remoteip'] = remote_ip
+        payload["remoteip"] = remote_ip
 
     try:
         response = requests.post("https://www.google.com/recaptcha/api/siteverify", data=payload, timeout=5)
@@ -87,8 +101,22 @@ def verify_recaptcha(token, remote_ip=None, threshold=0.5):
         logger.error("Error verificando reCAPTCHA: %s", exc)
         return False
 
-    if not data.get('success'):
+    if not data.get("success"):
+        logger.warning("reCAPTCHA falló: %s", data.get("error-codes"))
         return False
 
-    score = data.get('score', 1)
-    return score >= threshold
+    expected_action = action
+    received_action = data.get("action")
+    if expected_action and received_action and expected_action != received_action:
+        logger.warning("Acción reCAPTCHA inesperada. Esperado=%s recibido=%s", expected_action, received_action)
+        return False
+
+    score = data.get("score")
+    threshold = _resolve_threshold(expected_action, min_score)
+    if score is None:
+        # Al no tener score, asumimos v2 y aceptamos la validación exitosa
+        return True
+    if score < threshold:
+        logger.info("reCAPTCHA score %s por debajo del umbral %s para acción %s", score, threshold, expected_action)
+        return False
+    return True

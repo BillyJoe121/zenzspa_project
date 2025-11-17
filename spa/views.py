@@ -1,5 +1,6 @@
 import hashlib
 import uuid
+import logging
 from decimal import Decimal
 from rest_framework import viewsets, status, generics
 from rest_framework.response import Response
@@ -28,6 +29,7 @@ from .services import (
 )
 from .permissions import IsAdminOrOwnerOfAvailability, IsAdminOrReadOnly
 from core.decorators import idempotent_view
+from core.exceptions import BusinessLogicError
 from .models import (
     ServiceCategory,
     Service,
@@ -149,6 +151,8 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 start_time=validated_data['start_time']
             )
             appointment = service.create_appointment_with_lock()
+        except BusinessLogicError as exc:
+            raise exc
         except ValueError as e:
             # Capturamos los errores de validación de negocio del servicio
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -411,9 +415,10 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appointment.save(update_fields=['status'])
 
         settings_obj = GlobalSettings.load()
+        credit_generated = Decimal('0')
         if settings_obj.no_show_credit_policy != GlobalSettings.NoShowCreditPolicy.NONE:
             percentage = Decimal('1') if settings_obj.no_show_credit_policy == GlobalSettings.NoShowCreditPolicy.FULL else Decimal('0.5')
-            CreditService.create_credit_from_appointment(
+            credit_generated = CreditService.create_credit_from_appointment(
                 appointment=appointment,
                 percentage=percentage,
                 created_by=request.user,
@@ -427,6 +432,23 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             target_appointment=appointment,
             details=f"Staff '{request.user.first_name}' marked appointment ID {appointment.id} as NO SHOW."
         )
+
+        notification_context = {
+            "appointment_id": str(appointment.id),
+            "start_time": appointment.start_time.isoformat(),
+            "credit_amount": str(credit_generated),
+        }
+        event_code = "APPOINTMENT_NO_SHOW_PENALTY"
+        if credit_generated > 0:
+            event_code = "APPOINTMENT_NO_SHOW_CREDIT"
+        try:
+            NotificationService.send_notification(
+                user=appointment.user,
+                event_code=event_code,
+                context=notification_context,
+            )
+        except Exception:
+            logger.exception("No se pudo enviar notificación de No-Show para la cita %s", appointment.id)
 
         list_serializer = AppointmentListSerializer(appointment, context={'request': request})
         return Response(list_serializer.data, status=status.HTTP_200_OK)
@@ -692,3 +714,6 @@ class FinancialAdjustmentView(generics.GenericAPIView):
         )
         output = FinancialAdjustmentSerializer(adjustment, context={'request': request})
         return Response(output.data, status=status.HTTP_201_CREATED)
+from notifications.services import NotificationService
+
+logger = logging.getLogger(__name__)

@@ -10,6 +10,7 @@ from core.models import GlobalSettings, AuditLog
 from users.models import CustomUser
 from .models import Appointment, WaitlistEntry, Payment, Voucher, LoyaltyRewardLog
 from .services import PaymentService
+from notifications.services import NotificationService
 
 # Se obtiene una instancia del logger.
 logger = logging.getLogger(__name__)
@@ -120,6 +121,24 @@ def cancel_unpaid_appointments():
         appt.status = Appointment.AppointmentStatus.CANCELLED_BY_SYSTEM
         appt.save(update_fields=['status', 'updated_at'])
         WaitlistService.offer_slot_for_appointment(appt)
+        AuditLog.objects.create(
+            admin_user=None,
+            target_user=appt.user,
+            target_appointment=appt,
+            action=AuditLog.Action.SYSTEM_CANCEL,
+            details="Cancelación automática por falta de pago.",
+        )
+        try:
+            NotificationService.send_notification(
+                user=appt.user,
+                event_code="APPOINTMENT_CANCELLED_AUTO",
+                context={
+                    "appointment_id": str(appt.id),
+                    "start_time": appt.start_time.isoformat(),
+                },
+            )
+        except Exception:
+            logger.exception("Error enviando notificación de cancelación automática para cita %s", appt.id)
         logger.info(
             "Cita %s cancelada por falta de pago; se notificó a la lista de espera.",
             appt.id,

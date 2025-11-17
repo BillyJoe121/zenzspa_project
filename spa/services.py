@@ -12,6 +12,7 @@ import json
 from django.conf import settings
 from decimal import Decimal
 import requests
+from rest_framework import status
 
 from marketplace.models import Order
 from .models import (
@@ -31,6 +32,7 @@ from .models import (
     WebhookEvent,
     LoyaltyRewardLog,
 )
+from core.exceptions import BusinessLogicError
 from core.models import GlobalSettings, AuditLog
 from users.models import CustomUser
 
@@ -189,6 +191,10 @@ class AppointmentService:
         total_minutes = sum(service.duration for service in self.services)
         self.service_duration = timedelta(minutes=total_minutes)
         self.end_time = start_time + self.service_duration
+        self.is_low_supervision_bundle = all(
+            service.category.is_low_supervision for service in self.services
+        )
+        self.local_timezone = timezone.get_current_timezone()
 
     def _validate_appointment_rules(self):
         """Validaciones de reglas de negocio que no requieren bloqueo de BD."""
@@ -207,10 +213,10 @@ class AppointmentService:
         ).order_by("start_time").first()
 
         if pending_payment or pending_appointment:
-            amount = pending_payment.amount if pending_payment else pending_appointment.price_at_purchase
-            date = pending_payment.created_at.date() if pending_payment else pending_appointment.start_time.date()
-            raise ValueError(
-                f"Tienes un pago pendiente de ${amount} de la fecha {date}."
+            raise BusinessLogicError(
+                detail="Usuario bloqueado por deuda pendiente.",
+                internal_code="APP-004",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             )
 
         active_appointments = Appointment.objects.filter(
@@ -227,14 +233,51 @@ class AppointmentService:
         }
         limit = role_limits.get(self.user.role)
         if limit is not None and active_appointments >= limit:
-            raise ValueError(
-                f"Límite excedido. Tienes {active_appointments} citas activas y tu rol permite {limit}."
+            raise BusinessLogicError(
+                detail="Límite de citas activas excedido.",
+                internal_code="APP-003",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+    def _ensure_staff_is_available(self):
+        if not self.staff_member:
+            return
+        local_start = self.start_time.astimezone(self.local_timezone)
+        local_end = self.end_time.astimezone(self.local_timezone)
+        day_of_week = local_start.isoweekday()
+        availability_exists = StaffAvailability.objects.filter(
+            staff_member=self.staff_member,
+            day_of_week=day_of_week,
+            start_time__lte=local_start.time(),
+            end_time__gte=local_end.time(),
+        ).exists()
+        if not availability_exists:
+            raise BusinessLogicError(
+                detail="El staff no trabaja en este horario.",
+                internal_code="APP-002",
+                status_code=status.HTTP_409_CONFLICT,
+            )
+
+        exclusion_exists = AvailabilityExclusion.objects.filter(
+            staff_member=self.staff_member,
+        ).filter(
+            Q(date=local_start.date()) | Q(date__isnull=True, day_of_week=day_of_week)
+        ).filter(
+            start_time__lt=local_end.time(),
+            end_time__gt=local_start.time(),
+        ).exists()
+        if exclusion_exists:
+            raise BusinessLogicError(
+                detail="El staff no trabaja en este horario.",
+                internal_code="APP-002",
+                status_code=status.HTTP_409_CONFLICT,
             )
 
     @transaction.atomic
     def create_appointment_with_lock(self):
         self._validate_appointment_rules()
         if self.staff_member:
+            self._ensure_staff_is_available()
             conflicting_appointments = Appointment.objects.select_for_update().filter(
                 staff_member=self.staff_member,
                 status__in=[
@@ -245,7 +288,13 @@ class AppointmentService:
                 end_time__gt=self.start_time - self.buffer,
             ).exists()
             if conflicting_appointments:
-                raise ValueError("El horario seleccionado ya no está disponible.")
+                raise BusinessLogicError(
+                    detail="Horario no disponible por solapamiento.",
+                    internal_code="APP-001",
+                    status_code=status.HTTP_409_CONFLICT,
+                )
+        elif self.is_low_supervision_bundle:
+            self._enforce_low_supervision_capacity()
 
         total_price = Decimal('0')
         appointment_items = []
@@ -276,6 +325,31 @@ class AppointmentService:
 
         return appointment
 
+    def _enforce_low_supervision_capacity(self):
+        settings_obj = GlobalSettings.load()
+        capacity = settings_obj.low_supervision_capacity or 0
+        if capacity <= 0:
+            return
+        active_statuses = [
+            Appointment.AppointmentStatus.CONFIRMED,
+            Appointment.AppointmentStatus.PENDING_ADVANCE,
+        ]
+        concurrent_count = (
+            Appointment.objects.select_for_update()
+            .filter(
+                staff_member__isnull=True,
+                status__in=active_statuses,
+                start_time=self.start_time,
+            )
+            .count()
+        )
+        if concurrent_count >= capacity:
+            raise BusinessLogicError(
+                detail="Capacidad máxima alcanzada para este horario. Selecciona otro horario o espera un espacio disponible.",
+                internal_code="SRV-003",
+                status_code=status.HTTP_409_CONFLICT,
+            )
+
     @staticmethod
     @transaction.atomic
     def reschedule_appointment(appointment, new_start_time, acting_user):
@@ -304,6 +378,13 @@ class AppointmentService:
                 acting_user.id,
                 ",".join(restrictions),
                 appointment.id,
+            )
+            AuditLog.objects.create(
+                admin_user=acting_user,
+                target_user=appointment.user,
+                target_appointment=appointment,
+                action=AuditLog.Action.APPOINTMENT_RESCHEDULE_FORCE,
+                details="Reagendamiento forzado por Staff fuera de ventana de política.",
             )
 
         if not is_privileged and appointment.user != acting_user:

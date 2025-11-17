@@ -186,3 +186,15 @@ class OTPAttempt(BaseModel):
 
     def __str__(self):
         return f"{self.phone_number} ({self.attempt_type}) - {'OK' if self.is_successful else 'FAIL'}"
+
+
+class BlockedPhoneNumber(BaseModel):
+    phone_number = models.CharField(max_length=20, unique=True)
+    notes = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "Teléfono bloqueado (CNG)"
+        verbose_name_plural = "Teléfonos bloqueados (CNG)"
+
+    def __str__(self):
+        return f"Número bloqueado: {self.phone_number}"

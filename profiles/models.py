@@ -329,6 +329,7 @@ class KioskSession(BaseModel):
     is_active = models.BooleanField(default=True)
     locked = models.BooleanField(default=False)
     last_activity = models.DateTimeField(auto_now=True)
+    has_pending_changes = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Sesión de Quiosco"
@@ -360,15 +361,22 @@ class KioskSession(BaseModel):
     def has_expired(self):
         return self.expires_at <= timezone.now()
 
+    @property
+    def remaining_seconds(self):
+        delta = (self.expires_at - timezone.now()).total_seconds()
+        return max(int(delta), 0)
+
     def deactivate(self):
         if self.status != self.Status.COMPLETED:
             self.status = self.Status.COMPLETED
-            self.save(update_fields=['status', 'is_active', 'locked', 'updated_at'])
+            self.has_pending_changes = False
+            self.save(update_fields=['status', 'is_active', 'locked', 'has_pending_changes', 'updated_at'])
 
     def lock(self):
         if self.status != self.Status.LOCKED:
             self.status = self.Status.LOCKED
-            self.save(update_fields=['status', 'is_active', 'locked', 'updated_at'])
+            self.has_pending_changes = False
+            self.save(update_fields=['status', 'is_active', 'locked', 'has_pending_changes', 'updated_at'])
 
     def mark_expired(self):
         if self.has_expired and self.status == self.Status.ACTIVE:
@@ -378,3 +386,13 @@ class KioskSession(BaseModel):
         if self.status == self.Status.ACTIVE:
             self.last_activity = timezone.now()
             self.save(update_fields=['last_activity', 'updated_at'])
+
+    def mark_pending_changes(self):
+        if not self.has_pending_changes:
+            self.has_pending_changes = True
+            self.save(update_fields=['has_pending_changes', 'updated_at'])
+
+    def clear_pending_changes(self):
+        if self.has_pending_changes:
+            self.has_pending_changes = False
+            self.save(update_fields=['has_pending_changes', 'updated_at'])

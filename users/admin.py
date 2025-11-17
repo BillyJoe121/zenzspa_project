@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser
+from .models import CustomUser, BlockedPhoneNumber
 
 
 class CustomUserAdmin(UserAdmin):
@@ -30,3 +30,9 @@ class CustomUserAdmin(UserAdmin):
     readonly_fields = ('last_login', 'created_at')
 
 admin.site.register(CustomUser, CustomUserAdmin)
+
+
+@admin.register(BlockedPhoneNumber)
+class BlockedPhoneNumberAdmin(admin.ModelAdmin):
+    list_display = ("phone_number", "notes", "created_at")
+    search_fields = ("phone_number",)

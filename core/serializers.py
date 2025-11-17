@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 from rest_framework import serializers
 
 
@@ -57,3 +57,105 @@ class DynamicFieldsModelSerializer(serializers.ModelSerializer):
                 if required_role not in allowed_roles:
                     for field_name in fields:
                         self.fields.pop(field_name, None)
+
+
+class DataMaskingMixin:
+    """
+    Proporciona enmascaramiento sistemático de campos sensibles basado en roles.
+
+    Los serializers que lo usen deben definir en su Meta:
+        mask_fields = {
+            "phone_number": {"mask_with": "phone", "visible_for": ["STAFF"]},
+            "email": {"mask_with": "email", "visible_for": ["STAFF"]},
+        }
+    """
+
+    ROLE_PRIORITY: Dict[str, int] = {
+        "CLIENT": 0,
+        "VIP": 1,
+        "STAFF": 2,
+        "ADMIN": 3,
+    }
+    MASKERS: Dict[str, Callable[[Any], Any]] = {}
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        mask_config = self._get_masking_config()
+        if not mask_config:
+            return data
+
+        viewer = self._get_viewer()
+        for field_name, config in mask_config.items():
+            if field_name not in data:
+                continue
+            if not self._should_mask_field(field_name, config, viewer, instance):
+                continue
+            data[field_name] = self._mask_value(data[field_name], config)
+        return data
+
+    def _get_masking_config(self):
+        meta = getattr(self, "Meta", None)
+        return getattr(meta, "mask_fields", {})
+
+    def _get_viewer(self):
+        request = self.context.get("request") if hasattr(self, "context") else None
+        return getattr(request, "user", None) if request else None
+
+    def _should_mask_field(self, field_name, config, viewer, instance):
+        return not self._viewer_has_clearance(viewer, config)
+
+    def _viewer_has_clearance(self, viewer, config) -> bool:
+        visible_for = config.get("visible_for") or config.get("roles") or []
+        if not visible_for:
+            return False
+
+        viewer_role = getattr(viewer, "role", "CLIENT") or "CLIENT"
+        viewer_rank = self.ROLE_PRIORITY.get(viewer_role, 0)
+        for role in visible_for:
+            required_rank = self.ROLE_PRIORITY.get(role, 0)
+            if viewer_rank >= required_rank:
+                return True
+        return False
+
+    def _mask_value(self, value, config):
+        if value in (None, ""):
+            return value
+
+        mask_with = config.get("mask_with", "default")
+        if callable(mask_with):
+            return mask_with(value)
+
+        masker = self._get_masker(mask_with)
+        return masker(value)
+
+    def _get_masker(self, mask_with: str) -> Callable[[Any], Any]:
+        if not self.MASKERS:
+            self.MASKERS = {
+                "default": self._mask_default,
+                "phone": self._mask_phone,
+                "email": self._mask_email,
+            }
+        return self.MASKERS.get(mask_with, self._mask_default)
+
+    @staticmethod
+    def _mask_default(value):
+        return "***" if isinstance(value, str) else "***"
+
+    @staticmethod
+    def _mask_phone(value):
+        string_value = str(value)
+        if len(string_value) < 6:
+            return "****"
+        return f"{string_value[:3]}****{string_value[-2:]}"
+
+    @staticmethod
+    def _mask_email(value):
+        string_value = str(value)
+        if "@" not in string_value:
+            return "***"
+        local, domain = string_value.split("@", 1)
+        if len(local) <= 2:
+            masked_local = "***"
+        else:
+            masked_local = f"{local[0]}***{local[-1]}"
+        return f"{masked_local}@{domain}"

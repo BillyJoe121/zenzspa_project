@@ -64,6 +64,7 @@ referencing==0.37.0
 regex==2025.11.3
 requests==2.32.5
 rpds-py==0.28.0
+sentry-sdk==2.44.0
 service-identity==24.2.0
 setuptools==80.9.0
 six==1.17.0

@@ -11,30 +11,28 @@ from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.token_blacklist.models import (BlacklistedToken,
                                                              OutstandingToken)
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import CustomUser, UserSession, OTPAttempt
+from .models import CustomUser, UserSession, OTPAttempt, BlockedPhoneNumber
 from .permissions import IsVerified, IsAdminUser, IsStaff
 from .serializers import (CustomTokenObtainPairSerializer,
+                          SessionAwareTokenRefreshSerializer,
                           FlagNonGrataSerializer,
                           PasswordResetConfirmSerializer,
                           PasswordResetRequestSerializer, SimpleUserSerializer,
                           UserRegistrationSerializer, VerifySMSSerializer, StaffListSerializer,
                           UserSessionSerializer)
 from .services import TwilioService, verify_recaptcha
+from .utils import get_client_ip
 from spa.models import Appointment
 from core.models import AuditLog
 
 OTP_PHONE_RECAPTCHA_THRESHOLD = getattr(settings, "OTP_PHONE_RECAPTCHA_THRESHOLD", 3)
 OTP_IP_RECAPTCHA_THRESHOLD = getattr(settings, "OTP_IP_RECAPTCHA_THRESHOLD", 5)
-
-
-def _get_client_ip(request):
-    forwarded = request.META.get('HTTP_X_FORWARDED_FOR')
-    if forwarded:
-        return forwarded.split(',')[0].strip()
-    return request.META.get('REMOTE_ADDR')
+RECAPTCHA_ACTION_OTP_REQUEST = "auth__otp_request"
+RECAPTCHA_ACTION_OTP_VERIFY = "auth__otp_verify"
+RECAPTCHA_ACTION_PASSWORD_RESET_REQUEST = "auth__password_reset_request"
 
 
 def _log_otp_attempt(phone_number, attempt_type, success, request, metadata=None):
@@ -42,7 +40,7 @@ def _log_otp_attempt(phone_number, attempt_type, success, request, metadata=None
         phone_number=phone_number,
         attempt_type=attempt_type,
         is_successful=success,
-        ip_address=_get_client_ip(request),
+        ip_address=get_client_ip(request),
         metadata=metadata or {},
     )
 
@@ -83,10 +81,14 @@ class UserRegistrationView(generics.CreateAPIView):
     def perform_create(self, serializer):
         request = self.request
         phone_number = serializer.validated_data['phone_number']
-        ip = _get_client_ip(request)
+        ip = get_client_ip(request)
         if _requires_recaptcha(phone_number, ip, OTPAttempt.AttemptType.REQUEST):
             recaptcha_token = request.data.get('recaptcha_token')
-            if not recaptcha_token or not verify_recaptcha(recaptcha_token, ip):
+            if not recaptcha_token or not verify_recaptcha(
+                recaptcha_token,
+                ip,
+                action=RECAPTCHA_ACTION_OTP_REQUEST,
+            ):
                 raise ValidationError({"recaptcha_token": "Se requiere verificación adicional para continuar."})
         user = serializer.save()
         try:
@@ -110,7 +112,7 @@ class VerifySMSView(views.APIView):
         serializer.is_valid(raise_exception=True)
         phone_number = serializer.validated_data['phone_number']
         code = serializer.validated_data['code']
-        ip = _get_client_ip(request)
+        ip = get_client_ip(request)
 
         cache_key_attempts = f'otp_attempts_{phone_number}'
         cache_key_lockout = f'otp_lockout_{phone_number}'
@@ -134,7 +136,11 @@ class VerifySMSView(views.APIView):
 
         if attempts >= self.RECAPTCHA_FAILURE_THRESHOLD or _requires_recaptcha(phone_number, ip, OTPAttempt.AttemptType.VERIFY):
             recaptcha_token = serializer.validated_data.get('recaptcha_token')
-            if not recaptcha_token or not verify_recaptcha(recaptcha_token, ip):
+            if not recaptcha_token or not verify_recaptcha(
+                recaptcha_token,
+                ip,
+                action=RECAPTCHA_ACTION_OTP_VERIFY,
+            ):
                 return Response({"error": "Debes completar la verificación reCAPTCHA para continuar."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
@@ -150,8 +156,16 @@ class VerifySMSView(views.APIView):
                 if not user.is_verified:
                     user.is_verified = True
                     user.save(update_fields=['is_verified'])
+                # El código necesario
                 _log_otp_attempt(phone_number, OTPAttempt.AttemptType.VERIFY, True, request)
-                return Response({"detail": "Usuario verificado correctamente."}, status=status.HTTP_200_OK)
+
+                # --- CORRECCIÓN: Generar y devolver tokens ---
+                refresh = RefreshToken.for_user(user)
+                return Response({
+                    "detail": "Usuario verificado correctamente.",
+                    "refresh": str(refresh),
+                    "access": str(refresh.access_token),
+                }, status=status.HTTP_200_OK)
             else:
                 attempts += 1
                 if attempts >= self.MAX_ATTEMPTS:
@@ -173,6 +187,10 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
 
+class CustomTokenRefreshView(TokenRefreshView):
+    serializer_class = SessionAwareTokenRefreshSerializer
+
+
 class PasswordResetRequestView(views.APIView):
     permission_classes = [AllowAny]
 
@@ -180,11 +198,15 @@ class PasswordResetRequestView(views.APIView):
         serializer = PasswordResetRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         phone_number = serializer.validated_data['phone_number']
-        ip = _get_client_ip(request)
+        ip = get_client_ip(request)
 
         if _requires_recaptcha(phone_number, ip, OTPAttempt.AttemptType.REQUEST):
             recaptcha_token = request.data.get('recaptcha_token')
-            if not recaptcha_token or not verify_recaptcha(recaptcha_token, ip):
+            if not recaptcha_token or not verify_recaptcha(
+                recaptcha_token,
+                ip,
+                action=RECAPTCHA_ACTION_PASSWORD_RESET_REQUEST,
+            ):
                 raise ValidationError({"recaptcha_token": "Verificación reCAPTCHA requerida para continuar."})
 
         try:
@@ -301,6 +323,12 @@ class FlagNonGrataView(generics.UpdateAPIView):
         
         instance.internal_notes = serializer.validated_data.get('internal_notes', instance.internal_notes)
         instance.internal_photo_url = serializer.validated_data.get('internal_photo_url', instance.internal_photo_url)
+        BlockedPhoneNumber.objects.update_or_create(
+            phone_number=instance.phone_number,
+            defaults={
+                'notes': serializer.validated_data.get('internal_notes', instance.internal_notes) or ''
+            },
+        )
 
         tokens = OutstandingToken.objects.filter(user=instance)
         for token in tokens:

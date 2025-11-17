@@ -9,10 +9,11 @@ from django.db.models import Q
 from django.utils import timezone  # Importar timezone para la fecha de expiración
 from simple_history.models import HistoricalRecords
 
-from core.models import BaseModel
+from core.models import BaseModel, SoftDeleteModel
+from core.exceptions import BusinessLogicError
 import uuid
 
-class ServiceCategory(BaseModel):
+class ServiceCategory(SoftDeleteModel):
     """
     Represents a category for services, e.g., 'Masajes', 'Terapias'.
     """
@@ -32,7 +33,7 @@ class ServiceCategory(BaseModel):
     def __str__(self):
         return self.name
 
-class Service(BaseModel):
+class Service(SoftDeleteModel):
     """
     Represents a service offered by the spa.
     """
@@ -129,10 +130,14 @@ class StaffAvailability(BaseModel):
             .exists()
         )
         if overlap_exists:
-            raise ValidationError({
-                "start_time": "El horario se solapa con otro bloque existente.",
-                "end_time": "El horario se solapa con otro bloque existente.",
-            })
+            raise BusinessLogicError(
+                detail="El horario seleccionado se solapa con otro bloque existente.",
+                internal_code="SRV-002",
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
 
 class AvailabilityExclusion(BaseModel):
