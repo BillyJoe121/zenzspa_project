@@ -41,6 +41,7 @@ class KpiService:
             "ltv_by_role": self._get_ltv_by_role(),
             "utilization_rate": self._get_utilization_rate(),
             "average_order_value": self._get_average_order_value(),
+            "debt_recovery": self._get_debt_recovery_metrics(),
         }
 
     # --- Appointment helpers -------------------------------------------------
@@ -57,6 +58,9 @@ class KpiService:
         return qs.distinct()
 
     def _get_conversion_rate(self):
+        """
+        Conversion Rate = citas confirmadas o completadas ÷ total de citas creadas en el periodo.
+        """
         appointments = self._appointment_queryset()
         total = appointments.count()
         if total == 0:
@@ -70,6 +74,9 @@ class KpiService:
         return converted / total
 
     def _get_no_show_rate(self):
+        """
+        No-Show Rate = citas marcadas como NO_SHOW ÷ citas finalizadas (COMPLETED + NO_SHOW).
+        """
         appointments = self._appointment_queryset()
         finished = appointments.filter(
             status__in=[
@@ -84,6 +91,9 @@ class KpiService:
         return no_show / total_finished
 
     def _get_reschedule_rate(self):
+        """
+        Reschedule Rate = citas con reschedule_count>0 ÷ total de citas del periodo.
+        """
         appointments = self._appointment_queryset()
         total = appointments.count()
         if total == 0:
@@ -110,6 +120,9 @@ class KpiService:
         )
 
     def _get_ltv_by_role(self):
+        """
+        LTV por Rol = suma(total gastado por rol) ÷ cantidad de usuarios por rol.
+        """
         user_totals = defaultdict(Decimal)
         payments = self._payment_queryset().values("user_id").annotate(amount=Sum("amount"))
         for row in payments:
@@ -144,6 +157,9 @@ class KpiService:
         return results
 
     def _get_utilization_rate(self):
+        """
+        Utilización = minutos reservados ÷ minutos disponibles de las agendas del personal.
+        """
         appointment_minutes = AppointmentItem.objects.filter(
             appointment__start_time__date__gte=self.start_date,
             appointment__start_time__date__lte=self.end_date,
@@ -163,6 +179,9 @@ class KpiService:
         return scheduled / available
 
     def _calculate_available_minutes(self):
+        """
+        Minutos disponibles = suma de (fin - inicio) para cada disponibilidad entre start_date y end_date.
+        """
         availabilities = StaffAvailability.objects.all()
         if self.staff_id:
             availabilities = availabilities.filter(staff_member_id=self.staff_id)
@@ -184,8 +203,95 @@ class KpiService:
         return total_minutes
 
     def _get_average_order_value(self):
+        """
+        Average Order Value = suma(total_amount) ÷ número de órdenes emitidas en el periodo.
+        """
         avg = self._order_queryset().aggregate(avg=Avg("total_amount"))["avg"]
         return float(avg or Decimal("0"))
+
+    def _get_debt_recovery_metrics(self):
+        """
+        Tasa de Recuperación = monto recuperado de pagos inicialmente en mora ÷ deuda generada.
+        """
+        base_qs = Payment.objects.filter(
+            created_at__date__gte=self.start_date,
+            created_at__date__lte=self.end_date,
+        )
+        debt_statuses = [
+            Payment.PaymentStatus.PENDING,
+            Payment.PaymentStatus.DECLINED,
+            Payment.PaymentStatus.ERROR,
+            Payment.PaymentStatus.TIMEOUT,
+        ]
+        total_generated = base_qs.filter(status__in=debt_statuses).aggregate(
+            total=Coalesce(Sum("amount"), Decimal("0"))
+        )["total"]
+        recovered_amount = base_qs.filter(
+            status=Payment.PaymentStatus.APPROVED,
+            updated_at__date__gte=self.start_date,
+            updated_at__date__lte=self.end_date,
+        ).exclude(created_at=F("updated_at")).aggregate(
+            total=Coalesce(Sum("amount"), Decimal("0"))
+        )["total"]
+        total_generated = total_generated or Decimal("0")
+        recovered_amount = recovered_amount or Decimal("0")
+        rate = float(recovered_amount / total_generated) if total_generated > 0 else 0.0
+        return {
+            "total_debt": float(total_generated),
+            "recovered_amount": float(recovered_amount),
+            "recovery_rate": rate,
+        }
+
+    def get_sales_details(self):
+        orders = (
+            self._order_queryset()
+            .select_related("user")
+            .order_by("-created_at")
+        )
+        details = []
+        for order in orders:
+            details.append(
+                {
+                    "order_id": str(order.id),
+                    "user": order.user.get_full_name() if order.user else "",
+                    "status": order.status,
+                    "total_amount": float(order.total_amount),
+                    "created_at": order.created_at.astimezone(self.tz).isoformat(),
+                }
+            )
+        return details
+
+    def get_debt_rows(self):
+        base_qs = Payment.objects.filter(
+            created_at__date__gte=self.start_date,
+            created_at__date__lte=self.end_date,
+        ).select_related("user")
+        debt_related = base_qs.filter(
+            Q(status__in=[
+                Payment.PaymentStatus.PENDING,
+                Payment.PaymentStatus.DECLINED,
+                Payment.PaymentStatus.ERROR,
+                Payment.PaymentStatus.TIMEOUT,
+            ])
+            | Q(
+                status=Payment.PaymentStatus.APPROVED,
+                updated_at__date__gte=self.start_date,
+                updated_at__date__lte=self.end_date,
+            )
+        )
+        rows = []
+        for payment in debt_related:
+            rows.append(
+                {
+                    "payment_id": str(payment.id),
+                    "user": payment.user.get_full_name() if payment.user else "",
+                    "status": payment.status,
+                    "amount": float(payment.amount),
+                    "created_at": payment.created_at.astimezone(self.tz).isoformat(),
+                    "updated_at": payment.updated_at.astimezone(self.tz).isoformat(),
+                }
+            )
+        return rows
 
     # --- Export helpers ------------------------------------------------------
 
@@ -200,4 +306,8 @@ class KpiService:
         ]
         for role, payload in kpis["ltv_by_role"].items():
             rows.append((f"ltv_{role.lower()}", payload["ltv"]))
+        debt_metrics = kpis.get("debt_recovery") or {}
+        rows.append(("debt_total", debt_metrics.get("total_debt", 0)))
+        rows.append(("debt_recovered", debt_metrics.get("recovered_amount", 0)))
+        rows.append(("debt_recovery_rate", debt_metrics.get("recovery_rate", 0)))
         return rows

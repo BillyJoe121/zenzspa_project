@@ -63,6 +63,7 @@ class ProductVariant(BaseModel):
         help_text="Precio con descuento para miembros VIP. Dejar en blanco si no aplica."
     )
     stock = models.PositiveIntegerField(default=0, verbose_name="Cantidad en Stock")
+    reserved_stock = models.PositiveIntegerField(default=0, verbose_name="Stock Reservado")
 
     class Meta:
         verbose_name = "Variante de Producto"
@@ -87,6 +88,8 @@ class InventoryMovement(BaseModel):
         RETURN = 'RETURN', 'Devolución'
         RESTOCK = 'RESTOCK', 'Reabastecimiento'
         ADJUSTMENT = 'ADJUSTMENT', 'Ajuste'
+        RESERVATION = 'RESERVATION', 'Reserva creada'
+        RESERVATION_RELEASE = 'RESERVATION_RELEASE', 'Reserva liberada'
         EXPIRED_RESERVATION = 'EXPIRED_RESERVATION', 'Reserva expirada'
 
     variant = models.ForeignKey(
@@ -251,6 +254,7 @@ class Order(BaseModel):
         blank=True,
         verbose_name="Número de Seguimiento"
     )
+    reservation_expires_at = models.DateTimeField(null=True, blank=True)
     shipping_date = models.DateField(
         null=True, blank=True,
         verbose_name="Fecha de Envío"

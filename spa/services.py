@@ -586,6 +586,7 @@ class WompiWebhookService:
         Valida la firma del evento para asegurar que proviene de Wompi.
         """
         if not all([self.data, self.sent_signature, self.timestamp]):
+            logger.error("[PAYMENT-ALERT] Webhook Error: Firma o datos incompletos (event=%s)", self.event_type)
             raise ValueError("Firma o datos del webhook incompletos.")
         
         # El cuerpo del evento (data) debe ser convertido a un string JSON compacto.
@@ -597,6 +598,7 @@ class WompiWebhookService:
         calculated_signature = hashlib.sha256(concatenation.encode('utf-8')).hexdigest()
         
         if not hashlib.sha256(self.sent_signature.encode('utf-8')).hexdigest() == hashlib.sha256(calculated_signature.encode('utf-8')).hexdigest():
+            logger.error("[PAYMENT-ALERT] Webhook Error: Firma inválida (event=%s)", self.event_type)
             raise ValueError("Firma del webhook inválida. La petición podría ser fraudulenta.")
 
     def _update_event_status(self, status, error_message=None):
@@ -618,6 +620,7 @@ class WompiWebhookService:
             transaction_status = transaction_data.get("status")
 
             if not reference or not transaction_status:
+                logger.error("[PAYMENT-ALERT] Webhook Error: Referencia o estado ausentes (event=%s)", self.event_type)
                 raise ValueError("Referencia o estado de la transacción ausentes en el webhook.")
             
             try:
@@ -630,6 +633,7 @@ class WompiWebhookService:
                     order = Order.objects.select_for_update().get(wompi_transaction_id=reference)
                 except Order.DoesNotExist:
                     self._update_event_status(WebhookEvent.Status.IGNORED, "Pago u orden no encontrados.")
+                    logger.error("[PAYMENT-ALERT] Webhook Error: Pago u orden no encontrados (reference=%s)", reference)
                     return {"status": "already_processed_or_invalid"}
 
                 amount_in_cents = transaction_data.get("amount_in_cents")
@@ -641,11 +645,27 @@ class WompiWebhookService:
                         order.fraud_reason = "Monto pagado no coincide con el total."
                         order.save(update_fields=['status', 'fraud_reason', 'updated_at'])
                         self._update_event_status(WebhookEvent.Status.FAILED, "Diferencia en montos detectada.")
+                        logger.error(
+                            "[PAYMENT-ALERT] Webhook Error: Diferencia en montos detectada (reference=%s expected=%s got=%s)",
+                            reference,
+                            expected_cents,
+                            amount_in_cents,
+                        )
                         return {"status": "fraud_alert"}
                     order.wompi_transaction_id = transaction_data.get("id", order.wompi_transaction_id)
                     order.save(update_fields=['wompi_transaction_id', 'updated_at'])
                     from marketplace.services import OrderService
-                    OrderService.transition_to(order, Order.OrderStatus.PAID)
+                    try:
+                        OrderService.confirm_payment(order)
+                    except BusinessLogicError as exc:
+                        OrderService.transition_to(order, Order.OrderStatus.FRAUD_ALERT)
+                        OrderService.release_reservation(
+                            order,
+                            reason=str(exc),
+                        )
+                        self._update_event_status(WebhookEvent.Status.FAILED, str(exc))
+                        logger.error("[PAYMENT-ALERT] Webhook Error: %s", exc)
+                        return {"status": "fraud_alert"}
                 else:
                     from marketplace.services import OrderService
                     OrderService.transition_to(order, Order.OrderStatus.CANCELLED)
@@ -657,6 +677,7 @@ class WompiWebhookService:
             return {"status": "processed_successfully", "payment_id": payment.id}
         except Exception as exc:
             self._update_event_status(WebhookEvent.Status.FAILED, str(exc))
+            logger.error("[PAYMENT-ALERT] Webhook Error: %s", exc, exc_info=True)
             raise
 
 class PaymentService:
@@ -842,12 +863,18 @@ class WaitlistService:
 
 class FinancialAdjustmentService:
     CREDIT_TTL_DAYS = 365
+    MAX_MANUAL_ADJUSTMENT = Decimal("5000000")
 
     @classmethod
     @transaction.atomic
     def create_adjustment(cls, *, user, amount, adjustment_type, reason, created_by, related_payment=None):
         if amount <= 0:
             raise ValidationError("El monto debe ser mayor a cero.")
+        if Decimal(amount) > cls.MAX_MANUAL_ADJUSTMENT:
+            raise BusinessLogicError(
+                detail="El monto excede el límite permitido para ajustes manuales.",
+                internal_code="PAY-ADJ-LIMIT",
+            )
         adjustment = FinancialAdjustment.objects.create(
             user=user,
             amount=amount,

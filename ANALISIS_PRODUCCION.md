@@ -238,3 +238,70 @@
 
 **Última actualización:** 2025-01-XX
 
+# v2.0:
+
+Autenticación
+
+OTP/login recuperaciones cumplen RFD-AUTH-01/05: Twilio Verify maneja códigos de 6 dígitos, límites de intentos y reCAPTCHA condicional (users/views.py (lines 76-251), users/services.py (lines 9-74)), y se registra cada intento (OTPAttempt) para auditoría.
+La rotación y blacklist de JWT + seguimiento de sesiones activas se implementa en serie (users/serializers.py (lines 25-83), users/signals.py (lines 33-66)), y marcar Cliente No Grato cancela citas y bloquea tokens (users/views.py (lines 291-342)); el registro bloquea teléfonos CNG como pide RFD-AUTH-04 (users/serializers.py (lines 128-159)).
+Pendientes: i) No se envía notificación automática a ADMIN al marcar alguien como CNG; solo se escribe en AuditLog (users/views.py (lines 311-340)), incumpliendo el requerimiento de alerta. ii) El enmascaramiento de datos está listo (users/serializers.py (lines 101-159), core/serializers.py (lines 8-102)), pero faltan suites de autorización por endpoint como exige RFD-AUTH-03; no hay pruebas fuera de users/tests.py y por ende no hay cobertura para APIs sensibles.
+Perfil clínico / Quiosco
+
+El modelo está versionado con simple_history, conserva consentimientos y permite anonimizar (RFD-CLI-01) (profiles/models.py (lines 14-188)). El modo quiosco tiene sesiones con tokens, heartbeat, locking y middleware que bloquea navegación fuera del flujo (RFD-CLI-02) (profiles/models.py (lines 310-377), profiles/views.py (lines 169-330), profiles/middleware.py (lines 6-47)).
+Riesgos: el timeout por defecto es 10 minutos (profiles/views.py (lines 169-187)) cuando la política especifica 5 minutos; no hay ajuste dinámico ni pruebas end-to-end que validen el regreso automático a la pantalla segura.
+Servicios, horarios y configuración
+
+Catálogos y disponibilidad validan solapes y categorías protegidas (spa/models.py (lines 87-214), spa/views.py (lines 104-132)). GlobalSettings define buffers, porcentajes y capacidad (RFD-SRV-02/CNF-01) (core/models.py (lines 120-210)).
+Gaps clave: i) El buffer de limpieza que debería ser configurable se fija en 15 minutos en AvailabilityService.BUFFER_MINUTES (spa/services.py (lines 24-52)) ignorando GlobalSettings.appointment_buffer_time. ii) El endpoint de borrado de categorías devuelve 400 sin código SRV-001 ni status 409 (spa/views.py (lines 104-132)). iii) Campos solicitados en RFD-CFG-01 (quiet_hours, timezone_display, waitlist_enabled) no existen en GlobalSettings (core/models.py (lines 120-210)), por lo que varias políticas globales siguen hardcodeadas o dispersas.
+Citas (RFD-APP)
+
+Creación idempotente, verificación de disponibilidad y límites de citas activas están cubiertos (spa/views.py (lines 116-226), spa/services.py (lines 200-342)). Waitlist, no-show y exportación iCal también existen (RFD-APP-09/08/10) (spa/services.py (lines 820-882), spa/views.py (lines 240-474)).
+Bloqueantes:
+El header Idempotency-Key es opcional: si el cliente no lo envía, idempotent_view continúa sin error (core/decorators.py (lines 18-39)), incumpliendo RFD-APP-01.
+El catálogo de estados expuesto no coincide con el especificado (no hay PENDING_PAYMENT ni RESCHEDULED; hay PENDING_ADVANCE y COMPLETED_PENDING_FINAL_PAYMENT en spa/models.py (lines 164-212)), lo que rompe la trazabilidad exigida en §5 del documento.
+RFD-APP-06 exige que los clientes no puedan cancelar citas pagadas; sin embargo, AppointmentViewSet.cancel permite a CLIENT/VIP cancelar una cita confirmada y recibir crédito si falta ≥24h (spa/views.py (lines 356-392)). Lo mismo sucede en el bot (bot/services.py (lines 120-144)), que cancela sin verificar ventanas ni límites de reagendamiento.
+La lista de espera usa un TTL fijo de 30 minutos y envía correos directos via send_mail, sin respetar preferencias ni configuración global (spa/services.py (lines 820-860), spa/tasks.py (lines 55-107)). No hay waitlist_enabled ni ventana configurable como pide RFD-APP-09 y RFD-CFG-01.
+No existe flujo de “pago final” pese a que PaymentType.FINAL está definido; no hay vistas ni servicios que permitan completar el pago final ni mover citas a COMPLETED (spa/models.py (lines 390-402), spa/services.py (lines 207-215)), por lo que la política APP-11 queda a medias.
+Pagos, VIP y Créditos
+
+El anticipo obligatorio, créditos post cancelación y vouchers funcionan: PaymentService.create_advance_payment_for_appointment aplica saldo a favor (spa/services.py (lines 747-820)), CreditService convierte anticipos en crédito según política (spa/services.py (lines 899-940)), y los webhooks de Wompi validan firma/idempotencia (spa/services.py (lines 579-681)). Paquetes y lealtad VIP generando vouchers cumplen RFD-PAY-03/04 (spa/services.py (lines 420-520), spa/tasks.py (lines 180-230)).
+Brechas graves:
+Cobros recurrentes VIP (RFD-VIP-01) no llegan a producción: process_recurring_subscriptions sólo crea un Payment local y marca el estado como APPROVED si existe vip_payment_token, pero nunca invoca la API de Wompi o almacena el token de forma segura (spa/tasks.py (lines 231-263), users/models.py (lines 60-91)). Esto implica que las renovaciones automáticas no cobran realmente al cliente.
+No hay notificaciones para pagos aprobados/declinados, creación de órdenes ni cambios en suscripciones más allá de expiración/fallo (spa/services.py (lines 683-717)). RFD-PAY-01 y RFD-PAY-02 piden mensajes claros para checkout; actualmente solo se registran en logs.
+Las notas de débito/crédito (RFD-PAY-08) carecen de auditoría y reporting: FinancialAdjustmentService.create_adjustment crea el ajuste y créditos, pero no registra AuditLog ni expone los cambios a analytics (spa/services.py (lines 864-897)).
+Las propinas se crean como pagos tipo TIP (spa/services.py (lines 800-820)), pero los KPIs suman todos los pagos sin filtrar por tipo (analytics/services.py (lines 104-170)), lo que distorsiona métricas de ingresos.
+Marketplace (RFD-MKT)
+
+Catálogo, variantes y carrito VIP/CLIENT están implementados (marketplace/models.py (lines 1-150), marketplace/serializers.py (lines 10-160)). Checkout es idempotente y reserva stock (RFD-MKT-01/02/03) (marketplace/views.py (lines 76-164), marketplace/services.py (lines 1-140)), y la liberación de stock tras confirmación/cancelación sigue el modelo de inventario (marketplace/services.py (lines 140-200)).
+Pendientes: i) Las reservas expiradas sólo se liberan si se programa la tarea release_expired_order_reservations (marketplace/tasks.py (lines 1-45)); no hay evidencia de que esté configurada en Celery Beat, ni de notificaciones “orden lista/envío” fuera de SHIPPED/DELIVERED. ii) Las devoluciones generan client credit (marketplace/services.py (lines 200-320)), pero no notifican al cliente ni generan auditoría/documentación de políticas como exige RFD-MKT-05.
+Notificaciones (RFD-NOT)
+
+El modelo de preferencias por usuario y plantillas versionadas cumple la base de RFD-NOT-01/02 (notifications/models.py (lines 9-118)), y NotificationService respeta quiet hours y reintentos (notifications/services.py (lines 19-111)).
+Problemas:
+Sólo existen plantillas para tres eventos (auto cancelación y no-show) según la migración 0002_default_event_templates (notifications/migrations/0002_default_event_templates.py (lines 5-67)). Eventos requeridos —pagos aprobados/declinados, cambios VIP, lista de espera, entrega actualizada— no tienen plantilla ni triggers.
+Las preferencias son por canal global; no se puede hacer opt-out por tipo de mensaje, y el fallback nunca cambia de canal si el usuario lo deshabilitó (contrario al requerimiento “opt-out no bloquea transaccionales críticos”) (notifications/models.py (lines 9-53), notifications/services.py (lines 41-90)).
+Varias notificaciones importantes se envían “a mano” ignorando preferencias y plantillas (por ejemplo, recordatorios de 24h/_send_reminder y lista de espera usan send_mail directo en spa/tasks.py (lines 13-107)).
+No hay catálogo centralizado de eventos ni métricas de entrega como exige RFD-NOT-03.
+Analíticas (RFD-ANL)
+
+Los KPIs solicitados (conversión, no-show, reagendos, LTV, utilización, recuperación de deuda, AOV) están implementados con filtros por fechas/categorías (analytics/services.py (lines 15-220)). Exporta CSV/XLSX y tableros operativos para agenda, cobros, créditos y renovaciones (analytics/views.py (lines 64-210), analytics/utils.py (lines 1-85)).
+Riesgos remanentes: i) No hay pruebas automatizadas que validen fórmulas/UTC vs America/Bogota; todo depende de consultas agregadas sin fixtures. ii) Las métricas mezclan pagos de propinas y ajustes, por lo que Revenue y LTV no coincidirán con reportes contables.
+Chatbot (RFD-BOT)
+
+El bot está restringido a usuarios autenticados y rate-limited (bot/views.py (lines 6-40), bot/throttling.py (lines 3-13)). Puede consultar disponibilidad, agendar y cancelar usando los servicios existentes (bot/services.py (lines 14-170)).
+Falencias frente a RFD-BOT-01/02: i) No existe confirmación explícita previa a ejecutar acciones críticas; ActionExecuteView llamará directamente a execute_action sin un paso de confirmación/human-in-the-loop. ii) No hay guardrails adicionales por rol, ni registro/auditoría de conversaciones o acciones en AuditLog. iii) _cancel_appointment ignora límites de reagendamiento y ventanas de 24h, por lo que los clientes pueden saltarse las políticas mediante el bot (bot/services.py (lines 120-144)).
+Configuración y estados
+
+GlobalSettings se cachea y guarda métricas clave (core/models.py (lines 120-210)), pero faltan campos solicitados (quiet hours globales, timezone_display, waitlist_enabled) y valores como low_supervision_capacity no se aplican a todos los escenarios (solo en bundles sin staff).
+El catálogo de estados documentado no coincide con la implementación (Appointments y Orders usan conjuntos distintos), lo que afecta la trazabilidad HU↔RFD (§5). Se requiere alinear enumeraciones en código (spa/models.py (lines 164-212), marketplace/models.py (lines 200-260)) o actualizar el documento.
+Pruebas y observabilidad
+
+La única suite real cubre el serializer de usuario y el bloqueo CNG (users/tests.py (lines 1-93)); las apps críticas (spa/tests.py (lines 1-3), marketplace/tests.py (lines 1-3)) no tienen pruebas. No hay cobertura para pagos, notificaciones, waitlist, bot ni marketplace, lo que hace riesgoso el despliegue a producción el mismo día.
+Auditoría: aunque AuditLog existe (core/models.py (lines 60-118)), no se registra todo lo que debería (ajustes financieros, ejecución del bot, cambios de estado en marketplace). Tampoco hay métricas/alertas sobre tareas periódicas (cancelaciones automáticas, reservas expiradas, cobros VIP).
+Siguientes pasos sugeridos
+
+Corregir los bloqueantes de pagos/VIP (integrar Wompi Subscriptions, implementar flujo de pago final y notificaciones de pago) antes de lanzar.
+Alinear políticas críticas (cancelaciones, waitlist configurable, buffer dinámico, estados) con los RFD y documentar los cambios.
+Completar el catálogo de notificaciones/plantillas y migrar todos los envíos manuales al NotificationService, respetando preferencias y fallback.
+Añadir auditoría y validaciones faltantes (bot, ajustes financieros, CNG alerts) y reforzar pruebas automatizadas para citas/pagos/marketplace.
+Programar y monitorear las tareas periódicas (cancelación por impago, reservas marketplace, lealtad, VIP) para asegurar SLA operativos.

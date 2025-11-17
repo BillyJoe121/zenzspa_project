@@ -231,17 +231,30 @@ def process_recurring_subscriptions():
             payment_type=Payment.PaymentType.VIP_SUBSCRIPTION,
             transaction_id=reference,
         )
+        status_result = None
         if user.vip_payment_token:
-            PaymentService.apply_gateway_status(payment, 'APPROVED', {'id': reference, 'status': 'APPROVED'})
+            status_result = PaymentService.apply_gateway_status(payment, 'APPROVED', {'id': reference, 'status': 'APPROVED'})
+        else:
+            status_result = Payment.PaymentStatus.DECLINED
+            PaymentService.apply_gateway_status(payment, 'DECLINED', {'id': reference, 'status': 'DECLINED'})
+
+        if status_result == Payment.PaymentStatus.APPROVED:
             user.vip_failed_payments = 0
             user.save(update_fields=['vip_failed_payments', 'updated_at'])
             processed += 1
         else:
-            PaymentService.apply_gateway_status(payment, 'DECLINED', {'id': reference, 'status': 'DECLINED'})
             user.vip_failed_payments += 1
             if user.vip_failed_payments >= 3:
                 user.vip_auto_renew = False
             user.save(update_fields=['vip_failed_payments', 'vip_auto_renew', 'updated_at'])
+            try:
+                NotificationService.send_notification(
+                    user=user,
+                    event_code="VIP_RENEWAL_FAILED",
+                    context={"failed_attempts": user.vip_failed_payments},
+                )
+            except Exception:
+                logger.exception("No se pudo notificar fallo de renovación VIP para el usuario %s", user.id)
     return f"Renovaciones intentadas: {processed}"
 
 
@@ -258,6 +271,7 @@ def downgrade_expired_vips():
     )
     count = 0
     for user in expired_users:
+        expired_at = user.vip_expires_at
         user.role = CustomUser.Role.CLIENT
         user.vip_auto_renew = False
         user.vip_active_since = None
@@ -269,5 +283,44 @@ def downgrade_expired_vips():
             action=AuditLog.Action.VIP_DOWNGRADED,
             details=f"Usuario {user.id} degradado a CLIENT por expiración VIP.",
         )
+        try:
+            NotificationService.send_notification(
+                user=user,
+                event_code="VIP_MEMBERSHIP_EXPIRED",
+                context={
+                    "expired_at": expired_at.isoformat() if expired_at else None,
+                },
+            )
+        except Exception:
+            logger.exception("No se pudo notificar expiración VIP para el usuario %s", user.id)
         count += 1
     return f"Usuarios degradados: {count}"
+
+
+@shared_task
+def notify_expiring_vouchers():
+    """
+    Notifica a los usuarios sobre vouchers que expiran en 3 días.
+    """
+    target_date = timezone.now().date() + timedelta(days=3)
+    vouchers = Voucher.objects.select_related('user', 'service').filter(
+        status=Voucher.VoucherStatus.AVAILABLE,
+        expires_at=target_date,
+    )
+    notified = 0
+    for voucher in vouchers:
+        context = {
+            "voucher_code": voucher.code,
+            "service_name": voucher.service.name,
+            "expires_at": voucher.expires_at.isoformat() if voucher.expires_at else None,
+        }
+        try:
+            NotificationService.send_notification(
+                user=voucher.user,
+                event_code="VOUCHER_EXPIRING_SOON",
+                context=context,
+            )
+            notified += 1
+        except Exception:
+            logger.exception("No se pudo notificar vencimiento de voucher %s", voucher.code)
+    return f"Vouchers notificados: {notified}"

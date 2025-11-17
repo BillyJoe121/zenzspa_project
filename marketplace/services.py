@@ -6,6 +6,7 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
+from core.exceptions import BusinessLogicError
 from core.models import GlobalSettings
 from spa.models import ClientCredit
 from .models import Order, OrderItem, ProductVariant, InventoryMovement
@@ -30,7 +31,7 @@ class OrderCreationService:
         """
         # 1. Validar que el carrito no esté vacío
         if not self.cart.items.exists():
-            raise ValueError("No se puede crear una orden con un carrito vacío.")
+            raise BusinessLogicError(detail="No se puede crear una orden con un carrito vacío.")
 
         # 2. Crear la orden inicial
         order = Order.objects.create(
@@ -54,11 +55,14 @@ class OrderCreationService:
             )
 
             if not variant.product.is_active:
-                raise ValueError(f"El producto '{variant.product.name}' está inactivo.")
+                raise BusinessLogicError(detail=f"El producto '{variant.product.name}' está inactivo.")
 
-            # Validar stock una última vez
-            if variant.stock < cart_item.quantity:
-                raise ValueError(f"Stock insuficiente para la variante '{variant}'.")
+            available = variant.stock - variant.reserved_stock
+            if available < cart_item.quantity:
+                raise BusinessLogicError(
+                    detail=f"Stock insuficiente para la variante '{variant}'.",
+                    internal_code="MKT-STOCK",
+                )
 
             # Decidir qué precio usar (VIP o regular)
             price_at_purchase = variant.price
@@ -76,18 +80,15 @@ class OrderCreationService:
                 )
             )
             
-            # Actualizar el stock de la variante
-            variant.stock -= cart_item.quantity
-            if variant.stock < 0:
-                raise ValueError("El stock no puede ser negativo.")
-            variant.save(update_fields=['stock'])
+            variant.reserved_stock += cart_item.quantity
+            variant.save(update_fields=['reserved_stock'])
             created_by = self.user if getattr(self.user, "is_authenticated", False) else None
             InventoryMovement.objects.create(
                 variant=variant,
-                quantity=-cart_item.quantity,
-                movement_type=InventoryMovement.MovementType.SALE,
+                quantity=cart_item.quantity,
+                movement_type=InventoryMovement.MovementType.RESERVATION,
                 reference_order=order,
-                description="Venta en checkout",
+                description="Reserva temporal de stock",
                 created_by=created_by,
             )
 
@@ -95,7 +96,8 @@ class OrderCreationService:
         OrderItem.objects.bulk_create(items_to_create)
         order.total_amount = total_amount
         order.wompi_transaction_id = f"ORDER-{order.id}-{uuid.uuid4().hex[:8]}"
-        order.save(update_fields=['total_amount', 'wompi_transaction_id', 'updated_at'])
+        order.reservation_expires_at = timezone.now() + timedelta(minutes=30)
+        order.save(update_fields=['total_amount', 'wompi_transaction_id', 'reservation_expires_at', 'updated_at'])
 
         # 5. Vaciar el carrito de compras
         self.cart.items.all().delete()
@@ -118,6 +120,12 @@ class OrderService:
         Order.OrderStatus.RETURN_APPROVED: {Order.OrderStatus.REFUNDED},
     }
 
+    STATE_NOTIFICATION_EVENTS = {
+        Order.OrderStatus.SHIPPED: "ORDER_SHIPPED",
+        Order.OrderStatus.DELIVERED: "ORDER_DELIVERED",
+        Order.OrderStatus.CANCELLED: "ORDER_CANCELLED",
+    }
+
     @classmethod
     @transaction.atomic
     def transition_to(cls, order, new_status, changed_by=None):
@@ -126,17 +134,109 @@ class OrderService:
             return order
         allowed = cls.ALLOWED_TRANSITIONS.get(current, set())
         if new_status not in allowed:
-            raise ValueError(f"No se puede cambiar el estado de {current} a {new_status}.")
+            raise BusinessLogicError(
+                detail=f"No se puede cambiar el estado de {current} a {new_status}.",
+                internal_code="MKT-STATE",
+            )
 
         order.status = new_status
         if new_status == Order.OrderStatus.DELIVERED:
             order.delivered_at = timezone.now()
         order.save(update_fields=['status', 'delivered_at', 'updated_at'])
-        try:
-            notify_order_status_change.delay(str(order.id))
-        except Exception:
-            logger.exception("No se pudo notificar el cambio de estado de la orden %s", order.id)
+
+        if (
+            new_status == Order.OrderStatus.CANCELLED
+            and current == Order.OrderStatus.PENDING_PAYMENT
+        ):
+            cls.release_reservation(
+                order,
+                movement_type=InventoryMovement.MovementType.RESERVATION_RELEASE,
+                reason="Reserva liberada por cancelación.",
+                changed_by=changed_by,
+            )
+
+        if new_status in cls.STATE_NOTIFICATION_EVENTS:
+            try:
+                notify_order_status_change.delay(str(order.id), new_status)
+            except Exception:
+                logger.exception("No se pudo notificar el cambio de estado de la orden %s", order.id)
         return order
+
+    @classmethod
+    @transaction.atomic
+    def release_reservation(cls, order, movement_type=InventoryMovement.MovementType.RESERVATION_RELEASE, reason="Reserva liberada", changed_by=None):
+        for item in order.items.select_related('variant').select_for_update():
+            variant = item.variant
+            release_qty = min(item.quantity, variant.reserved_stock)
+            if release_qty > 0:
+                variant.reserved_stock -= release_qty
+                variant.save(update_fields=['reserved_stock'])
+                InventoryMovement.objects.create(
+                    variant=variant,
+                    quantity=release_qty,
+                    movement_type=movement_type,
+                    reference_order=order,
+                    description=reason,
+                    created_by=changed_by,
+                )
+        order.reservation_expires_at = None
+        order.save(update_fields=['reservation_expires_at', 'updated_at'])
+        return order
+
+    @classmethod
+    @transaction.atomic
+    def confirm_payment(cls, order):
+        cls._validate_pricing(order)
+        cls._capture_stock(order)
+        order.reservation_expires_at = None
+        order.save(update_fields=['reservation_expires_at', 'updated_at'])
+        return cls.transition_to(order, Order.OrderStatus.PAID)
+
+    @classmethod
+    def _validate_pricing(cls, order):
+        recalculated = Decimal('0')
+        for item in order.items.select_related('variant__product'):
+            variant = item.variant
+            current_price = variant.price
+            if order.user.is_vip and variant.vip_price:
+                current_price = variant.vip_price
+            recalculated += current_price * item.quantity
+        if recalculated != order.total_amount:
+            raise BusinessLogicError(
+                detail="El precio de la orden no coincide con el de los productos actuales.",
+                internal_code="MKT-PRICE",
+            )
+
+    @classmethod
+    def _capture_stock(cls, order):
+        for item in order.items.select_related('variant').select_for_update():
+            variant = item.variant
+            if variant.stock < item.quantity:
+                raise BusinessLogicError(
+                    detail=f"Stock insuficiente para confirmar el pago del ítem {variant}.",
+                    internal_code="MKT-STOCK",
+                )
+            if variant.reserved_stock >= item.quantity:
+                variant.reserved_stock -= item.quantity
+            else:
+                shortfall = item.quantity - variant.reserved_stock
+                available = variant.stock - variant.reserved_stock
+                if available < shortfall:
+                    raise BusinessLogicError(
+                        detail=f"La reserva expiró y no hay stock suficiente para {variant}.",
+                        internal_code="MKT-STOCK-EXPIRED",
+                    )
+                variant.reserved_stock = 0
+            variant.stock -= item.quantity
+            variant.save(update_fields=['stock', 'reserved_stock'])
+            InventoryMovement.objects.create(
+                variant=variant,
+                quantity=item.quantity,
+                movement_type=InventoryMovement.MovementType.SALE,
+                reference_order=order,
+                description="Venta confirmada",
+                created_by=None,
+            )
 
 
 class ReturnService:
@@ -149,9 +249,20 @@ class ReturnService:
             Order.OrderStatus.PAID,
             Order.OrderStatus.DELIVERED,
         ]:
-            raise ValueError("La orden no se puede devolver en su estado actual.")
+            raise BusinessLogicError(
+                detail="La orden no se puede devolver en su estado actual.",
+                internal_code="MKT-RETURN-STATE",
+            )
         if not items:
-            raise ValueError("Debes seleccionar ítems a devolver.")
+            raise BusinessLogicError(detail="Debes seleccionar ítems a devolver.")
+
+        settings_obj = GlobalSettings.load()
+        delivered_date = order.delivered_at.date() if order.delivered_at else order.shipping_date
+        if delivered_date and (timezone.now().date() - delivered_date).days > settings_obj.return_window_days:
+            raise BusinessLogicError(
+                detail="La orden excede la ventana de devoluciones permitida.",
+                internal_code="MKT-RETURN-WINDOW",
+            )
 
         payload = []
         order_items = {str(item.id): item for item in order.items.select_for_update()}
@@ -160,11 +271,11 @@ class ReturnService:
             item_id = str(entry['order_item_id'])
             quantity = entry['quantity']
             if item_id not in order_items:
-                raise ValueError("Uno de los ítems no pertenece a la orden.")
+                raise BusinessLogicError(detail="Uno de los ítems no pertenece a la orden.")
             order_item = order_items[item_id]
             available = order_item.quantity - order_item.quantity_returned
             if quantity <= 0 or quantity > available:
-                raise ValueError("La cantidad solicitada no es válida para un ítem.")
+                raise BusinessLogicError(detail="La cantidad solicitada no es válida para un ítem.")
             payload.append({'order_item_id': item_id, 'quantity': quantity})
 
         order.status = Order.OrderStatus.RETURN_REQUESTED
@@ -182,7 +293,7 @@ class ReturnService:
     @transaction.atomic
     def process_return(cls, order, approved, processed_by):
         if order.status != Order.OrderStatus.RETURN_REQUESTED:
-            raise ValueError("La orden no tiene una devolución pendiente.")
+            raise BusinessLogicError(detail="La orden no tiene una devolución pendiente.")
 
         if not approved:
             order.status = Order.OrderStatus.RETURN_REJECTED
@@ -193,7 +304,7 @@ class ReturnService:
         settings_obj = GlobalSettings.load()
         delivered_date = order.delivered_at.date() if order.delivered_at else order.shipping_date
         if delivered_date and (timezone.now().date() - delivered_date).days > settings_obj.return_window_days:
-            raise ValueError("La solicitud excede la ventana de devoluciones permitida.")
+            raise BusinessLogicError(detail="La solicitud excede la ventana de devoluciones permitida.")
 
         OrderService.transition_to(order, Order.OrderStatus.RETURN_APPROVED, changed_by=processed_by)
 
@@ -205,7 +316,7 @@ class ReturnService:
                 continue
             available = order_item.quantity - order_item.quantity_returned
             if quantity > available:
-                raise ValueError("La cantidad aprobada excede el total original del ítem.")
+                raise BusinessLogicError(detail="La cantidad aprobada excede el total original del ítem.")
 
             order_item.quantity_returned += quantity
             order_item.save(update_fields=['quantity_returned'])

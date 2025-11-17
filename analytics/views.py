@@ -2,6 +2,8 @@ from datetime import datetime, timedelta
 import csv
 import io
 
+from django.core.cache import cache
+from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -13,6 +15,7 @@ from spa.models import Appointment, Payment, ClientCredit
 from marketplace.models import Order
 from users.models import CustomUser
 from .services import KpiService
+from .utils import build_analytics_workbook
 
 
 class DateFilterMixin:
@@ -92,22 +95,41 @@ class AnalyticsExportView(DateFilterMixin, APIView):
             staff_id=staff_id,
             service_category_id=service_category_id,
         )
-        rows = service.as_rows()
+        export_format = request.query_params.get("format", "csv").lower()
+        if export_format == "xlsx":
+            kpis = service.get_business_kpis()
+            workbook = build_analytics_workbook(
+                kpis=kpis,
+                sales_details=service.get_sales_details(),
+                debt_metrics=kpis.get("debt_recovery", {}),
+                debt_rows=service.get_debt_rows(),
+                start_date=start_date,
+                end_date=end_date,
+            )
+            filename = f"analytics_{start_date.isoformat()}_{end_date.isoformat()}.xlsx"
+            response = HttpResponse(
+                workbook,
+                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            return response
 
+        rows = service.as_rows()
         buffer = io.StringIO()
         writer = csv.writer(buffer)
         writer.writerow(["metric", "value", "start_date", "end_date"])
         for metric, value in rows:
             writer.writerow([metric, value, start_date.isoformat(), end_date.isoformat()])
 
-        response = Response(buffer.getvalue(), content_type="text/csv")
         filename = f"analytics_{start_date.isoformat()}_{end_date.isoformat()}.csv"
+        response = HttpResponse(buffer.getvalue(), content_type="text/csv")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
         return response
 
 
 class DashboardViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
+    CACHE_TTL = 60
 
     def list(self, request):
         return Response({"detail": "Usa las acciones del dashboard."})
@@ -126,9 +148,16 @@ class DashboardViewSet(viewsets.ViewSet):
             "email": user.email,
         }
 
+    def _cache_key(self, suffix):
+        return f"analytics:dashboard:{suffix}"
+
     @action(detail=False, methods=["get"], url_path="agenda-today")
     def agenda_today(self, request):
         today = self._today()
+        cache_key = self._cache_key(f"agenda:{today.isoformat()}")
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response({"results": cached})
         appointments = (
             Appointment.objects.select_related("user", "staff_member")
             .filter(start_time__date=today)
@@ -147,10 +176,15 @@ class DashboardViewSet(viewsets.ViewSet):
                     "has_debt": getattr(user, "has_pending_final_payment", lambda: False)(),
                 }
             )
+        cache.set(cache_key, data, self.CACHE_TTL)
         return Response({"results": data})
 
     @action(detail=False, methods=["get"], url_path="pending-payments")
     def pending_payments(self, request):
+        cache_key = self._cache_key("pending")
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response({"results": cached})
         pending_payments = Payment.objects.select_related("user").filter(
             status=Payment.PaymentStatus.PENDING
         )
@@ -179,12 +213,18 @@ class DashboardViewSet(viewsets.ViewSet):
             }
             for appointment in pending_appointments
         ]
-        return Response({"results": payments_payload + appointments_payload})
+        combined = payments_payload + appointments_payload
+        cache.set(cache_key, combined, self.CACHE_TTL)
+        return Response({"results": combined})
 
     @action(detail=False, methods=["get"], url_path="expiring-credits")
     def expiring_credits(self, request):
         today = self._today()
         upcoming = today + timedelta(days=7)
+        cache_key = self._cache_key(f"credits:{today.isoformat()}")
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response({"results": cached})
         credits = ClientCredit.objects.select_related("user").filter(
             expires_at__gte=today,
             expires_at__lte=upcoming,
@@ -202,6 +242,7 @@ class DashboardViewSet(viewsets.ViewSet):
             }
             for credit in credits
         ]
+        cache.set(cache_key, results, self.CACHE_TTL)
         return Response({"results": results})
 
     @action(detail=False, methods=["get"], url_path="renewals")
