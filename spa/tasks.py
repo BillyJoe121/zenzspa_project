@@ -61,7 +61,10 @@ def send_appointment_reminder():
 
     appointments = Appointment.objects.filter(
         start_time__range=(reminder_start_time, reminder_end_time),
-        status=Appointment.AppointmentStatus.CONFIRMED,
+        status__in=[
+            Appointment.AppointmentStatus.CONFIRMED,
+            Appointment.AppointmentStatus.RESCHEDULED,
+        ],
     )
     for appointment in appointments:
         _send_reminder_for_appointment.delay(str(appointment.id))
@@ -109,7 +112,7 @@ def cancel_unpaid_appointments():
 
     time_threshold = timezone.now() - timedelta(minutes=expiration_minutes)
     unpaid_appointments = Appointment.objects.filter(
-        status=Appointment.AppointmentStatus.PENDING_ADVANCE,
+        status=Appointment.AppointmentStatus.PENDING_PAYMENT,
         created_at__lt=time_threshold,
     )
 
@@ -118,8 +121,9 @@ def cancel_unpaid_appointments():
 
     cancelled_count = 0
     for appt in unpaid_appointments:
-        appt.status = Appointment.AppointmentStatus.CANCELLED_BY_SYSTEM
-        appt.save(update_fields=['status', 'updated_at'])
+        appt.status = Appointment.AppointmentStatus.CANCELLED
+        appt.outcome = Appointment.AppointmentOutcome.CANCELLED_BY_SYSTEM
+        appt.save(update_fields=['status', 'outcome', 'updated_at'])
         WaitlistService.offer_slot_for_appointment(appt)
         AuditLog.objects.create(
             admin_user=None,

@@ -189,14 +189,18 @@ class Appointment(BaseModel):
     """
 
     class AppointmentStatus(models.TextChoices):
-        PENDING_ADVANCE = 'PENDING_ADVANCE', 'Pendiente de Pago de Anticipo'
-        CONFIRMED = 'CONFIRMED', 'Confirmada (Anticipo Pagado)'
-        COMPLETED_PENDING_FINAL_PAYMENT = 'COMPLETED_PENDING_FINAL_PAYMENT', 'Completada (Pago Final Pendiente)'
-        COMPLETED = 'COMPLETED', 'Completada y Pagada'
+        PENDING_PAYMENT = 'PENDING_PAYMENT', 'Pendiente de Pago'
+        PAID = 'PAID', 'Pago Final Pendiente'
+        CONFIRMED = 'CONFIRMED', 'Confirmada'
+        RESCHEDULED = 'RESCHEDULED', 'Reagendada'
+        COMPLETED = 'COMPLETED', 'Completada'
+        CANCELLED = 'CANCELLED', 'Cancelada'
+
+    class AppointmentOutcome(models.TextChoices):
+        NONE = 'NONE', 'Sin resultado'
         CANCELLED_BY_CLIENT = 'CANCELLED_BY_CLIENT', 'Cancelada por el Cliente'
         CANCELLED_BY_SYSTEM = 'CANCELLED_BY_SYSTEM', 'Cancelada por el Sistema'
         CANCELLED_BY_ADMIN = 'CANCELLED_BY_ADMIN', 'Cancelada por el Administrador'
-        REDEEMED_WITH_VOUCHER = 'REDEEMED_WITH_VOUCHER', 'Redimida con Voucher'
         NO_SHOW = 'NO_SHOW', 'No Asistió'
         REFUNDED = 'REFUNDED', 'Reembolsada'
 
@@ -223,7 +227,12 @@ class Appointment(BaseModel):
     status = models.CharField(
         max_length=40,
         choices=AppointmentStatus.choices,
-        default=AppointmentStatus.PENDING_ADVANCE
+        default=AppointmentStatus.PENDING_PAYMENT
+    )
+    outcome = models.CharField(
+        max_length=40,
+        choices=AppointmentOutcome.choices,
+        default=AppointmentOutcome.NONE,
     )
     price_at_purchase = models.DecimalField(
         max_digits=10,

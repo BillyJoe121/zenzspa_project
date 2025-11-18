@@ -96,6 +96,12 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
     internal_photo_url = models.URLField(
         max_length=512, blank=True, null=True, verbose_name="URL de Foto Interna (Staff/Admin)")
     # --- FIN DE LA MODIFICACIÓN ---
+    cancellation_streak = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name="Historial de cancelaciones/reagendamientos",
+        help_text="Almacena eventos recientes para aplicar penalizaciones (3 strikes).",
+    )
 
     objects = CustomUserManager()
 
@@ -135,7 +141,7 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
 
         has_pending_appointment = Appointment.objects.filter(
             user=self,
-            status=Appointment.AppointmentStatus.COMPLETED_PENDING_FINAL_PAYMENT,
+            status=Appointment.AppointmentStatus.PAID,
         ).exists()
 
         has_pending_payment = Payment.objects.filter(

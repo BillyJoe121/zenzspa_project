@@ -240,28 +240,6 @@
 
 # v2.0:
 
-Autenticación
-
-OTP/login recuperaciones cumplen RFD-AUTH-01/05: Twilio Verify maneja códigos de 6 dígitos, límites de intentos y reCAPTCHA condicional (users/views.py (lines 76-251), users/services.py (lines 9-74)), y se registra cada intento (OTPAttempt) para auditoría.
-La rotación y blacklist de JWT + seguimiento de sesiones activas se implementa en serie (users/serializers.py (lines 25-83), users/signals.py (lines 33-66)), y marcar Cliente No Grato cancela citas y bloquea tokens (users/views.py (lines 291-342)); el registro bloquea teléfonos CNG como pide RFD-AUTH-04 (users/serializers.py (lines 128-159)).
-Pendientes: i) No se envía notificación automática a ADMIN al marcar alguien como CNG; solo se escribe en AuditLog (users/views.py (lines 311-340)), incumpliendo el requerimiento de alerta. ii) El enmascaramiento de datos está listo (users/serializers.py (lines 101-159), core/serializers.py (lines 8-102)), pero faltan suites de autorización por endpoint como exige RFD-AUTH-03; no hay pruebas fuera de users/tests.py y por ende no hay cobertura para APIs sensibles.
-Perfil clínico / Quiosco
-
-El modelo está versionado con simple_history, conserva consentimientos y permite anonimizar (RFD-CLI-01) (profiles/models.py (lines 14-188)). El modo quiosco tiene sesiones con tokens, heartbeat, locking y middleware que bloquea navegación fuera del flujo (RFD-CLI-02) (profiles/models.py (lines 310-377), profiles/views.py (lines 169-330), profiles/middleware.py (lines 6-47)).
-Riesgos: el timeout por defecto es 10 minutos (profiles/views.py (lines 169-187)) cuando la política especifica 5 minutos; no hay ajuste dinámico ni pruebas end-to-end que validen el regreso automático a la pantalla segura.
-Servicios, horarios y configuración
-
-Catálogos y disponibilidad validan solapes y categorías protegidas (spa/models.py (lines 87-214), spa/views.py (lines 104-132)). GlobalSettings define buffers, porcentajes y capacidad (RFD-SRV-02/CNF-01) (core/models.py (lines 120-210)).
-Gaps clave: i) El buffer de limpieza que debería ser configurable se fija en 15 minutos en AvailabilityService.BUFFER_MINUTES (spa/services.py (lines 24-52)) ignorando GlobalSettings.appointment_buffer_time. ii) El endpoint de borrado de categorías devuelve 400 sin código SRV-001 ni status 409 (spa/views.py (lines 104-132)). iii) Campos solicitados en RFD-CFG-01 (quiet_hours, timezone_display, waitlist_enabled) no existen en GlobalSettings (core/models.py (lines 120-210)), por lo que varias políticas globales siguen hardcodeadas o dispersas.
-Citas (RFD-APP)
-
-Creación idempotente, verificación de disponibilidad y límites de citas activas están cubiertos (spa/views.py (lines 116-226), spa/services.py (lines 200-342)). Waitlist, no-show y exportación iCal también existen (RFD-APP-09/08/10) (spa/services.py (lines 820-882), spa/views.py (lines 240-474)).
-Bloqueantes:
-El header Idempotency-Key es opcional: si el cliente no lo envía, idempotent_view continúa sin error (core/decorators.py (lines 18-39)), incumpliendo RFD-APP-01.
-El catálogo de estados expuesto no coincide con el especificado (no hay PENDING_PAYMENT ni RESCHEDULED; hay PENDING_ADVANCE y COMPLETED_PENDING_FINAL_PAYMENT en spa/models.py (lines 164-212)), lo que rompe la trazabilidad exigida en §5 del documento.
-RFD-APP-06 exige que los clientes no puedan cancelar citas pagadas; sin embargo, AppointmentViewSet.cancel permite a CLIENT/VIP cancelar una cita confirmada y recibir crédito si falta ≥24h (spa/views.py (lines 356-392)). Lo mismo sucede en el bot (bot/services.py (lines 120-144)), que cancela sin verificar ventanas ni límites de reagendamiento.
-La lista de espera usa un TTL fijo de 30 minutos y envía correos directos via send_mail, sin respetar preferencias ni configuración global (spa/services.py (lines 820-860), spa/tasks.py (lines 55-107)). No hay waitlist_enabled ni ventana configurable como pide RFD-APP-09 y RFD-CFG-01.
-No existe flujo de “pago final” pese a que PaymentType.FINAL está definido; no hay vistas ni servicios que permitan completar el pago final ni mover citas a COMPLETED (spa/models.py (lines 390-402), spa/services.py (lines 207-215)), por lo que la política APP-11 queda a medias.
 Pagos, VIP y Créditos
 
 El anticipo obligatorio, créditos post cancelación y vouchers funcionan: PaymentService.create_advance_payment_for_appointment aplica saldo a favor (spa/services.py (lines 747-820)), CreditService convierte anticipos en crédito según política (spa/services.py (lines 899-940)), y los webhooks de Wompi validan firma/idempotencia (spa/services.py (lines 579-681)). Paquetes y lealtad VIP generando vouchers cumplen RFD-PAY-03/04 (spa/services.py (lines 420-520), spa/tasks.py (lines 180-230)).

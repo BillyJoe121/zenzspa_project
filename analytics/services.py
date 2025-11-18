@@ -68,6 +68,7 @@ class KpiService:
         converted = appointments.filter(
             status__in=[
                 Appointment.AppointmentStatus.CONFIRMED,
+                Appointment.AppointmentStatus.RESCHEDULED,
                 Appointment.AppointmentStatus.COMPLETED,
             ]
         ).count()
@@ -79,15 +80,16 @@ class KpiService:
         """
         appointments = self._appointment_queryset()
         finished = appointments.filter(
-            status__in=[
-                Appointment.AppointmentStatus.COMPLETED,
-                Appointment.AppointmentStatus.NO_SHOW,
-            ]
+            Q(status=Appointment.AppointmentStatus.COMPLETED)
+            | Q(
+                status=Appointment.AppointmentStatus.CANCELLED,
+                outcome=Appointment.AppointmentOutcome.NO_SHOW,
+            )
         )
         total_finished = finished.count()
         if total_finished == 0:
             return 0
-        no_show = finished.filter(status=Appointment.AppointmentStatus.NO_SHOW).count()
+        no_show = finished.filter(outcome=Appointment.AppointmentOutcome.NO_SHOW).count()
         return no_show / total_finished
 
     def _get_reschedule_rate(self):

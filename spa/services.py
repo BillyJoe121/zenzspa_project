@@ -44,7 +44,7 @@ class AvailabilityService:
     Calcula slots disponibles considerando múltiples servicios y buffer.
     """
 
-    BUFFER_MINUTES = 15
+    DEFAULT_BUFFER_MINUTES = 15
     SLOT_INTERVAL_MINUTES = 15
 
     def __init__(self, date, services):
@@ -52,7 +52,7 @@ class AvailabilityService:
             raise ValueError("Debes seleccionar al menos un servicio.")
         self.date = date
         self.services = list(services)
-        self.buffer = timedelta(minutes=self.BUFFER_MINUTES)
+        self.buffer = self._buffer_delta()
         self.slot_interval = timedelta(minutes=self.SLOT_INTERVAL_MINUTES)
         self.service_duration = timedelta(
             minutes=sum(service.duration for service in self.services)
@@ -93,7 +93,8 @@ class AvailabilityService:
             start_time__date=self.date,
             status__in=[
                 Appointment.AppointmentStatus.CONFIRMED,
-                Appointment.AppointmentStatus.PENDING_ADVANCE,
+                Appointment.AppointmentStatus.PENDING_PAYMENT,
+                Appointment.AppointmentStatus.RESCHEDULED,
             ],
         ).select_related('staff_member')
 
@@ -175,6 +176,21 @@ class AvailabilityService:
                 return True
         return False
 
+    @classmethod
+    def _buffer_minutes(cls):
+        minutes = None
+        try:
+            minutes = GlobalSettings.load().appointment_buffer_time
+        except Exception:
+            minutes = None
+        if not minutes or minutes <= 0:
+            return cls.DEFAULT_BUFFER_MINUTES
+        return minutes
+
+    @classmethod
+    def _buffer_delta(cls):
+        return timedelta(minutes=cls._buffer_minutes())
+
 
 class AppointmentService:
     """
@@ -187,7 +203,7 @@ class AppointmentService:
         self.services = list(services)
         self.staff_member = staff_member
         self.start_time = start_time
-        self.buffer = timedelta(minutes=AvailabilityService.BUFFER_MINUTES)
+        self.buffer = AvailabilityService._buffer_delta()
         total_minutes = sum(service.duration for service in self.services)
         self.service_duration = timedelta(minutes=total_minutes)
         self.end_time = start_time + self.service_duration
@@ -209,7 +225,7 @@ class AppointmentService:
 
         pending_appointment = Appointment.objects.filter(
             user=self.user,
-            status=Appointment.AppointmentStatus.COMPLETED_PENDING_FINAL_PAYMENT,
+            status=Appointment.AppointmentStatus.PAID,
         ).order_by("start_time").first()
 
         if pending_payment or pending_appointment:
@@ -223,7 +239,8 @@ class AppointmentService:
             user=self.user,
             status__in=[
                 Appointment.AppointmentStatus.CONFIRMED,
-                Appointment.AppointmentStatus.PENDING_ADVANCE,
+                Appointment.AppointmentStatus.PENDING_PAYMENT,
+                Appointment.AppointmentStatus.RESCHEDULED,
             ]
         ).count()
 
@@ -282,7 +299,8 @@ class AppointmentService:
                 staff_member=self.staff_member,
                 status__in=[
                     Appointment.AppointmentStatus.CONFIRMED,
-                    Appointment.AppointmentStatus.PENDING_ADVANCE,
+                    Appointment.AppointmentStatus.PENDING_PAYMENT,
+                    Appointment.AppointmentStatus.RESCHEDULED,
                 ],
                 start_time__lt=self.end_time + self.buffer,
                 end_time__gt=self.start_time - self.buffer,
@@ -309,7 +327,7 @@ class AppointmentService:
             start_time=self.start_time,
             end_time=self.end_time,
             price_at_purchase=total_price,
-            status=Appointment.AppointmentStatus.PENDING_ADVANCE
+            status=Appointment.AppointmentStatus.PENDING_PAYMENT
         )
 
         for service, price in appointment_items:
@@ -332,7 +350,8 @@ class AppointmentService:
             return
         active_statuses = [
             Appointment.AppointmentStatus.CONFIRMED,
-            Appointment.AppointmentStatus.PENDING_ADVANCE,
+            Appointment.AppointmentStatus.PENDING_PAYMENT,
+            Appointment.AppointmentStatus.RESCHEDULED,
         ]
         concurrent_count = (
             Appointment.objects.select_for_update()
@@ -395,7 +414,7 @@ class AppointmentService:
 
         duration = timedelta(minutes=appointment.total_duration_minutes)
         new_end_time = new_start_time + duration
-        buffer = timedelta(minutes=AvailabilityService.BUFFER_MINUTES)
+        buffer = AvailabilityService._buffer_delta()
 
         if appointment.staff_member:
             conflict = (
@@ -404,7 +423,8 @@ class AppointmentService:
                     staff_member=appointment.staff_member,
                     status__in=[
                         Appointment.AppointmentStatus.CONFIRMED,
-                        Appointment.AppointmentStatus.PENDING_ADVANCE,
+                        Appointment.AppointmentStatus.PENDING_PAYMENT,
+                        Appointment.AppointmentStatus.RESCHEDULED,
                     ],
                 )
                 .exclude(id=appointment.id)
@@ -420,8 +440,30 @@ class AppointmentService:
         appointment.start_time = new_start_time
         appointment.end_time = new_end_time
         appointment.reschedule_count = appointment.reschedule_count + 1
+        appointment.status = Appointment.AppointmentStatus.RESCHEDULED
         appointment.save(
-            update_fields=['start_time', 'end_time', 'reschedule_count', 'updated_at']
+            update_fields=['start_time', 'end_time', 'reschedule_count', 'status', 'updated_at']
+        )
+        return appointment
+
+    @staticmethod
+    @transaction.atomic
+    def complete_appointment(appointment, acting_user):
+        if acting_user.role not in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
+            raise ValidationError("No tienes permisos para completar esta cita.")
+        outstanding = PaymentService.calculate_outstanding_amount(appointment)
+        if outstanding > 0:
+            raise ValidationError("No puedes completar la cita: existe un saldo final pendiente.")
+        appointment.status = Appointment.AppointmentStatus.COMPLETED
+        appointment.outcome = Appointment.AppointmentOutcome.NONE
+        appointment.save(update_fields=['status', 'outcome', 'updated_at'])
+        PaymentService.reset_user_cancellation_history(appointment)
+        AuditLog.objects.create(
+            admin_user=acting_user,
+            target_user=appointment.user,
+            target_appointment=appointment,
+            action=AuditLog.Action.SYSTEM_CANCEL,
+            details=f"Cita {appointment.id} marcada como COMPLETED por {getattr(acting_user, 'phone_number', 'staff')}.",
         )
         return appointment
 
@@ -705,6 +747,12 @@ class PaymentService:
                 payment.appointment.save(update_fields=['status', 'updated_at'])
             elif payment.payment_type == Payment.PaymentType.VIP_SUBSCRIPTION:
                 VipSubscriptionService.fulfill_subscription(payment)
+            elif (
+                payment.payment_type == Payment.PaymentType.FINAL
+                and payment.appointment
+            ):
+                payment.appointment.status = Appointment.AppointmentStatus.PAID
+                payment.appointment.save(update_fields=['status', 'updated_at'])
         elif normalized in ('DECLINED', 'VOIDED'):
             payment.status = Payment.PaymentStatus.DECLINED
             payment.save(update_fields=['status', 'raw_response', 'updated_at'])
@@ -807,7 +855,7 @@ class PaymentService:
     def create_tip_payment(appointment: Appointment, user, amount):
         if appointment.status not in [
             Appointment.AppointmentStatus.COMPLETED,
-            Appointment.AppointmentStatus.COMPLETED_PENDING_FINAL_PAYMENT,
+            Appointment.AppointmentStatus.PAID,
         ]:
             raise ValidationError("Solo se pueden registrar propinas para citas completadas.")
         return Payment.objects.create(
@@ -818,9 +866,57 @@ class PaymentService:
             status=Payment.PaymentStatus.APPROVED,
         )
 
+    @staticmethod
+    def calculate_outstanding_amount(appointment: Appointment):
+        total_paid = Decimal('0')
+        relevant_statuses = [
+            Payment.PaymentStatus.APPROVED,
+            Payment.PaymentStatus.PAID_WITH_CREDIT,
+        ]
+        relevant_types = [
+            Payment.PaymentType.ADVANCE,
+            Payment.PaymentType.FINAL,
+        ]
+        for payment in appointment.payments.filter(
+            payment_type__in=relevant_types,
+            status__in=relevant_statuses,
+        ):
+            total_paid += payment.amount or Decimal('0')
+        outstanding = (appointment.price_at_purchase or Decimal('0')) - total_paid
+        if outstanding <= Decimal('0'):
+            return Decimal('0')
+        return outstanding
+
+    @staticmethod
+    @transaction.atomic
+    def create_final_payment(appointment: Appointment, user):
+        outstanding = PaymentService.calculate_outstanding_amount(appointment)
+        payment = None
+        if outstanding > Decimal('0'):
+            payment = Payment.objects.create(
+                user=user,
+                appointment=appointment,
+                amount=outstanding,
+                payment_type=Payment.PaymentType.FINAL,
+                status=Payment.PaymentStatus.APPROVED,
+            )
+        appointment.status = Appointment.AppointmentStatus.PAID
+        appointment.save(update_fields=['status', 'updated_at'])
+        return payment, outstanding
+
+    @staticmethod
+    def reset_user_cancellation_history(appointment: Appointment):
+        user = getattr(appointment, "user", None)
+        if not user:
+            return
+        streak = getattr(user, "cancellation_streak", None)
+        if streak:
+            user.cancellation_streak = []
+            user.save(update_fields=['cancellation_streak', 'updated_at'])
+
 
 class WaitlistService:
-    OFFER_TTL_MINUTES = 30
+    DEFAULT_TTL_MINUTES = 60
 
     @classmethod
     def recycle_expired_offers(cls):
@@ -838,6 +934,8 @@ class WaitlistService:
             return
 
         cls.recycle_expired_offers()
+        if not getattr(GlobalSettings.load(), "waitlist_enabled", False):
+            return
 
         service_ids = list(appointment.services.values_list('id', flat=True))
         queryset = WaitlistEntry.objects.filter(
@@ -853,12 +951,29 @@ class WaitlistService:
         if not entry:
             return
 
-        entry.mark_offered(appointment, cls.OFFER_TTL_MINUTES)
+        entry.mark_offered(appointment, cls._ttl_minutes())
         try:
             from .tasks import notify_waitlist_availability
             notify_waitlist_availability.delay(str(entry.id))
         except Exception:
             logger.exception("No se pudo programar la notificación de lista de espera.")
+
+    @classmethod
+    def ensure_enabled(cls):
+        settings = GlobalSettings.load()
+        if not getattr(settings, "waitlist_enabled", False):
+            raise BusinessLogicError(
+                detail="La lista de espera está deshabilitada.",
+                internal_code="APP-009",
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            )
+
+    @classmethod
+    def _ttl_minutes(cls):
+        minutes = getattr(GlobalSettings.load(), "waitlist_ttl_minutes", None)
+        if not minutes or minutes <= 0:
+            return cls.DEFAULT_TTL_MINUTES
+        return minutes
 
 
 class FinancialAdjustmentService:
@@ -906,7 +1021,7 @@ class CreditService:
     def create_credit_from_appointment(*, appointment, percentage, created_by, reason):
         percentage = Decimal(str(percentage))
         if percentage <= 0:
-            return Decimal('0')
+            return Decimal('0'), []
         payments = appointment.payments.select_for_update().filter(
             payment_type=Payment.PaymentType.ADVANCE,
             status__in=[
@@ -915,18 +1030,19 @@ class CreditService:
             ],
         )
         if not payments.exists():
-            return Decimal('0')
+            return Decimal('0'), []
 
         settings = GlobalSettings.load()
         expires_at = timezone.now().date() + timedelta(days=settings.credit_expiration_days)
         total_created = Decimal('0')
+        created_credits = []
         for payment in payments:
             if hasattr(payment, "generated_credit"):
                 continue
             credit_amount = (payment.amount or Decimal('0')) * percentage
             if credit_amount <= 0:
                 continue
-            ClientCredit.objects.create(
+            credit = ClientCredit.objects.create(
                 user=appointment.user,
                 originating_payment=payment,
                 initial_amount=credit_amount,
@@ -935,6 +1051,7 @@ class CreditService:
                 expires_at=expires_at,
             )
             total_created += credit_amount
+            created_credits.append(credit)
 
         if total_created > 0:
             AuditLog.objects.create(
@@ -944,7 +1061,7 @@ class CreditService:
                 action=AuditLog.Action.APPOINTMENT_CANCELLED_BY_ADMIN,
                 details=reason or f"Crédito generado por cita {appointment.id}",
             )
-        return total_created
+        return total_created, created_credits
 
 
 class WompiClient:

@@ -310,7 +310,10 @@ class AppointmentRescheduleSerializer(serializers.Serializer):
                 {"new_start_time": f"Las citas deben comenzar en intervalos de {AvailabilityService.SLOT_INTERVAL_MINUTES} minutos."}
             )
 
-        if appointment.status != Appointment.AppointmentStatus.CONFIRMED:
+        if appointment.status not in [
+            Appointment.AppointmentStatus.CONFIRMED,
+            Appointment.AppointmentStatus.RESCHEDULED,
+        ]:
             raise serializers.ValidationError("Solo las citas confirmadas pueden ser reagendadas.")
 
         service_ids = list(appointment.services.values_list('id', flat=True))

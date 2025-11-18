@@ -135,8 +135,9 @@ class ActionExecutorService:
         except Appointment.DoesNotExist:
             raise ValueError("No se encontró la cita indicada.")
 
-        appointment.status = Appointment.AppointmentStatus.CANCELLED_BY_CLIENT
-        appointment.save(update_fields=["status", "updated_at"])
+        appointment.status = Appointment.AppointmentStatus.CANCELLED
+        appointment.outcome = Appointment.AppointmentOutcome.CANCELLED_BY_CLIENT
+        appointment.save(update_fields=["status", "outcome", "updated_at"])
         return {"status": "success", "appointment_id": str(appointment.id)}
 
     def _check_availability(self, action):

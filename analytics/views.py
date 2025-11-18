@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from spa.models import Appointment, Payment, ClientCredit
+from spa.services import PaymentService
 from marketplace.models import Order
 from users.models import CustomUser
 from .services import KpiService
@@ -190,7 +191,7 @@ class DashboardViewSet(viewsets.ViewSet):
         )
         pending_appointments = (
             Appointment.objects.select_related("user")
-            .filter(status=Appointment.AppointmentStatus.COMPLETED_PENDING_FINAL_PAYMENT)
+            .filter(status=Appointment.AppointmentStatus.PAID)
             .order_by("-start_time")
         )
         payments_payload = [
@@ -209,7 +210,7 @@ class DashboardViewSet(viewsets.ViewSet):
                 "appointment_id": str(appointment.id),
                 "user": self._user_payload(appointment.user),
                 "start_time": appointment.start_time.isoformat(),
-                "amount_due": float(appointment.price_at_purchase),
+                "amount_due": float(PaymentService.calculate_outstanding_amount(appointment)),
             }
             for appointment in pending_appointments
         ]

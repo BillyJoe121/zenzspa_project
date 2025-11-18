@@ -182,7 +182,7 @@ class KioskStartSessionView(generics.GenericAPIView):
         profile, _ = ClinicalProfile.objects.get_or_create(user=client)
         staff_member = request.user
 
-        timeout_minutes = getattr(settings, "KIOSK_SESSION_TIMEOUT_MINUTES", 10)
+        timeout_minutes = getattr(settings, "KIOSK_SESSION_TIMEOUT_MINUTES", 5)
         expires_at = timezone.now() + timedelta(minutes=timeout_minutes)
         session = KioskSession.objects.create(
             profile=profile,

@@ -26,7 +26,7 @@ from .serializers import (CustomTokenObtainPairSerializer,
 from .services import TwilioService, verify_recaptcha
 from .utils import get_client_ip
 from spa.models import Appointment
-from core.models import AuditLog
+from core.models import AuditLog, AdminNotification
 
 OTP_PHONE_RECAPTCHA_THRESHOLD = getattr(settings, "OTP_PHONE_RECAPTCHA_THRESHOLD", 3)
 OTP_IP_RECAPTCHA_THRESHOLD = getattr(settings, "OTP_IP_RECAPTCHA_THRESHOLD", 5)
@@ -303,10 +303,16 @@ class FlagNonGrataView(generics.UpdateAPIView):
         future_appointments = Appointment.objects.filter(
             user=instance,
             start_time__gte=now,
-            status__in=[Appointment.AppointmentStatus.CONFIRMED,
-                        Appointment.AppointmentStatus.PENDING_ADVANCE]
+            status__in=[
+                Appointment.AppointmentStatus.CONFIRMED,
+                Appointment.AppointmentStatus.PENDING_PAYMENT,
+                Appointment.AppointmentStatus.RESCHEDULED,
+            ],
         )
-        future_appointments.update(status=Appointment.AppointmentStatus.CANCELLED_BY_ADMIN)
+        future_appointments.update(
+            status=Appointment.AppointmentStatus.CANCELLED,
+            outcome=Appointment.AppointmentOutcome.CANCELLED_BY_ADMIN,
+        )
 
         # --- INICIO DE LA MODIFICACIÓN ---
         # Se elimina la contraseña temporal del texto que se guarda en el log.
@@ -315,6 +321,12 @@ class FlagNonGrataView(generics.UpdateAPIView):
             target_user=instance,
             action=AuditLog.Action.FLAG_NON_GRATA,
             details=f"Usuario marcado como Persona Non Grata. Notas: {serializer.validated_data.get('internal_notes', 'N/A')}"
+        )
+        AdminNotification.objects.create(
+            title="Usuario marcado como CNG",
+            message=f"El usuario {instance.phone_number} fue bloqueado por {self.request.user.get_full_name() or self.request.user.phone_number}.",
+            notification_type=AdminNotification.NotificationType.USUARIOS,
+            subtype=AdminNotification.NotificationSubtype.USUARIO_CNG,
         )
 
         instance.is_persona_non_grata = True

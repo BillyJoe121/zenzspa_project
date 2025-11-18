@@ -206,6 +206,34 @@ class GlobalSettings(BaseModel):
         verbose_name="Servicio de recompensa VIP",
         help_text="Servicio que se otorga como voucher al cumplir la lealtad.",
     )
+    quiet_hours_start = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Inicio de horas de silencio",
+        help_text="Hora desde la cual se silencian notificaciones no críticas.",
+    )
+    quiet_hours_end = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Fin de horas de silencio",
+        help_text="Hora en la que termina la ventana de silencio.",
+    )
+    timezone_display = models.CharField(
+        max_length=64,
+        default="America/Bogota",
+        verbose_name="Zona horaria de visualización",
+        help_text="Zona horaria usada para mostrar fechas al usuario.",
+    )
+    waitlist_enabled = models.BooleanField(
+        default=False,
+        verbose_name="Lista de espera habilitada",
+        help_text="Permite activar/desactivar el módulo de lista de espera.",
+    )
+    waitlist_ttl_minutes = models.PositiveIntegerField(
+        default=60,
+        verbose_name="TTL de lista de espera (minutos)",
+        help_text="Tiempo máximo para responder a una oferta de lista de espera.",
+    )
 
     # Validaciones de dominio (evita valores absurdos en producción)
     def clean(self):
@@ -226,6 +254,8 @@ class GlobalSettings(BaseModel):
             errors["return_window_days"] = "No puede ser negativo."
         if self.loyalty_months_required < 1:
             errors["loyalty_months_required"] = "Debe ser al menos 1."
+        if self.waitlist_ttl_minutes < 5:
+            errors["waitlist_ttl_minutes"] = "Debe ser al menos 5 minutos."
         if errors:
             raise ValidationError(errors)
 
@@ -311,3 +341,39 @@ class IdempotencyKey(BaseModel):
                 "updated_at",
             ]
         )
+
+
+class AdminNotification(BaseModel):
+    class NotificationType(models.TextChoices):
+        PAGOS = "PAGOS", "Pagos"
+        SUSCRIPCIONES = "SUSCRIPCIONES", "Suscripciones"
+        USUARIOS = "USUARIOS", "Usuarios"
+
+    class NotificationSubtype(models.TextChoices):
+        PAGO_EXITOSO = "PAGO_EXITOSO", "Pago exitoso"
+        PAGO_FALLIDO = "PAGO_FALLIDO", "Pago fallido"
+        USUARIO_CNG = "USUARIO_CNG", "Usuario marcado como CNG"
+        USUARIO_RECURRENTE = "USUARIO_RECURRENTE", "Usuario recurrente"
+        OTRO = "OTRO", "Otro"
+
+    title = models.CharField(max_length=200)
+    message = models.TextField()
+    notification_type = models.CharField(
+        max_length=20,
+        choices=NotificationType.choices,
+        default=NotificationType.USUARIOS,
+    )
+    subtype = models.CharField(
+        max_length=30,
+        choices=NotificationSubtype.choices,
+        default=NotificationSubtype.OTRO,
+    )
+    is_read = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name = "Notificación Administrativa"
+        verbose_name_plural = "Notificaciones Administrativas"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_notification_type_display()} - {self.title}"

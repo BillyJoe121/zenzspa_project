@@ -16,7 +16,13 @@ def idempotent_view(timeout=60):
     def decorator(view_func):
         @wraps(view_func)
         def wrapped(self, request, *args, **kwargs):
+            method = getattr(request, "method", "").upper()
             key = request.headers.get("Idempotency-Key")
+            if method in {"POST", "PUT", "PATCH"} and not key:
+                return Response(
+                    {"detail": "El encabezado Idempotency-Key es obligatorio para operaciones de escritura."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             if not key:
                 return view_func(self, request, *args, **kwargs)
 

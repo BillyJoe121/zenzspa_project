@@ -101,6 +101,7 @@ def check_upcoming_appointments_2h():
         start_time__lte=window_end,
         status__in=[
             Appointment.AppointmentStatus.CONFIRMED,
+            Appointment.AppointmentStatus.RESCHEDULED,
         ],
     )
     count = 0
