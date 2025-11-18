@@ -23,6 +23,9 @@ def notify_order_status_change(order_id, new_status):
         Order.OrderStatus.DELIVERED: "ORDER_DELIVERED",
         Order.OrderStatus.CANCELLED: "ORDER_CANCELLED",
     }
+    ready_status = getattr(Order.OrderStatus, "READY_FOR_PICKUP", None)
+    if ready_status:
+        event_map[ready_status] = "ORDER_READY_FOR_PICKUP"
     event_code = event_map.get(new_status)
     if not event_code:
         return "no_event"

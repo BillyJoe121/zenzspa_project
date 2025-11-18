@@ -400,11 +400,19 @@ class Payment(BaseModel):
         PACKAGE = 'PACKAGE', 'Compra de Paquete'
         VIP_SUBSCRIPTION = 'VIP_SUBSCRIPTION', 'Suscripción VIP'
         TIP = 'TIP', 'Propina'
+        ORDER = 'ORDER', 'Compra Marketplace'
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True
     )
     appointment = models.ForeignKey(Appointment, on_delete=models.CASCADE, related_name='payments', null=True, blank=True)
+    order = models.ForeignKey(
+        'marketplace.Order',
+        on_delete=models.CASCADE,
+        related_name='payments',
+        null=True,
+        blank=True,
+    )
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(
         max_length=20, choices=PaymentStatus.choices, default=PaymentStatus.PENDING)
@@ -427,6 +435,25 @@ class Payment(BaseModel):
 
     def __str__(self):
         return f"Payment {self.id} for {self.amount} ({self.status})"
+
+
+class PaymentCreditUsage(BaseModel):
+    payment = models.ForeignKey(
+        Payment,
+        on_delete=models.CASCADE,
+        related_name="credit_usages",
+    )
+    credit = models.ForeignKey(
+        'ClientCredit',
+        on_delete=models.CASCADE,
+        related_name="credit_usages",
+    )
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+
+    class Meta:
+        verbose_name = "Uso de Crédito en Pago"
+        verbose_name_plural = "Usos de Créditos en Pagos"
+        ordering = ['-created_at']
 
 def generate_voucher_code():
     """Generates a unique, short voucher code."""

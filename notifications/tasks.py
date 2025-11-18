@@ -6,6 +6,7 @@ from django.core.mail import send_mail
 from django.utils import timezone
 
 from notifications.models import NotificationLog, NotificationTemplate
+from notifications.services import NotificationService
 from spa.models import Appointment
 
 logger = logging.getLogger(__name__)
@@ -35,17 +36,31 @@ def send_notification_task(self, log_id):
         log.save(update_fields=["status", "sent_at", "error_message", "updated_at"])
         return "Enviado"
     except Exception as exc:
+        metadata = log.metadata or {}
+        attempts = metadata.get("attempts", 0) + 1
+        metadata["attempts"] = attempts
+        max_attempts = metadata.get("max_attempts") or NotificationService.MAX_DELIVERY_ATTEMPTS
+        metadata["max_attempts"] = max_attempts
+        log.metadata = metadata
         log.status = NotificationLog.Status.FAILED
         log.error_message = str(exc)
-        log.save(update_fields=["status", "error_message", "updated_at"])
-        fallback = (log.metadata or {}).get("fallback") or []
-        if fallback:
-            from notifications.services import NotificationService
-
+        log.save(update_fields=["status", "error_message", "metadata", "updated_at"])
+        if attempts >= max_attempts:
+            metadata["dead_letter"] = True
+            log.metadata = metadata
+            log.save(update_fields=["metadata"])
+            logger.error("Notificación %s enviada a DLQ después de %s intentos", log.id, attempts)
+            return "dead_letter"
+        fallback = metadata.get("fallback") or []
+        fallback_used = metadata.get("fallback_attempted", False)
+        if fallback and not fallback_used:
+            metadata["fallback_attempted"] = True
+            log.metadata = metadata
+            log.save(update_fields=["metadata"])
             NotificationService.send_notification(
                 user=log.user,
                 event_code=log.event_code,
-                context=(log.metadata or {}).get("context") or {},
+                context=(metadata.get("context") or {}),
                 priority=log.priority,
                 channel_override=fallback[0],
                 fallback_channels=fallback[1:],
@@ -76,7 +91,7 @@ def _dispatch_channel(log):
         phone = getattr(user, "phone_number", None)
         if not phone:
             raise ValueError("El usuario no tiene teléfono.")
-        logger.info("SMS a %s: %s", phone, body)
+        logger.info("SMS a %s: %s", mask_contact(phone), body)
     elif channel == NotificationTemplate.ChannelChoices.PUSH:
         logger.info("Push para %s: %s", user_id_display(user), body)
     else:
@@ -86,7 +101,22 @@ def _dispatch_channel(log):
 def user_id_display(user):
     if not user:
         return "anon"
-    return user.phone_number or user.email or str(user.pk)
+    return mask_contact(user.phone_number or user.email or str(user.pk))
+
+
+def mask_contact(value):
+    if not value:
+        return "***"
+    if "@" in value:
+        local, domain = value.split("@", 1)
+        if len(local) <= 2:
+            masked_local = "***"
+        else:
+            masked_local = f"{local[0]}***{local[-1]}"
+        return f"{masked_local}@{domain}"
+    if len(value) <= 4:
+        return "*" * len(value)
+    return f"{value[:2]}***{value[-2:]}"
 
 
 @shared_task

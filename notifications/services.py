@@ -27,6 +27,7 @@ class NotificationService:
         NotificationTemplate.ChannelChoices.SMS,
         NotificationTemplate.ChannelChoices.PUSH,
     ]
+    MAX_DELIVERY_ATTEMPTS = 3
 
     @classmethod
     def send_notification(
@@ -131,6 +132,9 @@ class NotificationService:
                 "context": context,
                 "fallback": fallback_channels,
                 "scheduled_for": eta.isoformat() if eta else None,
+                "attempts": 0,
+                "max_attempts": cls.MAX_DELIVERY_ATTEMPTS,
+                "dead_letter": False,
             },
         )
         from .tasks import send_notification_task

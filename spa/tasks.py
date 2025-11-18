@@ -24,11 +24,13 @@ def _send_reminder_for_appointment(appointment_id):
     try:
         appointment = Appointment.objects.get(id=appointment_id)
         if not appointment.user.email:
-            logger.warning("Recordatorio no enviado para cita %s: sin email.", appointment_id)
+            logger.warning(
+                "Recordatorio no enviado para cita %s: sin email.", appointment_id)
             return
 
         subject = "Recordatorio de tu cita en ZenzSpa - Mañana"
-        start_time_local = appointment.start_time.astimezone(timezone.get_current_timezone())
+        start_time_local = appointment.start_time.astimezone(
+            timezone.get_current_timezone())
         services = appointment.get_service_names()
         message = (
             f"Hola {appointment.user.first_name},\n\n"
@@ -47,7 +49,8 @@ def _send_reminder_for_appointment(appointment_id):
         )
         logger.info("Recordatorio enviado para la cita %s", appointment_id)
     except Appointment.DoesNotExist:
-        logger.error("No se encontró la cita %s para enviar recordatorio.", appointment_id)
+        logger.error(
+            "No se encontró la cita %s para enviar recordatorio.", appointment_id)
 
 
 @shared_task
@@ -68,7 +71,8 @@ def send_appointment_reminder():
     )
     for appointment in appointments:
         _send_reminder_for_appointment.delay(str(appointment.id))
-    logger.info("Se programaron %s recordatorios de citas.", appointments.count())
+    logger.info("Se programaron %s recordatorios de citas.",
+                appointments.count())
 
 
 @shared_task
@@ -77,9 +81,11 @@ def notify_waitlist_availability(waitlist_entry_id):
     Notifica al usuario de la lista de espera cuando se libera un horario.
     """
     try:
-        entry = WaitlistEntry.objects.select_related('user').get(id=waitlist_entry_id)
+        entry = WaitlistEntry.objects.select_related(
+            'user').get(id=waitlist_entry_id)
     except WaitlistEntry.DoesNotExist:
-        logger.error("La entrada de lista de espera %s no existe.", waitlist_entry_id)
+        logger.error("La entrada de lista de espera %s no existe.",
+                     waitlist_entry_id)
         return
 
     user = entry.user
@@ -97,7 +103,8 @@ def notify_waitlist_availability(waitlist_entry_id):
             recipient_list=[user.email],
             fail_silently=True,
         )
-    logger.info("Notificación de lista de espera enviada a %s", user.email or user.phone_number)
+    logger.info("Notificación de lista de espera enviada a %s",
+                user.email or user.phone_number)
 
 
 @shared_task
@@ -142,7 +149,8 @@ def cancel_unpaid_appointments():
                 },
             )
         except Exception:
-            logger.exception("Error enviando notificación de cancelación automática para cita %s", appt.id)
+            logger.exception(
+                "Error enviando notificación de cancelación automática para cita %s", appt.id)
         logger.info(
             "Cita %s cancelada por falta de pago; se notificó a la lista de espera.",
             appt.id,
@@ -187,7 +195,8 @@ def check_vip_loyalty():
     )
     rewards = 0
     for user in users:
-        last_reward = LoyaltyRewardLog.objects.filter(user=user).order_by('-rewarded_at').first()
+        last_reward = LoyaltyRewardLog.objects.filter(
+            user=user).order_by('-rewarded_at').first()
         if last_reward and last_reward.rewarded_at >= window:
             continue
         voucher = Voucher.objects.create(
@@ -195,7 +204,8 @@ def check_vip_loyalty():
             service=loyalty_service,
             expires_at=timezone.now().date() + timedelta(days=settings_obj.credit_expiration_days),
         )
-        LoyaltyRewardLog.objects.create(user=user, voucher=voucher, rewarded_at=timezone.now().date())
+        LoyaltyRewardLog.objects.create(
+            user=user, voucher=voucher, rewarded_at=timezone.now().date())
         AuditLog.objects.create(
             admin_user=None,
             target_user=user,
@@ -228,6 +238,38 @@ def process_recurring_subscriptions():
     processed = 0
     for user in users:
         reference = f"VIP-AUTO-{user.id}-{uuid.uuid4().hex[:8]}"
+        transaction_payload = {"reference": reference, "status": "PENDING"}
+        status_result = Payment.PaymentStatus.DECLINED
+
+        if user.vip_payment_token:
+            try:
+                status_result, transaction_payload, reference = PaymentService.charge_recurrence_token(
+                    user=user,
+                    amount=vip_price,
+                    token=user.vip_payment_token,
+                )
+            except Exception as exc:
+                logger.exception(
+                    "Error al ejecutar el cobro recurrente VIP para el usuario %s",
+                    user.id,
+                )
+                transaction_payload = {
+                    "reference": reference,
+                    "status": "ERROR",
+                    "error": str(exc),
+                }
+                status_result = Payment.PaymentStatus.DECLINED
+        else:
+            logger.warning(
+                "Usuario %s no tiene token de pago VIP; el cobro se marcará como fallido.",
+                user.id,
+            )
+            transaction_payload = {
+                "reference": reference,
+                "status": "ERROR",
+                "error": "missing_token",
+            }
+
         payment = Payment.objects.create(
             user=user,
             amount=vip_price,
@@ -235,30 +277,43 @@ def process_recurring_subscriptions():
             payment_type=Payment.PaymentType.VIP_SUBSCRIPTION,
             transaction_id=reference,
         )
-        status_result = None
-        if user.vip_payment_token:
-            status_result = PaymentService.apply_gateway_status(payment, 'APPROVED', {'id': reference, 'status': 'APPROVED'})
-        else:
-            status_result = Payment.PaymentStatus.DECLINED
-            PaymentService.apply_gateway_status(payment, 'DECLINED', {'id': reference, 'status': 'DECLINED'})
 
-        if status_result == Payment.PaymentStatus.APPROVED:
+        final_status = PaymentService.apply_gateway_status(
+            payment, status_result, transaction_payload)
+
+        if final_status == Payment.PaymentStatus.APPROVED:
             user.vip_failed_payments = 0
             user.save(update_fields=['vip_failed_payments', 'updated_at'])
             processed += 1
-        else:
-            user.vip_failed_payments += 1
-            if user.vip_failed_payments >= 3:
-                user.vip_auto_renew = False
-            user.save(update_fields=['vip_failed_payments', 'vip_auto_renew', 'updated_at'])
-            try:
-                NotificationService.send_notification(
-                    user=user,
-                    event_code="VIP_RENEWAL_FAILED",
-                    context={"failed_attempts": user.vip_failed_payments},
-                )
-            except Exception:
-                logger.exception("No se pudo notificar fallo de renovación VIP para el usuario %s", user.id)
+            continue
+
+        if final_status == Payment.PaymentStatus.PENDING:
+            logger.info(
+                "Cobro VIP recurrente pendiente para el usuario %s; esperando confirmación de Wompi.",
+                user.id,
+            )
+            # No alteramos los contadores hasta recibir webhook/consulta.
+            continue
+
+        user.vip_failed_payments += 1
+        subscription_status = "PAST_DUE"
+        if user.vip_failed_payments >= 3:
+            user.vip_auto_renew = False
+            subscription_status = "CANCELLED"
+        user.save(update_fields=['vip_failed_payments',
+                  'vip_auto_renew', 'updated_at'])
+        try:
+            NotificationService.send_notification(
+                user=user,
+                event_code="VIP_RENEWAL_FAILED",
+                context={
+                    "failed_attempts": user.vip_failed_payments,
+                    "status": subscription_status,
+                },
+            )
+        except Exception:
+            logger.exception(
+                "No se pudo notificar fallo de renovación VIP para el usuario %s", user.id)
     return f"Renovaciones intentadas: {processed}"
 
 
@@ -280,7 +335,8 @@ def downgrade_expired_vips():
         user.vip_auto_renew = False
         user.vip_active_since = None
         user.vip_failed_payments = 0
-        user.save(update_fields=['role', 'vip_auto_renew', 'vip_active_since', 'vip_failed_payments', 'updated_at'])
+        user.save(update_fields=['role', 'vip_auto_renew',
+                  'vip_active_since', 'vip_failed_payments', 'updated_at'])
         AuditLog.objects.create(
             admin_user=None,
             target_user=user,
@@ -296,7 +352,8 @@ def downgrade_expired_vips():
                 },
             )
         except Exception:
-            logger.exception("No se pudo notificar expiración VIP para el usuario %s", user.id)
+            logger.exception(
+                "No se pudo notificar expiración VIP para el usuario %s", user.id)
         count += 1
     return f"Usuarios degradados: {count}"
 
@@ -326,5 +383,6 @@ def notify_expiring_vouchers():
             )
             notified += 1
         except Exception:
-            logger.exception("No se pudo notificar vencimiento de voucher %s", voucher.code)
+            logger.exception(
+                "No se pudo notificar vencimiento de voucher %s", voucher.code)
     return f"Vouchers notificados: {notified}"

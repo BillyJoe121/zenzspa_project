@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 
 from core.models import BaseModel
 
@@ -114,6 +115,33 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
     class Meta:
         verbose_name = 'Usuario'
         verbose_name_plural = 'Usuarios'
+
+    def clean(self):
+        super().clean()
+        self.vip_payment_token = self._normalize_vip_payment_token(self.vip_payment_token)
+
+    def save(self, *args, **kwargs):
+        self.vip_payment_token = self._normalize_vip_payment_token(self.vip_payment_token)
+        super().save(*args, **kwargs)
+
+    @staticmethod
+    def _normalize_vip_payment_token(value):
+        if not value:
+            return None
+        if isinstance(value, str):
+            token = value.strip()
+        else:
+            token = str(value).strip()
+        if not token:
+            return None
+        if not token.isdigit():
+            raise ValidationError(
+                {
+                    "vip_payment_token": "El token guardado debe ser el payment_source_id numérico entregado por Wompi.",
+                }
+            )
+        # Normalizamos removiendo ceros a la izquierda para evitar variaciones.
+        return str(int(token))
 
     @property
     def is_vip(self):

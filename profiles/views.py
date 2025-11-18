@@ -29,6 +29,8 @@ from .serializers import (
 from .services import calculate_dominant_dosha_and_element
 from users.models import CustomUser
 from users.permissions import IsAdminUser, IsStaffOrAdmin, IsVerified
+from core.models import AuditLog
+from core.utils import safe_audit_log
 
 class ClinicalProfileViewSet(viewsets.ModelViewSet):
     """
@@ -162,6 +164,12 @@ class DoshaQuizSubmitView(generics.GenericAPIView):
         # Si la sesión es de quiosco, podríamos invalidar el token aquí
         # para que no se pueda usar de nuevo.
         if kiosk_session:
+            safe_audit_log(
+                action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+                admin_user=getattr(request, "kiosk_staff", None),
+                target_user=profile.user,
+                details={"kiosk_action": "dosha_quiz_submit"},
+            )
             kiosk_session.deactivate()
 
         return Response(result, status=status.HTTP_200_OK)
@@ -178,7 +186,13 @@ class KioskStartSessionView(generics.GenericAPIView):
         serializer.is_valid(raise_exception=True)
         
         client_phone = serializer.validated_data['client_phone_number']
-        client = CustomUser.objects.get(phone_number=client_phone)
+        try:
+            client = CustomUser.objects.get(phone_number=client_phone)
+        except CustomUser.DoesNotExist:
+            return Response(
+                {'detail': 'Cliente no encontrado.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         profile, _ = ClinicalProfile.objects.get_or_create(user=client)
         staff_member = request.user
 
@@ -188,6 +202,12 @@ class KioskStartSessionView(generics.GenericAPIView):
             profile=profile,
             staff_member=staff_member,
             expires_at=expires_at,
+        )
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            admin_user=staff_member,
+            target_user=client,
+            details={"kiosk_action": "start_session", "expires_at": expires_at.isoformat()},
         )
         return Response(
             {
@@ -201,13 +221,11 @@ class KioskStartSessionView(generics.GenericAPIView):
 
 
 class KioskSessionStatusView(generics.GenericAPIView):
-    permission_classes = []
+    permission_classes = [IsKioskSession]
     serializer_class = KioskSessionStatusSerializer
 
     def get(self, request, *args, **kwargs):
-        session = load_kiosk_session_from_request(request, allow_inactive=True)
-        if not session:
-            return Response({'detail': 'Sesión de quiosco no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        session = request.kiosk_session
         if session.has_expired:
             session.mark_expired()
         serializer = self.get_serializer(session)
@@ -230,6 +248,12 @@ class KioskSessionHeartbeatView(generics.GenericAPIView):
                 status=440,
             )
         session.heartbeat()
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            admin_user=getattr(request, "kiosk_staff", None),
+            target_user=session.profile.user,
+            details={"kiosk_action": "heartbeat"},
+        )
         return Response(
             {
                 "detail": "Heartbeat registrado.",
@@ -245,6 +269,12 @@ class KioskSessionLockView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         session = request.kiosk_session
         session.lock()
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            admin_user=getattr(request, "kiosk_staff", None),
+            target_user=session.profile.user,
+            details={"kiosk_action": "lock"},
+        )
         return Response(
             {
                 "detail": "Sesión bloqueada.",
@@ -256,14 +286,18 @@ class KioskSessionLockView(generics.GenericAPIView):
 
 
 class KioskSessionDiscardChangesView(generics.GenericAPIView):
-    permission_classes = []
+    permission_classes = [IsKioskSession]
 
     def post(self, request, *args, **kwargs):
-        session = load_kiosk_session_from_request(request, allow_inactive=True)
-        if not session:
-            return Response({'detail': 'Sesión de quiosco no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        session = request.kiosk_session
         session.lock()
         session.clear_pending_changes()
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            admin_user=getattr(request, "kiosk_staff", None),
+            target_user=session.profile.user,
+            details={"kiosk_action": "discard_changes"},
+        )
         return Response(
             {
                 "detail": "Cambios descartados y sesión finalizada.",
@@ -275,13 +309,17 @@ class KioskSessionDiscardChangesView(generics.GenericAPIView):
 
 
 class KioskSessionSecureScreenView(generics.GenericAPIView):
-    permission_classes = []
+    permission_classes = [IsKioskSession]
 
     def post(self, request, *args, **kwargs):
-        session = load_kiosk_session_from_request(request, allow_inactive=True)
-        if not session:
-            return Response({'detail': 'Sesión de quiosco no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+        session = request.kiosk_session
         session.lock()
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            admin_user=getattr(request, "kiosk_staff", None),
+            target_user=session.profile.user,
+            details={"kiosk_action": "secure_screen"},
+        )
         return Response(
             {
                 "detail": "Pantalla segura activada.",
@@ -302,11 +340,23 @@ class KioskSessionPendingChangesView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         session = request.kiosk_session
         session.mark_pending_changes()
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            admin_user=getattr(request, "kiosk_staff", None),
+            target_user=session.profile.user,
+            details={"kiosk_action": "mark_pending_changes"},
+        )
         return Response({"has_pending_changes": True}, status=status.HTTP_200_OK)
 
     def delete(self, request, *args, **kwargs):
         session = request.kiosk_session
         session.clear_pending_changes()
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            admin_user=getattr(request, "kiosk_staff", None),
+            target_user=session.profile.user,
+            details={"kiosk_action": "clear_pending_changes"},
+        )
         return Response({"has_pending_changes": False}, status=status.HTTP_200_OK)
 
 

@@ -3,11 +3,13 @@ import uuid
 from decimal import Decimal
 from datetime import timedelta
 
+from django.conf import settings
+from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
 
 from core.exceptions import BusinessLogicError
-from core.models import GlobalSettings
+from core.models import AuditLog, GlobalSettings
 from spa.models import ClientCredit
 from .models import Order, OrderItem, ProductVariant, InventoryMovement
 from marketplace.tasks import notify_order_status_change
@@ -125,6 +127,9 @@ class OrderService:
         Order.OrderStatus.DELIVERED: "ORDER_DELIVERED",
         Order.OrderStatus.CANCELLED: "ORDER_CANCELLED",
     }
+    READY_FOR_PICKUP_STATUS = getattr(Order.OrderStatus, "READY_FOR_PICKUP", None)
+    if READY_FOR_PICKUP_STATUS:
+        STATE_NOTIFICATION_EVENTS[READY_FOR_PICKUP_STATUS] = "ORDER_READY_FOR_PICKUP"
 
     @classmethod
     @transaction.atomic
@@ -155,12 +160,77 @@ class OrderService:
                 changed_by=changed_by,
             )
 
+        cls._dispatch_notifications(order, new_status)
+        return order
+
+    @classmethod
+    def _dispatch_notifications(cls, order, new_status):
         if new_status in cls.STATE_NOTIFICATION_EVENTS:
             try:
                 notify_order_status_change.delay(str(order.id), new_status)
             except Exception:
                 logger.exception("No se pudo notificar el cambio de estado de la orden %s", order.id)
-        return order
+        cls._send_status_email(order, new_status)
+
+    @classmethod
+    def _send_status_email(cls, order, new_status):
+        recipient = getattr(order.user, "email", None)
+        if not recipient:
+            return
+
+        subject = body = None
+        if cls._is_ready_for_pickup_state(order, new_status):
+            subject = "Tu orden está lista para recoger"
+            body = (
+                f"Hola {cls._format_customer_name(order)}, "
+                f"tu orden {order.id} ya está lista para recogerse en ZenzSpa. "
+                "Acércate con tu identificación para completar la entrega."
+            )
+        elif new_status == Order.OrderStatus.SHIPPED:
+            tracking = order.tracking_number or "Sin número de seguimiento disponible"
+            subject = "Tu orden ha sido enviada"
+            body = (
+                f"Hola {cls._format_customer_name(order)}, "
+                f"tu orden {order.id} ha sido enviada. "
+                f"Número de seguimiento: {tracking}."
+            )
+
+        if not body:
+            return
+
+        try:
+            send_mail(
+                subject,
+                body,
+                getattr(settings, "DEFAULT_FROM_EMAIL", None),
+                [recipient],
+                fail_silently=False,
+            )
+        except Exception:
+            logger.exception(
+                "No se pudo enviar el correo para el estado %s de la orden %s",
+                new_status,
+                order.id,
+            )
+
+    @classmethod
+    def _is_ready_for_pickup_state(cls, order, new_status):
+        if cls.READY_FOR_PICKUP_STATUS:
+            return new_status == cls.READY_FOR_PICKUP_STATUS
+        return (
+            new_status == Order.OrderStatus.PREPARING
+            and order.delivery_option == Order.DeliveryOptions.PICKUP
+        )
+
+    @staticmethod
+    def _format_customer_name(order):
+        user = order.user
+        return (
+            getattr(user, "first_name", "")
+            or getattr(user, "last_name", "")
+            or getattr(user, "email", "")
+            or "cliente"
+        )
 
     @classmethod
     @transaction.atomic
@@ -190,6 +260,10 @@ class OrderService:
         cls._capture_stock(order)
         order.reservation_expires_at = None
         order.save(update_fields=['reservation_expires_at', 'updated_at'])
+        if order.status == Order.OrderStatus.CANCELLED:
+            order.status = Order.OrderStatus.PAID
+            order.save(update_fields=['status', 'updated_at'])
+            return order
         return cls.transition_to(order, Order.OrderStatus.PAID)
 
     @classmethod
@@ -309,6 +383,7 @@ class ReturnService:
         OrderService.transition_to(order, Order.OrderStatus.RETURN_APPROVED, changed_by=processed_by)
 
         total_refund = Decimal('0')
+        refunded_items = []
         for entry in order.return_request_data:
             order_item = order.items.select_for_update().get(id=entry['order_item_id'])
             quantity = entry['quantity']
@@ -334,6 +409,8 @@ class ReturnService:
             )
 
             total_refund += order_item.price_at_purchase * quantity
+            variant_label = variant.sku or str(variant)
+            refunded_items.append(f"{variant_label} x {quantity}")
 
         if total_refund > 0:
             expires = timezone.now().date() + timedelta(days=settings_obj.credit_expiration_days)
@@ -345,8 +422,51 @@ class ReturnService:
                 status=ClientCredit.CreditStatus.AVAILABLE,
                 expires_at=expires,
             )
+            cls._notify_return_processed(order, total_refund)
+            cls._log_return_audit(order, processed_by, total_refund, refunded_items)
 
         order.return_request_data = []
         order.save(update_fields=['return_request_data', 'updated_at'])
         OrderService.transition_to(order, Order.OrderStatus.REFUNDED, changed_by=processed_by)
         return order
+
+    @staticmethod
+    def _notify_return_processed(order, credited_amount):
+        recipient = getattr(order.user, "email", None)
+        if not recipient:
+            return
+
+        amount_str = format(credited_amount, ".2f")
+        subject = "Devolución procesada"
+        message = (
+            "Devolución procesada. "
+            f"Se han agregado ${amount_str} créditos a tu cuenta en ZenzSpa."
+        )
+        try:
+            send_mail(
+                subject,
+                message,
+                getattr(settings, "DEFAULT_FROM_EMAIL", None),
+                [recipient],
+                fail_silently=False,
+            )
+        except Exception:
+            logger.exception(
+                "No se pudo enviar el correo de confirmación de devolución para la orden %s",
+                order.id,
+            )
+
+    @staticmethod
+    def _log_return_audit(order, processed_by, credited_amount, refunded_items):
+        items_summary = ", ".join(refunded_items) if refunded_items else "Sin detalle de ítems"
+        details = (
+            f"order_id={order.id}; "
+            f"items={items_summary}; "
+            f"credited_amount={format(credited_amount, '.2f')}"
+        )
+        AuditLog.objects.create(
+            action=AuditLog.Action.MARKETPLACE_RETURN,
+            admin_user=processed_by,
+            target_user=order.user,
+            details=details,
+        )

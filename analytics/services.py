@@ -42,6 +42,7 @@ class KpiService:
             "utilization_rate": self._get_utilization_rate(),
             "average_order_value": self._get_average_order_value(),
             "debt_recovery": self._get_debt_recovery_metrics(),
+            "total_revenue": self._get_total_revenue(),
         }
 
     # --- Appointment helpers -------------------------------------------------
@@ -54,7 +55,8 @@ class KpiService:
         if self.staff_id:
             qs = qs.filter(staff_member_id=self.staff_id)
         if self.service_category_id:
-            qs = qs.filter(items__service__category_id=self.service_category_id)
+            qs = qs.filter(
+                items__service__category_id=self.service_category_id)
         return qs.distinct()
 
     def _get_conversion_rate(self):
@@ -89,7 +91,8 @@ class KpiService:
         total_finished = finished.count()
         if total_finished == 0:
             return 0
-        no_show = finished.filter(outcome=Appointment.AppointmentOutcome.NO_SHOW).count()
+        no_show = finished.filter(
+            outcome=Appointment.AppointmentOutcome.NO_SHOW).count()
         return no_show / total_finished
 
     def _get_reschedule_rate(self):
@@ -105,8 +108,15 @@ class KpiService:
 
     # --- Financial metrics ---------------------------------------------------
 
+    def _excluded_payment_types(self):
+        excluded = [Payment.PaymentType.TIP]
+        adjustment_type = getattr(Payment.PaymentType, "ADJUSTMENT", None)
+        if adjustment_type:
+            excluded.append(adjustment_type)
+        return excluded
+
     def _payment_queryset(self):
-        return Payment.objects.filter(
+        qs = Payment.objects.filter(
             created_at__date__gte=self.start_date,
             created_at__date__lte=self.end_date,
             status__in=[
@@ -114,6 +124,10 @@ class KpiService:
                 Payment.PaymentStatus.PAID_WITH_CREDIT,
             ],
         )
+        excluded_types = self._excluded_payment_types()
+        if excluded_types:
+            qs = qs.exclude(payment_type__in=excluded_types)
+        return qs
 
     def _order_queryset(self):
         return Order.objects.filter(
@@ -126,19 +140,16 @@ class KpiService:
         LTV por Rol = suma(total gastado por rol) ÷ cantidad de usuarios por rol.
         """
         user_totals = defaultdict(Decimal)
-        payments = self._payment_queryset().values("user_id").annotate(amount=Sum("amount"))
+        payments = self._payment_queryset().values(
+            "user_id").annotate(amount=Sum("amount"))
         for row in payments:
             if row["user_id"]:
                 user_totals[row["user_id"]] += row["amount"] or Decimal("0")
-        orders = self._order_queryset().values("user_id").annotate(amount=Sum("total_amount"))
-        for row in orders:
-            if row["user_id"]:
-                user_totals[row["user_id"]] += row["amount"] or Decimal("0")
-
         if not user_totals:
             return {}
 
-        users = CustomUser.objects.filter(id__in=user_totals.keys()).values("id", "role")
+        users = CustomUser.objects.filter(
+            id__in=user_totals.keys()).values("id", "role")
         role_totals = defaultdict(Decimal)
         role_counts = defaultdict(int)
         for user in users:
@@ -174,7 +185,8 @@ class KpiService:
             appointment_minutes = appointment_minutes.filter(
                 service__category_id=self.service_category_id
             )
-        scheduled = appointment_minutes.aggregate(total=Sum("duration"))["total"] or 0
+        scheduled = appointment_minutes.aggregate(
+            total=Sum("duration"))["total"] or 0
         available = self._calculate_available_minutes()
         if available == 0:
             return 0
@@ -186,7 +198,8 @@ class KpiService:
         """
         availabilities = StaffAvailability.objects.all()
         if self.staff_id:
-            availabilities = availabilities.filter(staff_member_id=self.staff_id)
+            availabilities = availabilities.filter(
+                staff_member_id=self.staff_id)
         total_minutes = 0
         mapping = defaultdict(list)
         for availability in availabilities:
@@ -237,7 +250,8 @@ class KpiService:
         )["total"]
         total_generated = total_generated or Decimal("0")
         recovered_amount = recovered_amount or Decimal("0")
-        rate = float(recovered_amount / total_generated) if total_generated > 0 else 0.0
+        rate = float(recovered_amount /
+                     total_generated) if total_generated > 0 else 0.0
         return {
             "total_debt": float(total_generated),
             "recovered_amount": float(recovered_amount),
@@ -295,6 +309,9 @@ class KpiService:
             )
         return rows
 
+    def _get_total_revenue(self):
+        return self._payment_queryset().aggregate(total=Sum("amount"))["total"] or Decimal("0")
+
     # --- Export helpers ------------------------------------------------------
 
     def as_rows(self):
@@ -311,5 +328,6 @@ class KpiService:
         debt_metrics = kpis.get("debt_recovery") or {}
         rows.append(("debt_total", debt_metrics.get("total_debt", 0)))
         rows.append(("debt_recovered", debt_metrics.get("recovered_amount", 0)))
-        rows.append(("debt_recovery_rate", debt_metrics.get("recovery_rate", 0)))
+        rows.append(
+            ("debt_recovery_rate", debt_metrics.get("recovery_rate", 0)))
         return rows

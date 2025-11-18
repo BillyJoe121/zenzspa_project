@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 from simple_history.models import HistoricalRecords
 
 from core.models import BaseModel
@@ -74,6 +75,22 @@ class NotificationPreference(BaseModel):
             NotificationTemplate.ChannelChoices.PUSH: self.push_enabled,
         }
         return mapping.get(channel, False)
+
+    def clean(self):
+        super().clean()
+        if self.quiet_hours_start and self.quiet_hours_end:
+            if self.quiet_hours_start == self.quiet_hours_end:
+                raise ValidationError(
+                    {"quiet_hours_start": "El rango de silencio debe tener duración mayor a cero."}
+                )
+        elif self.quiet_hours_start or self.quiet_hours_end:
+            raise ValidationError(
+                {"quiet_hours_start": "Debes definir inicio y fin de quiet hours."}
+            )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
 
 class NotificationTemplate(BaseModel):

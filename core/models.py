@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
@@ -85,13 +86,17 @@ class AuditLog(BaseModel):
     class Action(models.TextChoices):
         FLAG_NON_GRATA = "FLAG_NON_GRATA", "Marcar como Persona No Grata"
         ADMIN_CANCEL_APPOINTMENT = "ADMIN_CANCEL_APPOINTMENT", "Admin cancela cita pagada"
+        ADMIN_ENDPOINT_HIT = "ADMIN_ENDPOINT_HIT", "Invocación de endpoint admin"
         APPOINTMENT_CANCELLED_BY_ADMIN = "APPOINTMENT_CANCELLED_BY_ADMIN", "Appointment Cancelled by Admin"
         SYSTEM_CANCEL = "SYSTEM_CANCEL", "Cancelación automática del sistema"
         APPOINTMENT_RESCHEDULE_FORCE = "APPOINTMENT_RESCHEDULE_FORCE", "Reagendamiento forzado por staff"
+        APPOINTMENT_COMPLETED = "APPOINTMENT_COMPLETED", "Cita completada"
         CLINICAL_PROFILE_ANONYMIZED = "CLINICAL_PROFILE_ANONYMIZED", "Perfil clínico anonimizado"
         VOUCHER_REDEEMED = "VOUCHER_REDEEMED", "Voucher redimido"
         LOYALTY_REWARD_ISSUED = "LOYALTY_REWARD_ISSUED", "Recompensa de lealtad otorgada"
         VIP_DOWNGRADED = "VIP_DOWNGRADED", "VIP degradado"
+        MARKETPLACE_RETURN = "MARKETPLACE_RETURN", "Devolución marketplace procesada"
+        FINANCIAL_ADJUSTMENT_CREATED = "FINANCIAL_ADJUSTMENT_CREATED", "Ajuste financiero registrado"
 
     action = models.CharField(
         max_length=64,
@@ -234,6 +239,30 @@ class GlobalSettings(BaseModel):
         verbose_name="TTL de lista de espera (minutos)",
         help_text="Tiempo máximo para responder a una oferta de lista de espera.",
     )
+    developer_commission_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("5.00"),
+        verbose_name="Comisión del desarrollador (%)",
+        help_text="Porcentaje reservado para el desarrollador. Solo puede mantenerse o incrementarse.",
+    )
+    developer_payout_threshold = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("200000.00"),
+        verbose_name="Umbral de pago al desarrollador",
+        help_text="Saldo mínimo acumulado antes de intentar una dispersión al desarrollador.",
+    )
+    developer_in_default = models.BooleanField(
+        default=False,
+        verbose_name="Desarrollador en mora",
+        help_text="Indica si el sistema adeuda pagos al desarrollador.",
+    )
+    developer_default_since = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Inicio de mora con el desarrollador",
+    )
 
     # Validaciones de dominio (evita valores absurdos en producción)
     def clean(self):
@@ -256,6 +285,23 @@ class GlobalSettings(BaseModel):
             errors["loyalty_months_required"] = "Debe ser al menos 1."
         if self.waitlist_ttl_minutes < 5:
             errors["waitlist_ttl_minutes"] = "Debe ser al menos 5 minutos."
+        commission = self.developer_commission_percentage
+        if commission is None or commission <= 0:
+            errors["developer_commission_percentage"] = "El porcentaje de la comisión debe ser mayor a cero."
+        else:
+            previous_value = None
+            if self.pk:
+                previous_value = (
+                    type(self)
+                    .objects.filter(pk=self.pk)
+                    .values_list("developer_commission_percentage", flat=True)
+                    .first()
+                )
+            if previous_value is not None and commission < previous_value:
+                errors["developer_commission_percentage"] = "No se permite disminuir la comisión del desarrollador."
+        threshold = self.developer_payout_threshold
+        if threshold is None or threshold <= 0:
+            errors["developer_payout_threshold"] = "El umbral de pago debe ser mayor que cero."
         if errors:
             raise ValidationError(errors)
 

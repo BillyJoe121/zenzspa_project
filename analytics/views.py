@@ -2,24 +2,43 @@ from datetime import datetime, timedelta
 import csv
 import io
 
+from decimal import Decimal
+
 from django.core.cache import cache
 from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.db.models import Sum, Q
+from django.db.models.functions import Coalesce
 
 from spa.models import Appointment, Payment, ClientCredit
-from spa.services import PaymentService
 from marketplace.models import Order
 from users.models import CustomUser
+from users.permissions import IsStaffOrAdmin
+from core.models import AuditLog
+from core.utils import safe_audit_log
 from .services import KpiService
 from .utils import build_analytics_workbook
 
 
+def _audit_analytics(request, action, extra=None):
+    safe_audit_log(
+        action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+        admin_user=getattr(request, "user", None),
+        details={
+            "analytics_action": action,
+            **(extra or {}),
+        },
+    )
+
+
 class DateFilterMixin:
+    MAX_RANGE_DAYS = 31
+    CACHE_TTL = 300
+
     def _parse_dates(self, request):
         today = timezone.localdate()
         default_start = today - timedelta(days=6)
@@ -37,6 +56,8 @@ class DateFilterMixin:
         end_date = parse_param("end_date", today)
         if start_date > end_date:
             raise ValueError("start_date debe ser menor o igual a end_date.")
+        if (end_date - start_date).days > self.MAX_RANGE_DAYS:
+            raise ValueError(f"El rango máximo permitido es de {self.MAX_RANGE_DAYS} días.")
         return start_date, end_date
 
     def _parse_filters(self, request):
@@ -52,13 +73,27 @@ class DateFilterMixin:
             raise ValueError("service_category_id debe ser numérico.")
         return staff_id, service_category_id
 
+    def _cache_key(self, request, prefix, start_date, end_date, staff_id, service_category_id):
+        role = getattr(getattr(request, "user", None), "role", "ANON")
+        return ":".join(
+            [
+                "analytics",
+                prefix,
+                str(role),
+                start_date.isoformat(),
+                end_date.isoformat(),
+                str(staff_id or "all"),
+                str(service_category_id or "all"),
+            ]
+        )
+
 
 class KpiView(DateFilterMixin, APIView):
     """
     Endpoint que entrega los KPIs de negocio en un rango de fechas.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def get(self, request):
         try:
@@ -66,6 +101,16 @@ class KpiView(DateFilterMixin, APIView):
             staff_id, service_category_id = self._parse_filters(request)
         except ValueError as exc:
             return Response({"error": str(exc)}, status=400)
+        cache_key = self._cache_key(request, "kpis", start_date, end_date, staff_id, service_category_id)
+        cached = cache.get(cache_key)
+        if cached is not None:
+            _audit_analytics(
+                request,
+                "kpi_view",
+                {"start_date": start_date.isoformat(), "end_date": end_date.isoformat(), "cache": "hit"},
+            )
+            return Response(cached)
+
         service = KpiService(
             start_date,
             end_date,
@@ -77,11 +122,17 @@ class KpiView(DateFilterMixin, APIView):
         data["end_date"] = end_date.isoformat()
         data["staff_id"] = staff_id
         data["service_category_id"] = service_category_id
+        cache.set(cache_key, data, self.CACHE_TTL)
+        _audit_analytics(
+            request,
+            "kpi_view",
+            {"start_date": start_date.isoformat(), "end_date": end_date.isoformat(), "cache": "miss"},
+        )
         return Response(data)
 
 
 class AnalyticsExportView(DateFilterMixin, APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def get(self, request):
         try:
@@ -96,14 +147,28 @@ class AnalyticsExportView(DateFilterMixin, APIView):
             staff_id=staff_id,
             service_category_id=service_category_id,
         )
+        cache_key = self._cache_key(request, "dataset", start_date, end_date, staff_id, service_category_id)
+        dataset = cache.get(cache_key)
+        cache_state = "hit"
+        if dataset is None:
+            cache_state = "miss"
+            kpis = service.get_business_kpis()
+            dataset = {
+                "kpis": kpis,
+                "rows": service.as_rows(),
+                "sales_details": service.get_sales_details(),
+                "debt_metrics": kpis.get("debt_recovery", {}),
+                "debt_rows": service.get_debt_rows(),
+            }
+            cache.set(cache_key, dataset, self.CACHE_TTL)
+        kpis = dataset["kpis"]
         export_format = request.query_params.get("format", "csv").lower()
         if export_format == "xlsx":
-            kpis = service.get_business_kpis()
             workbook = build_analytics_workbook(
                 kpis=kpis,
-                sales_details=service.get_sales_details(),
-                debt_metrics=kpis.get("debt_recovery", {}),
-                debt_rows=service.get_debt_rows(),
+                sales_details=dataset["sales_details"],
+                debt_metrics=dataset["debt_metrics"],
+                debt_rows=dataset["debt_rows"],
                 start_date=start_date,
                 end_date=end_date,
             )
@@ -113,23 +178,42 @@ class AnalyticsExportView(DateFilterMixin, APIView):
                 content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
             response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            _audit_analytics(
+                request,
+                "analytics_export",
+                {
+                    "format": "xlsx",
+                    "cache": cache_state,
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat(),
+                },
+            )
             return response
 
-        rows = service.as_rows()
         buffer = io.StringIO()
         writer = csv.writer(buffer)
         writer.writerow(["metric", "value", "start_date", "end_date"])
-        for metric, value in rows:
+        for metric, value in dataset["rows"]:
             writer.writerow([metric, value, start_date.isoformat(), end_date.isoformat()])
 
         filename = f"analytics_{start_date.isoformat()}_{end_date.isoformat()}.csv"
         response = HttpResponse(buffer.getvalue(), content_type="text/csv")
         response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        _audit_analytics(
+            request,
+            "analytics_export",
+            {
+                "format": "csv",
+                "cache": cache_state,
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+            },
+        )
         return response
 
 
 class DashboardViewSet(viewsets.ViewSet):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
     CACHE_TTL = 60
 
     def list(self, request):
@@ -149,15 +233,21 @@ class DashboardViewSet(viewsets.ViewSet):
             "email": user.email,
         }
 
-    def _cache_key(self, suffix):
-        return f"analytics:dashboard:{suffix}"
+    def _cache_key(self, request, suffix):
+        role = getattr(request.user, "role", "ANON")
+        return f"analytics:dashboard:{role}:{suffix}"
 
     @action(detail=False, methods=["get"], url_path="agenda-today")
     def agenda_today(self, request):
         today = self._today()
-        cache_key = self._cache_key(f"agenda:{today.isoformat()}")
+        cache_key = self._cache_key(request, f"agenda:{today.isoformat()}")
         cached = cache.get(cache_key)
         if cached is not None:
+            _audit_analytics(
+                request,
+                "dashboard_agenda_today",
+                {"date": today.isoformat(), "cache": "hit"},
+            )
             return Response({"results": cached})
         appointments = (
             Appointment.objects.select_related("user", "staff_member")
@@ -178,20 +268,47 @@ class DashboardViewSet(viewsets.ViewSet):
                 }
             )
         cache.set(cache_key, data, self.CACHE_TTL)
+        _audit_analytics(
+            request,
+            "dashboard_agenda_today",
+            {"date": today.isoformat(), "cache": "miss"},
+        )
         return Response({"results": data})
 
     @action(detail=False, methods=["get"], url_path="pending-payments")
     def pending_payments(self, request):
-        cache_key = self._cache_key("pending")
+        cache_key = self._cache_key(request, "pending")
         cached = cache.get(cache_key)
         if cached is not None:
+            _audit_analytics(
+                request,
+                "dashboard_pending_payments",
+                {"cache": "hit"},
+            )
             return Response({"results": cached})
         pending_payments = Payment.objects.select_related("user").filter(
             status=Payment.PaymentStatus.PENDING
         )
+        payment_filter = Q(
+            payments__payment_type__in=[
+                Payment.PaymentType.ADVANCE,
+                Payment.PaymentType.FINAL,
+            ]
+        ) & Q(
+            payments__status__in=[
+                Payment.PaymentStatus.APPROVED,
+                Payment.PaymentStatus.PAID_WITH_CREDIT,
+            ]
+        )
         pending_appointments = (
             Appointment.objects.select_related("user")
             .filter(status=Appointment.AppointmentStatus.PAID)
+            .annotate(
+                paid_amount=Coalesce(
+                    Sum("payments__amount", filter=payment_filter),
+                    Decimal("0"),
+                )
+            )
             .order_by("-start_time")
         )
         payments_payload = [
@@ -210,21 +327,36 @@ class DashboardViewSet(viewsets.ViewSet):
                 "appointment_id": str(appointment.id),
                 "user": self._user_payload(appointment.user),
                 "start_time": appointment.start_time.isoformat(),
-                "amount_due": float(PaymentService.calculate_outstanding_amount(appointment)),
+                "amount_due": float(
+                    max(
+                        (appointment.price_at_purchase or Decimal("0")) - (appointment.paid_amount or Decimal("0")),
+                        Decimal("0"),
+                    )
+                ),
             }
             for appointment in pending_appointments
         ]
         combined = payments_payload + appointments_payload
         cache.set(cache_key, combined, self.CACHE_TTL)
+        _audit_analytics(
+            request,
+            "dashboard_pending_payments",
+            {"cache": "miss"},
+        )
         return Response({"results": combined})
 
     @action(detail=False, methods=["get"], url_path="expiring-credits")
     def expiring_credits(self, request):
         today = self._today()
         upcoming = today + timedelta(days=7)
-        cache_key = self._cache_key(f"credits:{today.isoformat()}")
+        cache_key = self._cache_key(request, f"credits:{today.isoformat()}")
         cached = cache.get(cache_key)
         if cached is not None:
+            _audit_analytics(
+                request,
+                "dashboard_expiring_credits",
+                {"date": today.isoformat(), "cache": "hit"},
+            )
             return Response({"results": cached})
         credits = ClientCredit.objects.select_related("user").filter(
             expires_at__gte=today,
@@ -244,6 +376,11 @@ class DashboardViewSet(viewsets.ViewSet):
             for credit in credits
         ]
         cache.set(cache_key, results, self.CACHE_TTL)
+        _audit_analytics(
+            request,
+            "dashboard_expiring_credits",
+            {"date": today.isoformat(), "cache": "miss"},
+        )
         return Response({"results": results})
 
     @action(detail=False, methods=["get"], url_path="renewals")
@@ -263,4 +400,9 @@ class DashboardViewSet(viewsets.ViewSet):
             }
             for user in users
         ]
+        _audit_analytics(
+            request,
+            "dashboard_renewals",
+            {"date": today.isoformat()},
+        )
         return Response({"results": results})

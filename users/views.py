@@ -1,3 +1,4 @@
+import logging
 import math
 
 from django.conf import settings
@@ -15,7 +16,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import CustomUser, UserSession, OTPAttempt, BlockedPhoneNumber
-from .permissions import IsVerified, IsAdminUser, IsStaff
+from .permissions import IsVerified, IsAdminUser, IsStaff, IsStaffOrAdmin
 from .serializers import (CustomTokenObtainPairSerializer,
                           SessionAwareTokenRefreshSerializer,
                           FlagNonGrataSerializer,
@@ -24,9 +25,12 @@ from .serializers import (CustomTokenObtainPairSerializer,
                           UserRegistrationSerializer, VerifySMSSerializer, StaffListSerializer,
                           UserSessionSerializer)
 from .services import TwilioService, verify_recaptcha
-from .utils import get_client_ip
+from .utils import get_client_ip, register_user_session
 from spa.models import Appointment
 from core.models import AuditLog, AdminNotification
+from notifications.services import NotificationService
+
+logger = logging.getLogger(__name__)
 
 OTP_PHONE_RECAPTCHA_THRESHOLD = getattr(settings, "OTP_PHONE_RECAPTCHA_THRESHOLD", 3)
 OTP_IP_RECAPTCHA_THRESHOLD = getattr(settings, "OTP_IP_RECAPTCHA_THRESHOLD", 5)
@@ -97,6 +101,7 @@ class UserRegistrationView(generics.CreateAPIView):
             _log_otp_attempt(user.phone_number, OTPAttempt.AttemptType.REQUEST, True, request, {"context": "registration"})
         except Exception as e:
             _log_otp_attempt(user.phone_number, OTPAttempt.AttemptType.REQUEST, False, request, {"context": "registration", "error": str(e)})
+            user.delete()
             raise
 
 
@@ -161,6 +166,12 @@ class VerifySMSView(views.APIView):
 
                 # --- CORRECCIÓN: Generar y devolver tokens ---
                 refresh = RefreshToken.for_user(user)
+                register_user_session(
+                    user=user,
+                    refresh_token_jti=str(refresh['jti']),
+                    request=request,
+                    sender=self.__class__,
+                )
                 return Response({
                     "detail": "Usuario verificado correctamente.",
                     "refresh": str(refresh),
@@ -350,11 +361,23 @@ class FlagNonGrataView(generics.UpdateAPIView):
                 continue
         
         instance.save()
+        try:
+            NotificationService.send_notification(
+                user=instance,
+                event_code="USER_FLAGGED_NON_GRATA",
+                context={
+                    "phone_number": instance.phone_number,
+                    "notes": instance.internal_notes or "",
+                },
+                priority="high",
+            )
+        except Exception:
+            logger.exception("No se pudo notificar al usuario %s sobre su estado CNG", instance.phone_number)
 
 
 class StaffListView(generics.ListAPIView):
     serializer_class = StaffListSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStaffOrAdmin]
 
     def get_queryset(self):
         return CustomUser.objects.filter(role=CustomUser.Role.STAFF)

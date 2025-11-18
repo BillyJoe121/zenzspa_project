@@ -16,7 +16,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # --------------------------------------------------------------------------------------
 # Claves y modo
 # --------------------------------------------------------------------------------------
-SECRET_KEY = os.getenv("SECRET_KEY", "!!dev-only-not-secure!!")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY no configurada. Define la variable de entorno antes de iniciar la aplicación.")
 DEBUG = os.getenv("DEBUG", "0") in ("1", "true", "True")
 
 # Hosts/CSRF/CORS: admite coma o espacio
@@ -84,6 +86,7 @@ INSTALLED_APPS = [
     "notifications",
     "analytics",
     "bot",
+    "finances",
 ]
 
 MIDDLEWARE = [
@@ -99,6 +102,8 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "csp.middleware.CSPMiddleware",
     "simple_history.middleware.HistoryRequestMiddleware",
+    "core.middleware.RequestIDMiddleware",
+    "core.middleware.AdminAuditMiddleware",
     # "axes.middleware.AxesMiddleware",               # Habilita si usas django-axes
 ]
 
@@ -269,6 +274,8 @@ KIOSK_ALLOWED_VIEW_NAMES = set(
 
 WOMPI_PUBLIC_KEY = os.getenv("WOMPI_PUBLIC_KEY", "")
 WOMPI_INTEGRITY_SECRET = os.getenv("WOMPI_INTEGRITY_SECRET", "")
+# Alias compatible con la documentación más reciente.
+WOMPI_INTEGRITY_KEY = os.getenv("WOMPI_INTEGRITY_KEY", WOMPI_INTEGRITY_SECRET)
 WOMPI_EVENT_SECRET = os.getenv("WOMPI_EVENT_SECRET", "")
 WOMPI_REDIRECT_URL = os.getenv(
     "WOMPI_REDIRECT_URL", "http://localhost:3000/payment-result")
@@ -295,16 +302,13 @@ if not DEBUG:
 # --------------------------------------------------------------------------------------
 # CSP (django-csp) V4.0+
 # --------------------------------------------------------------------------------------
-CONTENT_SECURITY_POLICY = {
-    "DIRECTIVES": {
-        "default-src": ["'self'"],
-        "script-src": ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net", "unpkg.com"],
-        "style-src": ["'self'", "'unsafe-inline'", "fonts.googleapis.com", "cdn.jsdelivr.net", "unpkg.com"],
-        "img-src": ["'self'", "data:", "blob:"],
-        "font-src": ["'self'", "fonts.gstatic.com", "cdn.jsdelivr.net", "unpkg.com"],
-        # Usamos tu variable CORS_ALLOWED_ORIGINS para mantenerlo dinámico
-        "connect-src": ["'self'"] + CORS_ALLOWED_ORIGINS,
-    }
+CSP_DIRECTIVES = {
+    "default-src": ("'self'",),
+    "script-src": ("'self'", "cdn.jsdelivr.net", "unpkg.com"),
+    "style-src": ("'self'", "fonts.googleapis.com", "cdn.jsdelivr.net", "unpkg.com"),
+    "img-src": ("'self'", "data:", "blob:"),
+    "font-src": ("'self'", "fonts.gstatic.com", "cdn.jsdelivr.net", "unpkg.com"),
+    "connect-src": tuple(["'self'"] + CORS_ALLOWED_ORIGINS),
 }
 
 # --------------------------------------------------------------------------------------
@@ -328,6 +332,14 @@ CELERY_BEAT_SCHEDULE = {
     "cancel-unpaid-appointments-every-10-minutes": {
         "task": "spa.tasks.cancel_unpaid_appointments",
         "schedule": crontab(minute="*/10"),
+    },
+    "release-expired-order-reservations": {
+        "task": "marketplace.tasks.release_expired_order_reservations",
+        "schedule": crontab(minute="*/10"),
+    },
+    "developer-payout-hourly": {
+        "task": "finances.tasks.run_developer_payout",
+        "schedule": crontab(minute=0, hour="*"),
     },
 }
 

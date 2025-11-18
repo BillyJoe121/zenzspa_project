@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q
 from django.core.exceptions import ValidationError
+from django.core.mail import send_mail
 import hashlib
 import json
 from django.conf import settings
@@ -27,6 +28,7 @@ from .models import (
     Voucher,
     Package,
     ClientCredit,
+    PaymentCreditUsage,
     SubscriptionLog,
     FinancialAdjustment,
     WebhookEvent,
@@ -35,9 +37,11 @@ from .models import (
 from core.exceptions import BusinessLogicError
 from core.models import GlobalSettings, AuditLog
 from users.models import CustomUser
+from finances.services import DeveloperCommissionService
 
 
 logger = logging.getLogger(__name__)
+
 
 class AvailabilityService:
     """
@@ -58,13 +62,16 @@ class AvailabilityService:
             minutes=sum(service.duration for service in self.services)
         )
         if self.service_duration <= timedelta(0):
-            raise ValueError("Los servicios seleccionados no tienen duración válida.")
+            raise ValueError(
+                "Los servicios seleccionados no tienen duración válida.")
 
     @classmethod
     def for_service_ids(cls, date, service_ids):
-        services = list(Service.objects.filter(id__in=service_ids, is_active=True))
+        services = list(Service.objects.filter(
+            id__in=service_ids, is_active=True))
         if len(services) != len(set(service_ids)):
-            raise ValueError("Uno o más servicios seleccionados no existen o están inactivos.")
+            raise ValueError(
+                "Uno o más servicios seleccionados no existen o están inactivos.")
         return cls(date, services)
 
     @classmethod
@@ -83,11 +90,14 @@ class AvailabilityService:
 
     def _build_slots(self, staff_member_id=None):
         day_of_week = self.date.isoweekday()
-        availabilities = StaffAvailability.objects.filter(day_of_week=day_of_week)
+        availabilities = StaffAvailability.objects.filter(
+            day_of_week=day_of_week)
         if staff_member_id:
-            availabilities = availabilities.filter(staff_member_id=staff_member_id)
+            availabilities = availabilities.filter(
+                staff_member_id=staff_member_id)
         availabilities = list(availabilities.select_related('staff_member'))
-        staff_ids = {availability.staff_member_id for availability in availabilities}
+        staff_ids = {
+            availability.staff_member_id for availability in availabilities}
 
         appointments = Appointment.objects.filter(
             start_time__date=self.date,
@@ -104,7 +114,8 @@ class AvailabilityService:
                 continue
             busy_start = appointment.start_time - self.buffer
             busy_end = appointment.end_time + self.buffer
-            busy_map[appointment.staff_member_id].append((busy_start, busy_end))
+            busy_map[appointment.staff_member_id].append(
+                (busy_start, busy_end))
 
         for staff_id in busy_map:
             busy_map[staff_id].sort()
@@ -129,7 +140,8 @@ class AvailabilityService:
                 )
                 if exclusion_end <= exclusion_start:
                     continue
-                exclusion_map[exclusion.staff_member_id].append((exclusion_start, exclusion_end))
+                exclusion_map[exclusion.staff_member_id].append(
+                    (exclusion_start, exclusion_end))
             for staff_id in exclusion_map:
                 exclusion_map[staff_id].sort()
 
@@ -278,7 +290,8 @@ class AppointmentService:
         exclusion_exists = AvailabilityExclusion.objects.filter(
             staff_member=self.staff_member,
         ).filter(
-            Q(date=local_start.date()) | Q(date__isnull=True, day_of_week=day_of_week)
+            Q(date=local_start.date()) | Q(
+                date__isnull=True, day_of_week=day_of_week)
         ).filter(
             start_time__lt=local_end.time(),
             end_time__gt=local_start.time(),
@@ -378,7 +391,8 @@ class AppointmentService:
         if not isinstance(new_start_time, datetime):
             raise ValidationError("La fecha y hora nuevas no son válidas.")
 
-        is_privileged = acting_user.role in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]
+        is_privileged = acting_user.role in [
+            CustomUser.Role.ADMIN, CustomUser.Role.STAFF]
         now = timezone.now()
         restrictions = []
 
@@ -407,7 +421,8 @@ class AppointmentService:
             )
 
         if not is_privileged and appointment.user != acting_user:
-            raise ValidationError("No puedes modificar citas de otros usuarios.")
+            raise ValidationError(
+                "No puedes modificar citas de otros usuarios.")
 
         if new_start_time <= now:
             raise ValidationError("La nueva fecha debe estar en el futuro.")
@@ -435,14 +450,16 @@ class AppointmentService:
                 .exists()
             )
             if conflict:
-                raise ValidationError("El nuevo horario ya no está disponible.")
+                raise ValidationError(
+                    "El nuevo horario ya no está disponible.")
 
         appointment.start_time = new_start_time
         appointment.end_time = new_end_time
         appointment.reschedule_count = appointment.reschedule_count + 1
         appointment.status = Appointment.AppointmentStatus.RESCHEDULED
         appointment.save(
-            update_fields=['start_time', 'end_time', 'reschedule_count', 'status', 'updated_at']
+            update_fields=['start_time', 'end_time',
+                           'reschedule_count', 'status', 'updated_at']
         )
         return appointment
 
@@ -450,10 +467,12 @@ class AppointmentService:
     @transaction.atomic
     def complete_appointment(appointment, acting_user):
         if acting_user.role not in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
-            raise ValidationError("No tienes permisos para completar esta cita.")
+            raise ValidationError(
+                "No tienes permisos para completar esta cita.")
         outstanding = PaymentService.calculate_outstanding_amount(appointment)
         if outstanding > 0:
-            raise ValidationError("No puedes completar la cita: existe un saldo final pendiente.")
+            raise ValidationError(
+                "No puedes completar la cita: existe un saldo final pendiente.")
         appointment.status = Appointment.AppointmentStatus.COMPLETED
         appointment.outcome = Appointment.AppointmentOutcome.NONE
         appointment.save(update_fields=['status', 'outcome', 'updated_at'])
@@ -462,7 +481,7 @@ class AppointmentService:
             admin_user=acting_user,
             target_user=appointment.user,
             target_appointment=appointment,
-            action=AuditLog.Action.SYSTEM_CANCEL,
+            action=AuditLog.Action.APPOINTMENT_COMPLETED,
             details=f"Cita {appointment.id} marcada como COMPLETED por {getattr(acting_user, 'phone_number', 'staff')}.",
         )
         return appointment
@@ -473,8 +492,10 @@ class AppointmentService:
         Construye un payload iCal simple para la cita.
         """
         dtstamp = timezone.now().astimezone(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-        dtstart = appointment.start_time.astimezone(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-        dtend = appointment.end_time.astimezone(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        dtstart = appointment.start_time.astimezone(
+            timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        dtend = appointment.end_time.astimezone(
+            timezone.utc).strftime('%Y%m%dT%H%M%SZ')
         summary = appointment.get_service_names() or "Cita ZenzSpa"
         description = f"Cita #{appointment.id}"
 
@@ -500,6 +521,7 @@ class AppointmentService:
             return service.vip_price
         return service.price
 
+
 class PackagePurchaseService:
     """
     Servicio para manejar la lógica de negocio de la compra de paquetes.
@@ -510,17 +532,18 @@ class PackagePurchaseService:
         """
         Crea el UserPackage y los Vouchers asociados después de un pago exitoso.
         Este método es idempotente; no hará nada si el paquete ya fue otorgado.
-        
+
         Args:
             payment (Payment): La instancia del pago aprobado.
         """
-        # Extraer el ID del paquete de la referencia del pago. Ej: 'PACKAGE-uuid'
+        reference = payment.transaction_id or ""
+        if not reference.startswith("PACKAGE-"):
+            return
+        raw_identifier = reference[len("PACKAGE-"):]
+        package_id = raw_identifier.rsplit('-', 1)[0]
         try:
-            package_id = payment.transaction_id.split('-')[1]
             package = Package.objects.get(id=package_id)
-        except (IndexError, Package.DoesNotExist):
-            # Loggear un error aquí sería ideal en un entorno de producción.
-            # No se puede procesar si el paquete no existe.
+        except Package.DoesNotExist:
             return
 
         # Verificar si este pago ya procesó una compra para evitar duplicados.
@@ -546,7 +569,8 @@ class PackagePurchaseService:
                 )
 
         if package.grants_vip_months:
-            VipMembershipService.extend_membership(payment.user, package.grants_vip_months)
+            VipMembershipService.extend_membership(
+                payment.user, package.grants_vip_months)
 
         return user_package
 
@@ -577,7 +601,8 @@ class VipMembershipService:
             update_fields.append('vip_active_since')
         user.save(update_fields=update_fields)
         return start_date, end_date
-    
+
+
 class VipSubscriptionService:
     """
     Servicio para manejar la lógica de negocio de las suscripciones VIP.
@@ -586,12 +611,14 @@ class VipSubscriptionService:
     @transaction.atomic
     def fulfill_subscription(payment: Payment, months=1):
         user = payment.user
-        start_date, end_date = VipMembershipService.extend_membership(user, months)
+        start_date, end_date = VipMembershipService.extend_membership(
+            user, months)
         if not start_date:
             return
         user.vip_auto_renew = True
         user.vip_failed_payments = 0
-        user.save(update_fields=['vip_auto_renew', 'vip_expires_at', 'role', 'vip_active_since', 'vip_failed_payments', 'updated_at'])
+        user.save(update_fields=['vip_auto_renew', 'vip_expires_at', 'role',
+                  'vip_active_since', 'vip_failed_payments', 'updated_at'])
         SubscriptionLog.objects.create(
             user=user,
             payment=payment,
@@ -599,10 +626,12 @@ class VipSubscriptionService:
             end_date=end_date
         )
 
+
 class WompiWebhookService:
     """
     Servicio para procesar y validar webhooks de Wompi.
     """
+
     def __init__(self, request_data, headers=None):
         if isinstance(request_data, dict):
             self.request_body = request_data
@@ -613,7 +642,8 @@ class WompiWebhookService:
                 self.request_body = {}
         self.data = self.request_body.get("data", {})
         self.event_type = self.request_body.get("event")
-        self.sent_signature = self.request_body.get("signature", {}).get("checksum")
+        self.sent_signature = self.request_body.get(
+            "signature", {}).get("checksum")
         self.timestamp = self.request_body.get("timestamp")
         self.headers = headers or {}
         self.event_record = WebhookEvent.objects.create(
@@ -628,25 +658,30 @@ class WompiWebhookService:
         Valida la firma del evento para asegurar que proviene de Wompi.
         """
         if not all([self.data, self.sent_signature, self.timestamp]):
-            logger.error("[PAYMENT-ALERT] Webhook Error: Firma o datos incompletos (event=%s)", self.event_type)
+            logger.error(
+                "[PAYMENT-ALERT] Webhook Error: Firma o datos incompletos (event=%s)", self.event_type)
             raise ValueError("Firma o datos del webhook incompletos.")
-        
+
         # El cuerpo del evento (data) debe ser convertido a un string JSON compacto.
         event_body_str = json.dumps(self.data, separators=(',', ':'))
-        
+
         # La cadena a firmar es: body + timestamp + secreto_de_eventos
         concatenation = f"{event_body_str}{self.timestamp}{settings.WOMPI_EVENT_SECRET}"
-        
-        calculated_signature = hashlib.sha256(concatenation.encode('utf-8')).hexdigest()
-        
+
+        calculated_signature = hashlib.sha256(
+            concatenation.encode('utf-8')).hexdigest()
+
         if not hashlib.sha256(self.sent_signature.encode('utf-8')).hexdigest() == hashlib.sha256(calculated_signature.encode('utf-8')).hexdigest():
-            logger.error("[PAYMENT-ALERT] Webhook Error: Firma inválida (event=%s)", self.event_type)
-            raise ValueError("Firma del webhook inválida. La petición podría ser fraudulenta.")
+            logger.error(
+                "[PAYMENT-ALERT] Webhook Error: Firma inválida (event=%s)", self.event_type)
+            raise ValueError(
+                "Firma del webhook inválida. La petición podría ser fraudulenta.")
 
     def _update_event_status(self, status, error_message=None):
         self.event_record.status = status
         self.event_record.error_message = error_message or ""
-        self.event_record.save(update_fields=['status', 'error_message', 'updated_at'])
+        self.event_record.save(
+            update_fields=['status', 'error_message', 'updated_at'])
 
     @transaction.atomic
     def process_transaction_update(self):
@@ -662,9 +697,11 @@ class WompiWebhookService:
             transaction_status = transaction_data.get("status")
 
             if not reference or not transaction_status:
-                logger.error("[PAYMENT-ALERT] Webhook Error: Referencia o estado ausentes (event=%s)", self.event_type)
-                raise ValueError("Referencia o estado de la transacción ausentes en el webhook.")
-            
+                logger.error(
+                    "[PAYMENT-ALERT] Webhook Error: Referencia o estado ausentes (event=%s)", self.event_type)
+                raise ValueError(
+                    "Referencia o estado de la transacción ausentes en el webhook.")
+
             try:
                 payment = Payment.objects.select_for_update().get(
                     transaction_id=reference,
@@ -674,19 +711,26 @@ class WompiWebhookService:
                 try:
                     order = Order.objects.select_for_update().get(wompi_transaction_id=reference)
                 except Order.DoesNotExist:
-                    self._update_event_status(WebhookEvent.Status.IGNORED, "Pago u orden no encontrados.")
-                    logger.error("[PAYMENT-ALERT] Webhook Error: Pago u orden no encontrados (reference=%s)", reference)
+                    self._update_event_status(
+                        WebhookEvent.Status.IGNORED, "Pago u orden no encontrados.")
+                    logger.error(
+                        "[PAYMENT-ALERT] Webhook Error: Pago u orden no encontrados (reference=%s)", reference)
                     return {"status": "already_processed_or_invalid"}
 
                 amount_in_cents = transaction_data.get("amount_in_cents")
-                expected_cents = int((order.total_amount or Decimal('0')) * Decimal('100'))
+                expected_cents = int(
+                    (order.total_amount or Decimal('0')) * Decimal('100'))
+
+                payment_record = order.payments.filter(transaction_id=reference).first()
 
                 if transaction_status == 'APPROVED':
                     if amount_in_cents is None or int(amount_in_cents) != expected_cents:
                         order.status = Order.OrderStatus.FRAUD_ALERT
                         order.fraud_reason = "Monto pagado no coincide con el total."
-                        order.save(update_fields=['status', 'fraud_reason', 'updated_at'])
-                        self._update_event_status(WebhookEvent.Status.FAILED, "Diferencia en montos detectada.")
+                        order.save(update_fields=[
+                                   'status', 'fraud_reason', 'updated_at'])
+                        self._update_event_status(
+                            WebhookEvent.Status.FAILED, "Diferencia en montos detectada.")
                         logger.error(
                             "[PAYMENT-ALERT] Webhook Error: Diferencia en montos detectada (reference=%s expected=%s got=%s)",
                             reference,
@@ -694,57 +738,105 @@ class WompiWebhookService:
                             amount_in_cents,
                         )
                         return {"status": "fraud_alert"}
-                    order.wompi_transaction_id = transaction_data.get("id", order.wompi_transaction_id)
-                    order.save(update_fields=['wompi_transaction_id', 'updated_at'])
+                    order.wompi_transaction_id = transaction_data.get(
+                        "id", order.wompi_transaction_id)
+                    order.save(update_fields=[
+                               'wompi_transaction_id', 'updated_at'])
                     from marketplace.services import OrderService
                     try:
                         OrderService.confirm_payment(order)
+                        if payment_record:
+                            payment_record.status = Payment.PaymentStatus.APPROVED
+                            payment_record.raw_response = transaction_data
+                            payment_record.save(update_fields=['status', 'raw_response', 'updated_at'])
                     except BusinessLogicError as exc:
-                        OrderService.transition_to(order, Order.OrderStatus.FRAUD_ALERT)
+                        payload = exc.detail if isinstance(exc.detail, dict) else {}
+                        code = payload.get("code")
+                        if code == "MKT-STOCK-EXPIRED":
+                            OrderService.release_reservation(
+                                order,
+                                reason="Reserva expirada sin stock disponible.",
+                            )
+                            settings_obj = GlobalSettings.load()
+                            expires = timezone.now().date() + timedelta(days=settings_obj.credit_expiration_days)
+                            credit = ClientCredit.objects.create(
+                                user=order.user,
+                                originating_payment=payment_record,
+                                initial_amount=order.total_amount,
+                                remaining_amount=order.total_amount,
+                                status=ClientCredit.CreditStatus.AVAILABLE,
+                                expires_at=expires,
+                            )
+                            if payment_record:
+                                payment_record.status = Payment.PaymentStatus.APPROVED
+                                payment_record.raw_response = transaction_data
+                                payment_record.save(update_fields=['status', 'raw_response', 'updated_at'])
+                            self._update_event_status(
+                                WebhookEvent.Status.PROCESSED, "Orden convertida en crédito por falta de stock.")
+                            logger.warning(
+                                "Pago tardío convertido en crédito para la orden %s (crédito %s).",
+                                order.id,
+                                credit.id,
+                            )
+                            return {"status": "order_refunded_credit", "order_id": str(order.id)}
+                        OrderService.transition_to(
+                            order, Order.OrderStatus.FRAUD_ALERT)
                         OrderService.release_reservation(
                             order,
                             reason=str(exc),
                         )
-                        self._update_event_status(WebhookEvent.Status.FAILED, str(exc))
+                        self._update_event_status(
+                            WebhookEvent.Status.FAILED, str(exc))
                         logger.error("[PAYMENT-ALERT] Webhook Error: %s", exc)
                         return {"status": "fraud_alert"}
                 else:
                     from marketplace.services import OrderService
-                    OrderService.transition_to(order, Order.OrderStatus.CANCELLED)
+                    OrderService.transition_to(
+                        order, Order.OrderStatus.CANCELLED)
                 self._update_event_status(WebhookEvent.Status.PROCESSED)
                 return {"status": "order_processed", "order_id": str(order.id)}
 
-            PaymentService.apply_gateway_status(payment, transaction_status, transaction_data)
+            PaymentService.apply_gateway_status(
+                payment, transaction_status, transaction_data)
             self._update_event_status(WebhookEvent.Status.PROCESSED)
             return {"status": "processed_successfully", "payment_id": payment.id}
         except Exception as exc:
             self._update_event_status(WebhookEvent.Status.FAILED, str(exc))
-            logger.error("[PAYMENT-ALERT] Webhook Error: %s", exc, exc_info=True)
+            logger.error("[PAYMENT-ALERT] Webhook Error: %s",
+                         exc, exc_info=True)
             raise
+
 
 class PaymentService:
     """
     Servicio para manejar la lógica de negocio de los pagos,
     incluyendo la aplicación de saldo a favor (ClientCredit).
     """
+    WOMPI_DEFAULT_BASE_URL = "https://production.wompi.co/v1"
+    _acceptance_token_cache = {"token": None, "expires_at": None}
+
     def __init__(self, user):
         self.user = user
 
     @staticmethod
     def apply_gateway_status(payment, gateway_status, transaction_payload=None):
         normalized = (gateway_status or "").upper()
+        previous_status = payment.status
         if transaction_payload is not None:
             payment.raw_response = transaction_payload
         if normalized == 'APPROVED':
             if transaction_payload:
-                payment.transaction_id = transaction_payload.get("id", payment.transaction_id)
+                payment.transaction_id = transaction_payload.get(
+                    "id", payment.transaction_id)
             payment.status = Payment.PaymentStatus.APPROVED
-            payment.save(update_fields=['status', 'transaction_id', 'raw_response', 'updated_at'])
+            payment.save(update_fields=[
+                         'status', 'transaction_id', 'raw_response', 'updated_at'])
             if payment.payment_type == Payment.PaymentType.PACKAGE:
                 PackagePurchaseService.fulfill_purchase(payment)
             elif payment.payment_type == Payment.PaymentType.ADVANCE and payment.appointment:
                 payment.appointment.status = Appointment.AppointmentStatus.CONFIRMED
-                payment.appointment.save(update_fields=['status', 'updated_at'])
+                payment.appointment.save(
+                    update_fields=['status', 'updated_at'])
             elif payment.payment_type == Payment.PaymentType.VIP_SUBSCRIPTION:
                 VipSubscriptionService.fulfill_subscription(payment)
             elif (
@@ -752,16 +844,43 @@ class PaymentService:
                 and payment.appointment
             ):
                 payment.appointment.status = Appointment.AppointmentStatus.PAID
-                payment.appointment.save(update_fields=['status', 'updated_at'])
+                payment.appointment.save(
+                    update_fields=['status', 'updated_at'])
+            elif (
+                payment.payment_type == Payment.PaymentType.ORDER
+                and payment.order
+            ):
+                try:
+                    from marketplace.services import OrderService  # import local para evitar ciclos
+                    OrderService.confirm_payment(payment.order)
+                except BusinessLogicError as exc:
+                    logger.error("No se pudo confirmar la orden %s: %s", payment.order_id, exc)
+            if payment.payment_type in (
+                Payment.PaymentType.ADVANCE,
+                Payment.PaymentType.FINAL,
+                Payment.PaymentType.PACKAGE,
+                Payment.PaymentType.VIP_SUBSCRIPTION,
+                Payment.PaymentType.ORDER,
+            ):
+                DeveloperCommissionService.handle_successful_payment(payment)
         elif normalized in ('DECLINED', 'VOIDED'):
             payment.status = Payment.PaymentStatus.DECLINED
-            payment.save(update_fields=['status', 'raw_response', 'updated_at'])
+            payment.save(update_fields=[
+                         'status', 'raw_response', 'updated_at'])
         elif normalized == 'PENDING':
             payment.status = Payment.PaymentStatus.PENDING
-            payment.save(update_fields=['status', 'raw_response', 'updated_at'])
+            payment.save(update_fields=[
+                         'status', 'raw_response', 'updated_at'])
         else:
             payment.status = Payment.PaymentStatus.ERROR
-            payment.save(update_fields=['status', 'raw_response', 'updated_at'])
+            payment.save(update_fields=[
+                         'status', 'raw_response', 'updated_at'])
+        PaymentService._send_payment_status_notification(
+            payment=payment,
+            new_status=payment.status,
+            previous_status=previous_status,
+            transaction_payload=transaction_payload,
+        )
         return payment.status
 
     @staticmethod
@@ -789,8 +908,176 @@ class PaymentService:
             payment.status = Payment.PaymentStatus.TIMEOUT
             payment.save(update_fields=['status', 'updated_at'])
             return False
-        PaymentService.apply_gateway_status(payment, transaction_status, transaction_data)
+        PaymentService.apply_gateway_status(
+            payment, transaction_status, transaction_data)
         return True
+
+    @classmethod
+    def charge_recurrence_token(cls, user, amount, token):
+        """
+        Ejecuta un cobro recurrente usando una fuente de pago (payment_source_id)
+        previamente creada en Wompi (Cards, Nequi, Daviplata, Bancolombia, etc.).
+
+        Retorna:
+            (Payment.PaymentStatus, transaction_payload (dict), reference (str))
+        """
+        if user is None:
+            raise ValueError(
+                "El usuario es requerido para el cobro recurrente.")
+
+        if token is None:
+            raise ValueError(
+                "El token de pago es obligatorio para el cobro recurrente.")
+
+        # El token debe ser el ID numérico de la fuente de pago (payment_source_id)
+        try:
+            if isinstance(token, str):
+                token_str = token.strip()
+                if not token_str:
+                    raise ValueError(
+                        "El token de pago es obligatorio para el cobro recurrente.")
+                payment_source_id = int(token_str)
+            else:
+                payment_source_id = int(token)
+        except (TypeError, ValueError):
+            raise ValueError(
+                "El token de cobro recurrente debe ser el ID numérico de la fuente de pago (payment_source_id)."
+            )
+
+        if amount is None:
+            raise ValueError(
+                "El monto es obligatorio para el cobro recurrente.")
+
+        amount_decimal = Decimal(str(amount)).quantize(Decimal('0.01'))
+        if amount_decimal <= Decimal('0'):
+            raise ValueError(
+                "El monto debe ser mayor a cero para el cobro recurrente.")
+
+        base_url = getattr(settings, 'WOMPI_BASE_URL',
+                           cls.WOMPI_DEFAULT_BASE_URL) or cls.WOMPI_DEFAULT_BASE_URL
+        base_url = base_url.rstrip('/') or cls.WOMPI_DEFAULT_BASE_URL
+
+        private_key = getattr(settings, 'WOMPI_PRIVATE_KEY', '')
+        if not private_key:
+            logger.error(
+                "WOMPI_PRIVATE_KEY no configurada; no se pudo cobrar la renovación VIP para el usuario %s.",
+                user.id,
+            )
+            return Payment.PaymentStatus.DECLINED, {"error": "missing_private_key"}, None
+
+        customer_email = getattr(user, "email", None)
+        if not customer_email:
+            logger.error(
+                "El usuario %s no tiene correo electrónico registrado; no es posible crear el cobro recurrente.",
+                user.id,
+            )
+            return Payment.PaymentStatus.DECLINED, {"error": "missing_email"}, None
+
+        currency = getattr(settings, "WOMPI_CURRENCY", "COP") or "COP"
+        amount_in_cents = int(amount_decimal * Decimal('100'))
+        reference = f"VIP-AUTO-{user.id}-{uuid.uuid4().hex[:8]}"
+
+        payload = {
+            "amount_in_cents": amount_in_cents,
+            "currency": currency,
+            "customer_email": customer_email,
+            "reference": reference,
+            "payment_source_id": payment_source_id,
+            "recurrent": True,
+        }
+
+        # Firma de integridad, si está configurada
+        signature = cls._build_integrity_signature(
+            reference=reference,
+            amount_in_cents=amount_in_cents,
+            currency=currency,
+        )
+        if signature:
+            payload["signature"] = signature
+
+        headers = {
+            "Authorization": f"Bearer {private_key}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            response = requests.post(
+                f"{base_url}/transactions",
+                json=payload,
+                headers=headers,
+                timeout=15,
+            )
+            response_data = response.json()
+        except requests.RequestException as exc:
+            logger.exception(
+                "Error comunicándose con Wompi al intentar renovar VIP para el usuario %s",
+                user.id,
+            )
+            return Payment.PaymentStatus.DECLINED, {"error": str(exc), "reference": reference}, reference
+        except ValueError:
+            logger.exception(
+                "Wompi retornó una respuesta inválida al intentar renovar VIP para el usuario %s",
+                user.id,
+            )
+            return Payment.PaymentStatus.DECLINED, {"error": "invalid_response", "reference": reference}, reference
+
+        if response.status_code >= 400:
+            logger.warning(
+                "Wompi rechazó el cobro recurrente para el usuario %s con payload %s",
+                user.id,
+                response_data,
+            )
+
+        transaction_data = response_data.get("data") or response_data
+        wompi_status = (transaction_data.get("status") or "").upper()
+
+        # Aseguramos que siempre haya referencia en el payload devuelto
+        if "reference" not in transaction_data:
+            transaction_data["reference"] = reference
+
+        pending_statuses = {"PENDING", "WAITING", "PROCESSING"}
+        if wompi_status == "APPROVED":
+            normalized = Payment.PaymentStatus.APPROVED
+        elif wompi_status in pending_statuses:
+            normalized = Payment.PaymentStatus.PENDING
+        else:
+            normalized = Payment.PaymentStatus.DECLINED
+
+        if normalized == Payment.PaymentStatus.APPROVED:
+            logger.info(
+                "Cobro VIP recurrente aprobado para el usuario %s (ref=%s, source_id=%s).",
+                user.id,
+                reference,
+                payment_source_id,
+            )
+        elif normalized == Payment.PaymentStatus.PENDING:
+            logger.info(
+                "Cobro VIP recurrente en estado pendiente para el usuario %s (ref=%s, source_id=%s).",
+                user.id,
+                reference,
+                payment_source_id,
+            )
+        else:
+            logger.warning(
+                "Cobro VIP recurrente no aprobado para el usuario %s (estado=%s, source_id=%s).",
+                user.id,
+                wompi_status or "DESCONOCIDO",
+                payment_source_id,
+            )
+
+        return normalized, transaction_data, reference
+
+    @classmethod
+    def _build_integrity_signature(cls, *, reference, amount_in_cents, currency):
+        """
+        Genera la firma de integridad para Wompi:
+        SHA256("<reference><amount_in_cents><currency><INTEGRITY_KEY>")
+        """
+        integrity_key = getattr(settings, "WOMPI_INTEGRITY_KEY", None)
+        if not integrity_key:
+            return None
+        concatenated = f"{reference}{amount_in_cents}{currency}{integrity_key}"
+        return hashlib.sha256(concatenated.encode("utf-8")).hexdigest()
 
     @transaction.atomic
     def create_advance_payment_for_appointment(self, appointment: Appointment):
@@ -806,33 +1093,46 @@ class PaymentService:
         # Buscar créditos válidos (disponibles, no expirados) del usuario
         available_credits = ClientCredit.objects.select_for_update().filter(
             user=self.user,
-            status__in=[ClientCredit.CreditStatus.AVAILABLE, ClientCredit.CreditStatus.PARTIALLY_USED],
+            status__in=[ClientCredit.CreditStatus.AVAILABLE,
+                        ClientCredit.CreditStatus.PARTIALLY_USED],
             expires_at__gte=timezone.now().date()
-        ).order_by('created_at') # Usar los créditos más antiguos primero
+        ).order_by('created_at')  # Usar los créditos más antiguos primero
 
         amount_to_pay = required_advance
-        credit_used = None
+        credit_movements: list[tuple[ClientCredit, Decimal]] = []
 
         for credit in available_credits:
             if amount_to_pay <= 0:
                 break
-            
-            amount_from_this_credit = min(amount_to_pay, credit.remaining_amount)
-            
+
+            amount_from_this_credit = min(
+                amount_to_pay, credit.remaining_amount)
+
             credit.remaining_amount -= amount_from_this_credit
-            credit.save()
-            
+            credit.save(update_fields=['remaining_amount', 'status', 'updated_at'])
+
             amount_to_pay -= amount_from_this_credit
-            credit_used = credit # Guardamos la referencia al último crédito usado
-        
+            credit_movements.append((credit, amount_from_this_credit))
+
         # Crear el registro de pago
         payment = Payment.objects.create(
             user=self.user,
             appointment=appointment,
             amount=required_advance,
             payment_type=Payment.PaymentType.ADVANCE,
-            used_credit=credit_used
+            used_credit=credit_movements[-1][0] if credit_movements else None
         )
+        if credit_movements:
+            PaymentCreditUsage.objects.bulk_create(
+                [
+                    PaymentCreditUsage(
+                        payment=payment,
+                        credit=credit,
+                        amount=used_amount,
+                    )
+                    for credit, used_amount in credit_movements
+                ]
+            )
 
         if amount_to_pay <= 0:
             # El crédito cubrió todo el anticipo. La cita se confirma automáticamente.
@@ -847,7 +1147,7 @@ class PaymentService:
 
         payment.save()
         appointment.save(update_fields=['status'])
-        
+
         return payment
 
     @staticmethod
@@ -857,7 +1157,8 @@ class PaymentService:
             Appointment.AppointmentStatus.COMPLETED,
             Appointment.AppointmentStatus.PAID,
         ]:
-            raise ValidationError("Solo se pueden registrar propinas para citas completadas.")
+            raise ValidationError(
+                "Solo se pueden registrar propinas para citas completadas.")
         return Payment.objects.create(
             user=user,
             appointment=appointment,
@@ -882,7 +1183,8 @@ class PaymentService:
             status__in=relevant_statuses,
         ):
             total_paid += payment.amount or Decimal('0')
-        outstanding = (appointment.price_at_purchase or Decimal('0')) - total_paid
+        outstanding = (
+            appointment.price_at_purchase or Decimal('0')) - total_paid
         if outstanding <= Decimal('0'):
             return Decimal('0')
         return outstanding
@@ -903,6 +1205,100 @@ class PaymentService:
         appointment.status = Appointment.AppointmentStatus.PAID
         appointment.save(update_fields=['status', 'updated_at'])
         return payment, outstanding
+
+    @classmethod
+    def _resolve_acceptance_token(cls, base_url):
+        configured = getattr(settings, "WOMPI_ACCEPTANCE_TOKEN", None)
+        if configured:
+            return configured
+        cache = cls._acceptance_token_cache or {}
+        expires_at = cache.get("expires_at")
+        if cache.get("token") and expires_at and expires_at > timezone.now():
+            return cache.get("token")
+        token = cls._fetch_acceptance_token(base_url)
+        if token:
+            cls._acceptance_token_cache = {
+                "token": token,
+                "expires_at": timezone.now() + timedelta(hours=1),
+            }
+        return token
+
+    @classmethod
+    def _fetch_acceptance_token(cls, base_url):
+        public_key = getattr(settings, "WOMPI_PUBLIC_KEY", "")
+        if not base_url or not public_key:
+            return None
+        url = f"{base_url.rstrip('/')}/merchants/{public_key}"
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            body = response.json()
+        except Exception:
+            logger.exception(
+                "No se pudo obtener el acceptance_token desde Wompi.")
+            return None
+        return body.get("data", {}).get("presigned_acceptance", {}).get("acceptance_token")
+
+    @staticmethod
+    def _send_payment_status_notification(*, payment, new_status, previous_status, transaction_payload):
+        if new_status not in (
+            Payment.PaymentStatus.APPROVED,
+            Payment.PaymentStatus.DECLINED,
+            Payment.PaymentStatus.ERROR,
+        ):
+            return
+        if previous_status == new_status:
+            return
+        user = getattr(payment, "user", None)
+        email = getattr(user, "email", None)
+        if not user or not email:
+            return
+        reference = None
+        if isinstance(transaction_payload, dict):
+            reference = transaction_payload.get(
+                "id") or transaction_payload.get("reference")
+        reference = reference or payment.transaction_id
+        amount = payment.amount or Decimal('0')
+        amount_str = f"{amount:,.2f}"
+        payment_type = payment.get_payment_type_display()
+        timestamp = timezone.localtime().strftime("%d/%m/%Y %H:%M")
+        display_name = user.get_full_name() if hasattr(
+            user, "get_full_name") else (user.first_name or "")
+        display_name = display_name or user.email
+        if new_status == Payment.PaymentStatus.APPROVED:
+            subject = "Pago Recibido"
+            message = (
+                f"Hola {display_name},\n\n"
+                f"Hemos recibido tu pago por COP {amount_str} correspondiente a {payment_type}.\n"
+                f"Referencia: {reference or 'N/A'}.\n"
+                f"Fecha: {timestamp}.\n\n"
+                "Gracias por confiar en ZenzSpa."
+            )
+        else:
+            subject = "Pago Fallido"
+            message = (
+                f"Hola {display_name},\n\n"
+                f"No pudimos procesar tu pago por COP {amount_str} para {payment_type}.\n"
+                f"Referencia: {reference or 'N/A'}.\n"
+                "Por favor verifica tus datos de pago o intenta nuevamente. "
+                "Si necesitas ayuda adicional, contáctanos.\n\n"
+                f"Intento registrado el {timestamp}."
+            )
+        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None)
+        try:
+            send_mail(
+                subject=subject,
+                message=message,
+                from_email=from_email,
+                recipient_list=[email],
+                fail_silently=False,
+            )
+        except Exception:
+            logger.exception(
+                "No se pudo enviar la notificación por email del pago %s con estado %s",
+                payment.id,
+                new_status,
+            )
 
     @staticmethod
     def reset_user_cancellation_history(appointment: Appointment):
@@ -956,7 +1352,8 @@ class WaitlistService:
             from .tasks import notify_waitlist_availability
             notify_waitlist_availability.delay(str(entry.id))
         except Exception:
-            logger.exception("No se pudo programar la notificación de lista de espera.")
+            logger.exception(
+                "No se pudo programar la notificación de lista de espera.")
 
     @classmethod
     def ensure_enabled(cls):
@@ -997,6 +1394,20 @@ class FinancialAdjustmentService:
             reason=reason,
             related_payment=related_payment,
             created_by=created_by,
+        )
+        details_parts = [
+            f"Tipo: {adjustment.get_adjustment_type_display()}",
+            f"Monto: COP {Decimal(amount):,.2f}",
+        ]
+        if reason:
+            details_parts.append(f"Razón: {reason}")
+        if related_payment:
+            details_parts.append(f"Pago relacionado: {related_payment.id}")
+        AuditLog.objects.create(
+            admin_user=created_by,
+            target_user=user,
+            action=AuditLog.Action.FINANCIAL_ADJUSTMENT_CREATED,
+            details=" | ".join(details_parts),
         )
         if adjustment_type == FinancialAdjustment.AdjustmentType.CREDIT:
             expires = timezone.now().date() + timedelta(days=cls.CREDIT_TTL_DAYS)

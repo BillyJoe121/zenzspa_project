@@ -2,6 +2,7 @@ import hashlib
 import uuid
 import logging
 from decimal import Decimal
+from datetime import timedelta
 from rest_framework import viewsets, status, generics
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -456,11 +457,19 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        if appointment.status == Appointment.AppointmentStatus.CONFIRMED and user.role not in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
-            return Response(
-                {'error': 'Esta cita ya fue pagada. Por favor usa la opción de reagendar.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        if (
+            appointment.status in [
+                Appointment.AppointmentStatus.CONFIRMED,
+                Appointment.AppointmentStatus.RESCHEDULED,
+            ]
+            and user.role not in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]
+        ):
+            time_until = appointment.start_time - timezone.now()
+            if time_until < timedelta(hours=24):
+                return Response(
+                    {'error': 'Esta cita ya fue pagada. Por favor usa la opción de reagendar.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         serializer = AppointmentCancelSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         reason = serializer.validated_data.get('cancellation_reason', '')

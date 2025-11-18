@@ -1,11 +1,15 @@
 # marketplace/views.py
+import uuid
 
+from django.conf import settings
 from rest_framework import permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.decorators import action
 
-from spa.models import Appointment
+from spa.models import Appointment, Payment
+from spa.services import PaymentService
 from users.models import CustomUser
+from users.permissions import IsAdminUser as DomainIsAdminUser
 from core.decorators import idempotent_view
 
 from .models import Product, Cart, CartItem, Order
@@ -176,16 +180,50 @@ class CartViewSet(viewsets.GenericViewSet):
         # 2. Usar el servicio para crear la orden
         try:
             order_service = OrderCreationService(
-                user=request.user, 
-                cart=cart, 
+                user=request.user,
+                cart=cart,
                 data=validated_data
             )
             order = order_service.create_order()
-            
-            # 3. Preparar la respuesta
+
+            # Crear registro de pago asociado a la orden
+            reference = f"ORDER-{order.id}-{uuid.uuid4().hex[:8]}"
+            payment = Payment.objects.create(
+                user=request.user,
+                amount=order.total_amount,
+                status=Payment.PaymentStatus.PENDING,
+                payment_type=Payment.PaymentType.ORDER,
+                transaction_id=reference,
+                order=order,
+            )
+            order.wompi_transaction_id = reference
+            order.save(update_fields=['wompi_transaction_id', 'updated_at'])
+
+            amount_in_cents = int(order.total_amount * 100)
+            base_url = getattr(settings, "WOMPI_BASE_URL", PaymentService.WOMPI_DEFAULT_BASE_URL)
+            acceptance_token = PaymentService._resolve_acceptance_token(base_url)
+            signature = PaymentService._build_integrity_signature(
+                reference=reference,
+                amount_in_cents=amount_in_cents,
+                currency=getattr(settings, "WOMPI_CURRENCY", "COP"),
+            )
+
+            payment_payload = {
+                'publicKey': settings.WOMPI_PUBLIC_KEY,
+                'currency': getattr(settings, "WOMPI_CURRENCY", "COP"),
+                'amountInCents': amount_in_cents,
+                'reference': reference,
+                'signature:integrity': signature,
+                'redirectUrl': settings.WOMPI_REDIRECT_URL,
+                'acceptanceToken': acceptance_token,
+                'paymentId': str(payment.id),
+            }
+
             order_serializer = OrderSerializer(order)
-            response_data = order_serializer.data
-            response_data['wompi_reference'] = order.wompi_transaction_id
+            response_data = {
+                'order': order_serializer.data,
+                'payment': payment_payload,
+            }
             return Response(response_data, status=status.HTTP_201_CREATED)
 
         except ValueError as e:
@@ -230,7 +268,7 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
         detail=True,
         methods=['post'],
         url_path='process-return',
-        permission_classes=[permissions.IsAdminUser],
+        permission_classes=[DomainIsAdminUser],
     )
     def process_return(self, request, pk=None):
         order = self.get_object()

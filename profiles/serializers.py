@@ -141,6 +141,36 @@ class DoshaQuizSubmissionSerializer(serializers.Serializer):
     """
     answers = ClientDoshaAnswerSerializer(many=True)
 
+    def validate(self, data):
+        question_ids = [entry["question_id"] for entry in data.get("answers", [])]
+        option_ids = [entry["selected_option_id"] for entry in data.get("answers", [])]
+        questions = {
+            str(q.id): q
+            for q in DoshaQuestion.objects.filter(id__in=question_ids).prefetch_related("options")
+        }
+        options = {
+            str(option.id): option
+            for option in DoshaOption.objects.filter(id__in=option_ids)
+        }
+        errors = []
+        for idx, entry in enumerate(data.get("answers", [])):
+            question_id = str(entry["question_id"])
+            option_id = str(entry["selected_option_id"])
+            question = questions.get(question_id)
+            option = options.get(option_id)
+            if not question or not option or option.question_id != question.id:
+                errors.append(
+                    {
+                        "index": idx,
+                        "question_id": question_id,
+                        "selected_option_id": option_id,
+                        "detail": "La opción seleccionada no pertenece a la pregunta indicada.",
+                    }
+                )
+        if errors:
+            raise serializers.ValidationError({"answers": errors})
+        return data
+
     def create(self, validated_data):
         # La lógica de creación se manejará en la vista.
         # Este serializador es solo para validación.
