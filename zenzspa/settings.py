@@ -252,6 +252,14 @@ TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_VERIFY_SERVICE_SID = os.getenv("TWILIO_VERIFY_SERVICE_SID")
 
+# Credenciales para el asistente basado en Gemini
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+try:
+    BOT_GEMINI_TIMEOUT = int(os.getenv("BOT_GEMINI_TIMEOUT", "10"))
+except ValueError:
+    BOT_GEMINI_TIMEOUT = 10
+
 RECAPTCHA_V3_SITE_KEY = os.getenv("RECAPTCHA_V3_SITE_KEY", "")
 RECAPTCHA_V3_SECRET_KEY = os.getenv("RECAPTCHA_V3_SECRET_KEY") or os.getenv("RECAPTCHA_SECRET_KEY", "")
 RECAPTCHA_V3_DEFAULT_SCORE = float(os.getenv("RECAPTCHA_V3_DEFAULT_SCORE", "0.5"))
