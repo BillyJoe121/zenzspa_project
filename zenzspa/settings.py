@@ -172,7 +172,9 @@ REST_FRAMEWORK = {
         "auth_login": os.getenv("THROTTLE_AUTH_LOGIN", "5/min"),
         "auth_verify": os.getenv("THROTTLE_AUTH_VERIFY", "3/10min"),
         "payments": os.getenv("THROTTLE_PAYMENTS", "60/min"),
-        "bot": os.getenv("THROTTLE_BOT", "10/min"),
+        # CORRECCIÓN CRÍTICA: Rate limiting para bot
+        "bot": os.getenv("THROTTLE_BOT", "10/min"),  # Límite por minuto
+        "bot_daily": os.getenv("THROTTLE_BOT_DAILY", "200/day"),  # Límite diario (~$0.005 USD/día)
     },
 }
 
@@ -255,10 +257,20 @@ TWILIO_VERIFY_SERVICE_SID = os.getenv("TWILIO_VERIFY_SERVICE_SID")
 # Credenciales para el asistente basado en Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+
+# CORRECCIÓN CRÍTICA: Validar que la API key existe en producción
+if not GEMINI_API_KEY and not DEBUG:
+    raise RuntimeError(
+        "GEMINI_API_KEY no configurada. El módulo bot requiere esta variable "
+        "de entorno para funcionar en producción. Configure GEMINI_API_KEY en "
+        "el archivo .env o como variable de entorno del sistema."
+    )
+
+# CORRECCIÓN MODERADA: Timeout aumentado de 10s a 20s para reducir errores en horarios pico
 try:
-    BOT_GEMINI_TIMEOUT = int(os.getenv("BOT_GEMINI_TIMEOUT", "10"))
+    BOT_GEMINI_TIMEOUT = int(os.getenv("BOT_GEMINI_TIMEOUT", "20"))
 except ValueError:
-    BOT_GEMINI_TIMEOUT = 10
+    BOT_GEMINI_TIMEOUT = 20
 
 RECAPTCHA_V3_SITE_KEY = os.getenv("RECAPTCHA_V3_SITE_KEY", "")
 RECAPTCHA_V3_SECRET_KEY = os.getenv("RECAPTCHA_V3_SECRET_KEY") or os.getenv("RECAPTCHA_SECRET_KEY", "")
@@ -349,6 +361,15 @@ CELERY_BEAT_SCHEDULE = {
         "task": "finances.tasks.run_developer_payout",
         "schedule": crontab(minute=0, hour="*"),
     },
+    # CORRECCIÓN CRÍTICA: Monitoreo de costos del bot
+    "bot-daily-token-report": {
+        "task": "bot.tasks.report_daily_token_usage",
+        "schedule": crontab(minute=0, hour=8),  # 8:00 AM diario
+    },
+    "bot-cleanup-old-logs": {
+        "task": "bot.tasks.cleanup_old_bot_logs",
+        "schedule": crontab(minute=0, hour=3, day_of_week=0),  # Domingos 3:00 AM
+    },
 }
 
 # --------------------------------------------------------------------------------------
@@ -380,10 +401,17 @@ LOGGING = {
         "verbose": {"format": "[{levelname}] {asctime} {name}: {message}", "style": "{"},
         "simple": {"format": "[{levelname}] {message}", "style": "{"},
     },
+    # CORRECCIÓN CRÍTICA: Filtros para sanitizar información sensible
+    "filters": {
+        "sanitize_api_keys": {
+            "()": "core.logging_filters.SanitizeAPIKeyFilter",
+        },
+    },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "verbose" if not DEBUG else "simple",
+            "filters": ["sanitize_api_keys"],  # Aplicar filtro de sanitización
         },
     },
     "root": {"handlers": ["console"], "level": LOG_LEVEL},
