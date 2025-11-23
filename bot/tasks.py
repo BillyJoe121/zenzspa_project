@@ -183,3 +183,72 @@ def cleanup_old_bot_logs(days_to_keep=90):
             'deleted_count': 0,
             'cutoff_date': cutoff_date.isoformat(),
         }
+
+
+@shared_task
+def monitor_bot_health():
+    """
+    MEJORA #13: Monitorea salud del bot y envía alertas si hay degradación.
+
+    Verifica:
+    - Latencia promedio (alerta si > 5000ms)
+    - Tasa de bloqueo (alerta si > 20%)
+
+    Se ejecuta cada 5 minutos.
+    """
+    from django.db.models import Avg, Count, Q
+    from django.utils import timezone
+    from datetime import timedelta
+
+    # Últimos 5 minutos
+    cutoff = timezone.now() - timedelta(minutes=5)
+    recent_logs = BotConversationLog.objects.filter(created_at__gte=cutoff)
+
+    if not recent_logs.exists():
+        return {'status': 'no_activity'}
+
+    # Calcular métricas
+    stats = recent_logs.aggregate(
+        total=Count('id'),
+        blocked=Count('id', filter=Q(was_blocked=True)),
+        avg_latency=Avg('latency_ms'),
+    )
+
+    total = stats['total'] or 0
+    blocked = stats['blocked'] or 0
+    avg_latency = stats['avg_latency'] or 0
+
+    # Calcular tasa de bloqueo
+    block_rate = (blocked / total) * 100 if total > 0 else 0
+
+    # Alertas
+    alerts = []
+
+    if block_rate > 20:
+        logger.error(
+            "⚠️ ALERTA: Tasa de bloqueo alta: %.1f%% (%d/%d) en últimos 5min",
+            block_rate, blocked, total
+        )
+        alerts.append(f"block_rate_high_{block_rate:.1f}%")
+
+    if avg_latency > 5000:  # 5 segundos
+        logger.error(
+            "⚠️ ALERTA: Latencia alta: %.0fms promedio en últimos 5min",
+            avg_latency
+        )
+        alerts.append(f"latency_high_{avg_latency:.0f}ms")
+
+    result = {
+        'total_requests': total,
+        'blocked': blocked,
+        'block_rate': round(block_rate, 2),
+        'avg_latency_ms': round(avg_latency, 2),
+        'alerts': alerts,
+    }
+
+    if alerts:
+        logger.warning("🚨 Health check completado con %d alerta(s): %s", len(alerts), result)
+    else:
+        logger.info("✅ Health check OK: %s", result)
+
+    return result

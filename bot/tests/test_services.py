@@ -43,21 +43,21 @@ class TestDataContextService:
     def test_get_staff_with_data(self):
         from django.contrib.auth import get_user_model
         User = get_user_model()
-        
+
         # CORRECCIÓN: Agregamos emails únicos para evitar error de integridad
         User.objects.create(
-            first_name="Ana", last_name="Terapeuta", 
-            role=User.Role.STAFF, is_active=True, 
+            first_name="Ana", last_name="Terapeuta",
+            role=User.Role.STAFF, is_active=True,
             phone_number="+573000000001", email="ana@test.com"
         )
         User.objects.create(
-            first_name="Pedro", last_name="Inactivo", 
-            role=User.Role.STAFF, is_active=False, 
+            first_name="Pedro", last_name="Inactivo",
+            role=User.Role.STAFF, is_active=False,
             phone_number="+573000000002", email="pedro@test.com"
         )
         User.objects.create(
-            first_name="Cliente", role=User.Role.CLIENT, 
-            is_active=True, 
+            first_name="Cliente", role=User.Role.CLIENT,
+            is_active=True,
             phone_number="+573000000003", email="cliente@test.com"
         )
 
@@ -65,6 +65,37 @@ class TestDataContextService:
         assert "Ana Terapeuta" in ctx
         assert "Pedro" not in ctx
         assert "Cliente" not in ctx
+
+    def test_cache_behavior(self):
+        """
+        MEJORA #8: Verifica que el caché de contexto funciona correctamente.
+        """
+        from django.core.cache import cache
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+
+        # Limpiar caché
+        cache.clear()
+
+        # Primera llamada - debe hacer query a DB
+        baker.make('spa.Service', name="Masaje Test", duration=60, price=100000, is_active=True)
+        ctx1 = DataContextService.get_services_context()
+        assert "Masaje Test" in ctx1
+
+        # Crear nuevo servicio
+        baker.make('spa.Service', name="Masaje Nuevo", duration=90, price=150000, is_active=True)
+
+        # Segunda llamada - debe usar caché (no incluye el nuevo servicio aún)
+        ctx2 = DataContextService.get_services_context()
+        assert "Masaje Test" in ctx2
+        # El caché aún no tiene "Masaje Nuevo" porque se cacheó antes
+
+        # Limpiar caché manualmente
+        cache.delete('bot_context:services')
+
+        # Tercera llamada - debe refrescar desde DB
+        ctx3 = DataContextService.get_services_context()
+        assert "Masaje Nuevo" in ctx3
 
 @pytest.mark.django_db
 class TestGeminiServiceInternals:

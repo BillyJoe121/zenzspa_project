@@ -2,7 +2,8 @@
 
 # FALTA:
 
-
+# QUE TANTOS DATOS ESTAMOS RECORDANDO DE LOS CLIENTES?
+# PREVIO A UNA CITA EL TERAPEUTA NECESITA RECORDAR QUIEN ES, SU HISTORIA CLINICA, DATOS ESPECIFICOS GUARDADOS ETC
 
 Informe completado; la base luce madura pero todavía arrastra huecos importantes para estar en producción. Calificación global (excluyendo bot y pruebas): 6/10.
 

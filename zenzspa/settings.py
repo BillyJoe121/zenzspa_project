@@ -175,6 +175,8 @@ REST_FRAMEWORK = {
         # CORRECCIÓN CRÍTICA: Rate limiting para bot
         "bot": os.getenv("THROTTLE_BOT", "10/min"),  # Límite por minuto
         "bot_daily": os.getenv("THROTTLE_BOT_DAILY", "200/day"),  # Límite diario (~$0.005 USD/día)
+        # MEJORA #4: Rate limiting por IP
+        "bot_ip": os.getenv("THROTTLE_BOT_IP", "50/hour"),  # Límite por IP (50 requests/hora)
     },
 }
 

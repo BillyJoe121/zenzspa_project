@@ -26,3 +26,20 @@ class BotDailyThrottle(SimpleRateThrottle):
         else:
             ident = self.get_ident(request)
         return self.cache_format % {'scope': self.scope, 'ident': ident}
+
+
+class BotIPThrottle(SimpleRateThrottle):
+    """
+    MEJORA #4: Throttle por IP para prevenir abuso con múltiples cuentas.
+
+    Aplica límite por IP independientemente de autenticación.
+    Esto previene que un atacante use múltiples cuentas desde la misma IP.
+    """
+    scope = 'bot_ip'
+
+    def get_cache_key(self, request, view):
+        # Siempre usar IP, incluso si está autenticado
+        return self.cache_format % {
+            'scope': self.scope,
+            'ident': self.get_ident(request)
+        }

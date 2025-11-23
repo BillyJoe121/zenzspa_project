@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import BotConfiguration, BotConversationLog
+from .models import BotConfiguration, BotConversationLog, AnonymousUser
 
 
 @admin.register(BotConfiguration)
@@ -63,32 +63,99 @@ class BotConfigurationAdmin(admin.ModelAdmin):
         )
 
 
+@admin.register(AnonymousUser)
+class AnonymousUserAdmin(admin.ModelAdmin):
+    """Admin para usuarios anónimos del bot"""
+    list_display = ('display_name', 'session_id', 'ip_address', 'created_at', 'last_activity', 'is_expired_status', 'converted_status')
+    list_filter = ('created_at', 'last_activity', 'expires_at')
+    search_fields = ('session_id', 'ip_address', 'name', 'email', 'phone_number')
+    readonly_fields = ('session_id', 'created_at', 'last_activity', 'expires_at')
+    date_hierarchy = 'created_at'
+
+    fieldsets = (
+        ('Información de Sesión', {
+            'fields': ('session_id', 'ip_address', 'created_at', 'last_activity', 'expires_at')
+        }),
+        ('Información Recopilada (Opcional)', {
+            'fields': ('name', 'email', 'phone_number'),
+            'description': 'Información que el bot puede recopilar durante la conversación.'
+        }),
+        ('Conversión', {
+            'fields': ('converted_to_user',),
+            'description': 'Usuario registrado al que se convirtió este visitante anónimo.'
+        }),
+    )
+
+    def is_expired_status(self, obj):
+        return obj.is_expired
+    is_expired_status.boolean = True
+    is_expired_status.short_description = 'Expirado'
+
+    def converted_status(self, obj):
+        return obj.converted_to_user is not None
+    converted_status.boolean = True
+    converted_status.short_description = 'Convertido'
+
+    def has_add_permission(self, request):
+        # No permitir crear usuarios anónimos manualmente
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        # Permitir editar solo para conversión o recopilación de info
+        from users.models import CustomUser
+        return (
+            request.user.is_superuser or
+            request.user.role == CustomUser.Role.ADMIN
+        )
+
+    def has_delete_permission(self, request, obj=None):
+        # Solo ADMIN y superusers pueden borrar usuarios anónimos
+        from users.models import CustomUser
+        return (
+            request.user.is_superuser or
+            request.user.role == CustomUser.Role.ADMIN
+        )
+
+    def has_view_permission(self, request, obj=None):
+        """ADMIN y STAFF pueden ver usuarios anónimos"""
+        from users.models import CustomUser
+        return (
+            request.user.is_superuser or
+            request.user.role in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]
+        )
+
+
 @admin.register(BotConversationLog)
 class BotConversationLogAdmin(admin.ModelAdmin):
     """Admin para auditar conversaciones del bot"""
-    list_display = ('user', 'created_at', 'was_blocked', 'block_reason', 'latency_ms', 'tokens_used')
+    list_display = ('participant_display', 'created_at', 'was_blocked', 'block_reason', 'latency_ms', 'tokens_used')
     list_filter = ('was_blocked', 'block_reason', 'created_at')
-    search_fields = ('user__phone_number', 'message', 'response')
-    readonly_fields = ('user', 'message', 'response', 'response_meta', 
+    search_fields = ('user__phone_number', 'anonymous_user__session_id', 'anonymous_user__name', 'message', 'response')
+    readonly_fields = ('user', 'anonymous_user', 'message', 'response', 'response_meta',
                       'was_blocked', 'block_reason', 'latency_ms', 'tokens_used', 'created_at')
     date_hierarchy = 'created_at'
-    
+
+    def participant_display(self, obj):
+        """Muestra el participante de la conversación"""
+        return obj.participant_identifier
+    participant_display.short_description = 'Participante'
+
     def has_add_permission(self, request):
         # No permitir crear logs manualmente
         return False
-    
+
     def has_change_permission(self, request, obj=None):
         # Nadie puede editar logs (readonly)
         return False
-    
+
     def has_delete_permission(self, request, obj=None):
         # Solo ADMIN y superusers pueden borrar logs
         from users.models import CustomUser
         return (
-            request.user.is_superuser or 
+            request.user.is_superuser or
             request.user.role == CustomUser.Role.ADMIN
         )
-    
+
     # SEGURIDAD: Solo ADMIN y SUPERUSER pueden ver logs de conversaciones
     def has_view_permission(self, request, obj=None):
         """
@@ -97,6 +164,6 @@ class BotConversationLogAdmin(admin.ModelAdmin):
         """
         from users.models import CustomUser
         return (
-            request.user.is_superuser or 
+            request.user.is_superuser or
             request.user.role == CustomUser.Role.ADMIN
         )

@@ -10,6 +10,39 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 
+def sanitize_for_logging(text: str, max_length: int = 100) -> str:
+    """
+    MEJORA #6: Sanitiza texto para logging seguro.
+
+    Remueve caracteres de control que podrían causar log injection
+    y trunca el texto para evitar logs excesivamente largos.
+
+    Args:
+        text: Texto a sanitizar
+        max_length: Longitud máxima del texto (default: 100)
+
+    Returns:
+        str: Texto sanitizado y truncado
+    """
+    if not text:
+        return ""
+
+    # Remover caracteres de control (excepto espacios, tabs, newlines normales)
+    sanitized = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
+
+    # Reemplazar saltos de línea y tabs por espacios para logs de una línea
+    sanitized = sanitized.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+
+    # Comprimir múltiples espacios en uno solo
+    sanitized = re.sub(r'\s+', ' ', sanitized)
+
+    # Truncar si es muy largo
+    if len(sanitized) > max_length:
+        sanitized = sanitized[:max_length] + "..."
+
+    return sanitized.strip()
+
+
 class BotSecurityService:
     # --- CONFIGURACIÓN DE SEGURIDAD ---
     MAX_CHAR_LIMIT = 300
@@ -25,9 +58,24 @@ class BotSecurityService:
 
     HISTORY_LIMIT = 5  # Solo guardamos los últimos 5 mensajes para comparar
 
-    def __init__(self, user):
-        self.user = user
-        self.user_id = user.id
+    def __init__(self, user_or_id):
+        """
+        Inicializa el servicio de seguridad.
+
+        Args:
+            user_or_id: Puede ser un objeto User, un user_id (int), o un string
+                        identificador (ej: "anon_123" para usuarios anónimos)
+        """
+        # Determinar si es un objeto User o un ID
+        if hasattr(user_or_id, 'id'):
+            # Es un objeto User
+            self.user = user_or_id
+            self.user_id = user_or_id.id
+        else:
+            # Es un ID directo (int o string)
+            self.user = None
+            self.user_id = user_or_id
+
         # Namespaces para Redis
         self.block_key = f"bot:block:{self.user_id}"
         self.strikes_key = f"bot:strikes:{self.user_id}"
@@ -49,7 +97,27 @@ class BotSecurityService:
         """
         CORRECCIÓN CRÍTICA: Detecta intentos de jailbreak/prompt injection.
         Busca patrones sospechosos que intentan modificar las instrucciones del bot.
+
+        MEJORA #5: Incluye validación de delimitadores para prevenir inyección.
         """
+        # Strings prohibidos explícitamente (delimitadores del prompt)
+        FORBIDDEN_STRINGS = [
+            "[INICIO_MENSAJE_USUARIO]",
+            "[FIN_MENSAJE_USUARIO]",
+            "[SYSTEM]",
+            "[ADMIN]",
+        ]
+
+        # Verificar strings prohibidos primero (case-sensitive para delimitadores)
+        for forbidden in FORBIDDEN_STRINGS:
+            if forbidden in message:
+                logger.warning(
+                    "Intento de inyección de delimitadores para usuario %s",
+                    self.user_id
+                )
+                return False, "Mensaje contiene caracteres no permitidos."
+
+        # Patrones de jailbreak (case-insensitive)
         JAILBREAK_PATTERNS = [
             r"ignora\s+(las\s+)?instrucciones",
             r"olvida\s+(las\s+)?instrucciones",
@@ -60,19 +128,17 @@ class BotSecurityService:
             r"api\s+key",
             r"prompt\s+injection",
             r"jailbreak",
-            r"\[SYSTEM\]",
-            r"\[ADMIN\]",
         ]
-        
+
         message_lower = message.lower()
         for pattern in JAILBREAK_PATTERNS:
             if re.search(pattern, message_lower, re.IGNORECASE):
                 logger.warning(
                     "Intento de jailbreak detectado para usuario %s: %s",
-                    self.user_id, message[:100]
+                    self.user_id, sanitize_for_logging(message)
                 )
                 return False, "Mensaje sospechoso detectado. Por favor reformula tu pregunta."
-        
+
         return True, ""
 
     @contextmanager

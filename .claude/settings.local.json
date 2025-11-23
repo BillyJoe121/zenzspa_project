@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./venv/Scripts/python.exe -m pytest bot/tests/test_services.py -v)",
+      "Bash(./venv/Scripts/python.exe -m pytest bot/tests/ --tb=short -q)",
+      "Bash(./venv/Scripts/python.exe -m pytest bot/tests/test_conversation_memory.py -v)",
+      "Bash(./venv/Scripts/python.exe -m pytest bot/tests/test_trivial_messages.py -v)",
+      "Bash(./venv/Scripts/python.exe -m pytest bot/tests/test_views.py -v --tb=short)",
+      "Bash(./venv/Scripts/python.exe -m pytest bot/tests/test_views.py::TestBotWebhook::test_concurrency_lock_failure -v)",
+      "Bash(./venv/Scripts/python.exe -m pytest bot/tests/test_tasks.py -v)",
+      "Bash(./venv/Scripts/python.exe manage.py makemigrations:*)",
+      "Bash(./venv/Scripts/python.exe:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

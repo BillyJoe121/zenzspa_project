@@ -7,10 +7,18 @@ class TestBotWebhook:
     
     url = reverse('bot-webhook') # Asegúrate que este name coincida con urls.py
 
-    def test_anonymous_access_denied(self, api_client):
-        """Usuarios no autenticados no pueden usar el bot."""
+    def test_anonymous_access_allowed(self, api_client, bot_config, mocker):
+        """Usuarios no autenticados (anónimos) pueden usar el bot."""
+        # Mock Gemini response
+        mocker.patch(
+            'bot.services.GeminiService.generate_response',
+            return_value=("¡Hola! ¿En qué puedo ayudarte?", {"tokens": 50, "source": "gemini-trivial"})
+        )
+
         response = api_client.post(self.url, {"message": "Hola"})
-        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+        assert response.status_code == status.HTTP_200_OK
+        assert 'reply' in response.data
+        assert 'session_id' in response.data  # Anonymous users get session_id
 
     def test_happy_path_mocking_gemini(self, api_client, user, bot_config, mocker):
         """Flujo exitoso simulando respuesta de Gemini."""
@@ -32,7 +40,13 @@ class TestBotWebhook:
         assert response.status_code == status.HTTP_200_OK
         assert response.data['reply'] == "Hola, soy el bot del spa."
         assert response.data['meta']['tokens'] == 100
-        
+
+        # MEJORA #12: Verificar que incluye timings
+        assert 'timings' in response.data['meta']
+        assert 'security_checks' in response.data['meta']['timings']
+        assert 'prompt_building' in response.data['meta']['timings']
+        assert 'gemini_api' in response.data['meta']['timings']
+
         # Verificar que se creó el log
         assert user.bot_conversations.count() == 1
         log = user.bot_conversations.first()
@@ -152,18 +166,18 @@ class TestBotWebhook:
         assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS
         assert response.data['meta']['blocked'] is True
 
-    def test_gemini_service_timeout(self, api_client, user, mocker):
+    def test_gemini_service_timeout(self, api_client, user, bot_config, mocker):
         """Timeout de Gemini devuelve mensaje amigable (fallback)."""
         api_client.force_authenticate(user=user)
-        
+
         # Mockear timeout
         mocker.patch(
             'bot.services.GeminiService.generate_response',
             return_value=("Estoy tardando un poco...", {"source": "fallback", "reason": "timeout"})
         )
-        
+
         response = api_client.post(self.url, {"message": "Hola"})
-        
+
         assert response.status_code == status.HTTP_200_OK
         assert "tardando" in response.data['reply']
         assert response.data['meta']['source'] == "fallback"
