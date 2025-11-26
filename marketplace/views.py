@@ -11,6 +11,11 @@ from spa.services import PaymentService
 from users.models import CustomUser
 from users.permissions import IsAdminUser as DomainIsAdminUser
 from core.decorators import idempotent_view
+from django.db import transaction
+import requests
+import logging
+
+logger = logging.getLogger(__name__)
 
 from .models import Product, Cart, CartItem, Order
 from .serializers import (
@@ -80,23 +85,50 @@ class CartViewSet(viewsets.GenericViewSet):
         Obtiene el contenido del carrito de compras del usuario actual.
         GET /api/v1/marketplace/cart/my-cart/
         """
-        cart = self.get_cart()
-        serializer = CartSerializer(cart, context={'request': request, 'view': self})
-        return Response(serializer.data)
+
 
     @action(detail=False, methods=['post'], url_path='add-item')
+    @idempotent_view(timeout=5)
+    @transaction.atomic
     def add_item(self, request):
         """
         Añade una variante al carrito o actualiza su cantidad si ya existe.
         POST /api/v1/marketplace/cart/add-item/
         Body: { "variant_id": "uuid", "quantity": 1 } o { "sku": "ABC123", "quantity": 1 }
         """
+        MAX_CART_ITEMS = 50
+        MAX_ITEM_QUANTITY = 100
+
         cart = self.get_cart()
+        
+        if cart.items.count() >= MAX_CART_ITEMS:
+            return Response(
+                {
+                    "error": f"Has alcanzado el límite de {MAX_CART_ITEMS} productos diferentes en el carrito.",
+                    "code": "MKT-CART-LIMIT"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         serializer = CartItemCreateUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
-        variant = serializer.validated_data['variant']
+        variant_input = serializer.validated_data['variant']
         quantity = serializer.validated_data['quantity']
+
+        if quantity > MAX_ITEM_QUANTITY:
+            return Response(
+                {
+                    "error": f"La cantidad máxima por producto es {MAX_ITEM_QUANTITY}.",
+                    "code": "MKT-QUANTITY-LIMIT"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Lock variant para evitar race condition y asegurar lectura fresca de stock
+        # Nota: variant_input viene del serializer, necesitamos re-consultar con lock
+        from .models import ProductVariant
+        variant = ProductVariant.objects.select_for_update().get(pk=variant_input.pk)
 
         # Buscamos si el ítem ya existe en el carrito para actualizarlo
         cart_item, created = CartItem.objects.get_or_create(
@@ -106,16 +138,33 @@ class CartViewSet(viewsets.GenericViewSet):
         )
 
         if not created:
-            # Si ya existía, actualizamos la cantidad
-            cart_item.quantity += quantity
-            # Validar stock total
-            if cart_item.quantity > variant.stock:
-                 return Response(
-                    {"error": f"No hay suficiente stock para '{variant}'. Disponible: {variant.stock}."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            cart_item.save()
+            new_quantity = cart_item.quantity + quantity
+        else:
+            new_quantity = quantity
+            
+        if new_quantity > MAX_ITEM_QUANTITY:
+             return Response(
+                {
+                    "error": f"La cantidad total del producto excede el límite de {MAX_ITEM_QUANTITY}.",
+                    "code": "MKT-QUANTITY-LIMIT"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
+        # Validar contra stock disponible (stock - reserved_stock)
+        available = variant.stock - variant.reserved_stock
+        if new_quantity > available:
+             return Response(
+                {
+                    "error": f"Stock insuficiente. Disponible: {available}, solicitado: {new_quantity}.",
+                    "code": "MKT-STOCK-CART"
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not created:
+            cart_item.quantity = new_quantity
+            cart_item.save()
         # Devolvemos el contenido completo del carrito actualizado
         cart_serializer = CartSerializer(cart, context={'request': request, 'view': self})
         return Response(cart_serializer.data, status=status.HTTP_201_CREATED)
@@ -201,7 +250,27 @@ class CartViewSet(viewsets.GenericViewSet):
 
             amount_in_cents = int(order.total_amount * 100)
             base_url = getattr(settings, "WOMPI_BASE_URL", PaymentService.WOMPI_DEFAULT_BASE_URL)
-            acceptance_token = PaymentService._resolve_acceptance_token(base_url)
+            
+            try:
+                acceptance_token = PaymentService._resolve_acceptance_token(base_url)
+            except requests.Timeout:
+                logger.error("Timeout al obtener acceptance token de Wompi")
+                # Cancelar orden para no dejarla en limbo si no se puede pagar
+                from .services import OrderService
+                OrderService.transition_to(order, Order.OrderStatus.CANCELLED)
+                return Response(
+                    {"error": "El servicio de pagos no está disponible. Intenta más tarde.", "code": "MKT-PAYMENT-UNAVAILABLE"},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE
+                )
+            except requests.RequestException as e:
+                logger.exception("Error al comunicarse con Wompi: %s", e)
+                from .services import OrderService
+                OrderService.transition_to(order, Order.OrderStatus.CANCELLED)
+                return Response(
+                    {"error": "Error al procesar el pago. Intenta más tarde.", "code": "MKT-PAYMENT-ERROR"},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE
+                )
+
             signature = PaymentService._build_integrity_signature(
                 reference=reference,
                 amount_in_cents=amount_in_cents,

@@ -1,9 +1,11 @@
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver, Signal
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from spa.models import StaffAvailability
 import datetime
+from core.models import AuditLog
+from core.utils import safe_audit_log
 
 from .models import UserSession
 
@@ -63,3 +65,28 @@ def handle_user_session(sender, user, refresh_token_jti, ip_address, user_agent,
         session.is_active = True
     session.last_activity = timezone.now()
     session.save(update_fields=['ip_address', 'user_agent', 'is_active', 'last_activity', 'updated_at'])
+
+
+@receiver(post_save, sender=CustomUser)
+def audit_role_change(sender, instance, created, **kwargs):
+    if created:
+        return
+    old_role = getattr(instance, "_old_role", None)
+    if old_role and old_role != instance.role:
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            admin_user=None,
+            target_user=instance,
+            details={"from": old_role, "to": instance.role},
+        )
+
+
+@receiver(pre_save, sender=CustomUser)
+def stash_old_role(sender, instance, **kwargs):
+    if not instance.pk:
+        return
+    try:
+        previous = sender.objects.get(pk=instance.pk)
+        instance._old_role = previous.role
+    except sender.DoesNotExist:
+        instance._old_role = None

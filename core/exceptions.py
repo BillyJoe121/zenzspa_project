@@ -19,6 +19,64 @@ class BusinessLogicError(APIException):
         super().__init__(payload, self.default_code)
 
 
+class InsufficientFundsError(BusinessLogicError):
+    """Excepción cuando el usuario no tiene fondos suficientes."""
+    default_detail = "Fondos insuficientes para completar la operación."
+    default_code = "INSUFFICIENT_FUNDS"
+
+
+class ResourceConflictError(APIException):
+    """Excepción cuando hay un conflicto con el estado actual del recurso."""
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "El recurso está en un estado que no permite esta operación."
+    default_code = "RESOURCE_CONFLICT"
+
+
+class ServiceUnavailableError(APIException):
+    """Excepción cuando un servicio externo no está disponible."""
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "El servicio no está disponible temporalmente."
+    default_code = "SERVICE_UNAVAILABLE"
+
+
+class InvalidStateTransitionError(BusinessLogicError):
+    """Excepción cuando se intenta una transición de estado inválida."""
+    default_detail = "Transición de estado no permitida."
+    default_code = "INVALID_STATE_TRANSITION"
+    
+    def __init__(self, current_state=None, target_state=None, **kwargs):
+        detail = self.default_detail
+        extra = kwargs.get('extra', {})
+        
+        if current_state and target_state:
+            detail = f"No se puede cambiar de '{current_state}' a '{target_state}'."
+            extra['current_state'] = current_state
+            extra['target_state'] = target_state
+        
+        kwargs['extra'] = extra
+        super().__init__(detail=detail, **kwargs)
+
+
+class RateLimitExceededError(APIException):
+    """Excepción cuando se excede el rate limit."""
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    default_detail = "Demasiadas solicitudes. Por favor intenta más tarde."
+    default_code = "RATE_LIMIT_EXCEEDED"
+    
+    def __init__(self, retry_after=None, **kwargs):
+        detail = self.default_detail
+        if retry_after:
+            detail = f"Demasiadas solicitudes. Intenta de nuevo en {retry_after} segundos."
+        super().__init__(detail, **kwargs)
+
+
+class PermissionDeniedError(APIException):
+    """Excepción cuando el usuario no tiene permisos."""
+    status_code = status.HTTP_403_FORBIDDEN
+    default_detail = "No tienes permisos para realizar esta acción."
+    default_code = "PERMISSION_DENIED"
+
+
 def drf_exception_handler(exc, context):
     """
     Normaliza errores según tu convención (400/401/403/404/409/422/429/5xx).
@@ -57,4 +115,5 @@ def _map_http_to_code(code: int) -> str:
         status.HTTP_409_CONFLICT: "CONFLICT",
         status.HTTP_422_UNPROCESSABLE_ENTITY: "BUSINESS_RULE_VIOLATION",
         status.HTTP_429_TOO_MANY_REQUESTS: "RATE_LIMIT_EXCEEDED",
+        status.HTTP_503_SERVICE_UNAVAILABLE: "SERVICE_UNAVAILABLE",
     }.get(code, "SERVER_ERROR")

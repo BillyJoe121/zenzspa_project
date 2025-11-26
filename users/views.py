@@ -5,6 +5,8 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from django.core.cache import cache
+from django.utils.crypto import get_random_string
+from django.contrib.auth.password_validation import validate_password
 from datetime import timedelta
 from rest_framework import generics, status, views
 from rest_framework.exceptions import ValidationError
@@ -23,12 +25,23 @@ from .serializers import (CustomTokenObtainPairSerializer,
                           PasswordResetConfirmSerializer,
                           PasswordResetRequestSerializer, SimpleUserSerializer,
                           UserRegistrationSerializer, VerifySMSSerializer, StaffListSerializer,
-                          UserSessionSerializer)
-from .services import TwilioService, verify_recaptcha
+                          UserRegistrationSerializer, VerifySMSSerializer, StaffListSerializer,
+                          UserSessionSerializer, TOTPSetupSerializer, TOTPVerifySerializer, UserExportSerializer)
+from .services import TwilioService, verify_recaptcha, TOTPService, GeoIPService
 from .utils import get_client_ip, register_user_session
+from .throttling import AdminRateThrottle
+from django.http import HttpResponse
+import csv
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_decode
+from django.utils.encoding import force_str
+
 from spa.models import Appointment
 from core.models import AuditLog, AdminNotification
 from notifications.services import NotificationService
+from core.utils import safe_audit_log
+from django.core.cache import cache
+from rest_framework_simplejwt.exceptions import TokenError
 
 logger = logging.getLogger(__name__)
 
@@ -69,13 +82,29 @@ def _deactivate_session_for_jti(user, jti):
 
 
 def _revoke_all_sessions(user):
+    """
+    MEJORA #20: Revoca todas las sesiones activas del usuario.
+    Invalida tokens JWT y sesiones en UserSession para forzar re-autenticación.
+    """
+    # Invalidar todos los tokens JWT
     tokens = OutstandingToken.objects.filter(user=user)
     for token in tokens:
         try:
             BlacklistedToken.objects.get_or_create(token=token)
         except Exception:
             continue
-    UserSession.objects.filter(user=user, is_active=True).update(is_active=False, updated_at=timezone.now())
+
+    # Invalidar todas las sesiones activas
+    invalidated_sessions = UserSession.objects.filter(
+        user=user, is_active=True
+    ).update(is_active=False, updated_at=timezone.now())
+
+    if invalidated_sessions:
+        logger.info(
+            "Sesiones revocadas para %s: %d sesiones invalidadas",
+            user.phone_number,
+            invalidated_sessions
+        )
 
 class UserRegistrationView(generics.CreateAPIView):
     queryset = CustomUser.objects.all()
@@ -111,16 +140,27 @@ class VerifySMSView(views.APIView):
     MAX_ATTEMPTS = 3
     LOCKOUT_PERIOD_MINUTES = 10
     RECAPTCHA_FAILURE_THRESHOLD = 2
+    MAX_IP_ATTEMPTS = 20
+    MAX_GLOBAL_ATTEMPTS = 1000
+    RATE_LIMIT_WINDOW_SECONDS = 3600
 
     def post(self, request, *args, **kwargs):
         serializer = VerifySMSSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         phone_number = serializer.validated_data['phone_number']
         code = serializer.validated_data['code']
-        ip = get_client_ip(request)
+        ip = get_client_ip(request) or "unknown"
+
+        if cache.get(f"blocked_ip:{ip}"):
+            return Response(
+                {"detail": "IP temporalmente bloqueada.", "code": "OTP_IP_BLOCKED"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         cache_key_attempts = f'otp_attempts_{phone_number}'
         cache_key_lockout = f'otp_lockout_{phone_number}'
+        ip_cache_key = f'otp_ip_attempts_{ip}'
+        global_cache_key = 'otp_global_attempts'
 
         if cache.get(cache_key_lockout):
             ttl_seconds = None
@@ -138,6 +178,33 @@ class VerifySMSView(views.APIView):
             )
 
         attempts = cache.get(cache_key_attempts, 0)
+        ip_attempts = cache.get(ip_cache_key, 0)
+        global_attempts = cache.get(global_cache_key, 0)
+
+        if ip_attempts >= self.MAX_IP_ATTEMPTS:
+            return Response(
+                {
+                    "detail": "Demasiados intentos desde esta IP. Intenta más tarde.",
+                    "code": "OTP_IP_LOCKED",
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        if global_attempts >= self.MAX_GLOBAL_ATTEMPTS:
+            logger.critical(
+                "Rate limit global OTP excedido para verify: %s intentos recientes",
+                global_attempts,
+            )
+            return Response(
+                {
+                    "detail": "Servicio de verificación temporalmente no disponible.",
+                    "code": "OTP_GLOBAL_LIMIT",
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        cache.set(ip_cache_key, ip_attempts + 1, timeout=self.RATE_LIMIT_WINDOW_SECONDS)
+        cache.set(global_cache_key, global_attempts + 1, timeout=self.RATE_LIMIT_WINDOW_SECONDS)
 
         if attempts >= self.RECAPTCHA_FAILURE_THRESHOLD or _requires_recaptcha(phone_number, ip, OTPAttempt.AttemptType.VERIFY):
             recaptcha_token = serializer.validated_data.get('recaptcha_token')
@@ -156,6 +223,7 @@ class VerifySMSView(views.APIView):
             if is_valid:
                 cache.delete(cache_key_attempts)
                 cache.delete(cache_key_lockout)
+                cache.delete(ip_cache_key)
 
                 user = CustomUser.objects.get(phone_number=phone_number)
                 if not user.is_verified:
@@ -183,7 +251,8 @@ class VerifySMSView(views.APIView):
                     cache.set(cache_key_lockout, True, timedelta(minutes=self.LOCKOUT_PERIOD_MINUTES).total_seconds())
                     cache.delete(cache_key_attempts)
                 else:
-                    cache.set(cache_key_attempts, attempts, timeout=timedelta(minutes=self.LOCKOUT_PERIOD_MINUTES).total_seconds())
+                    backoff_seconds = min(self.LOCKOUT_PERIOD_MINUTES * 60, attempts * 30)
+                    cache.set(cache_key_attempts, attempts, timeout=backoff_seconds)
                 _log_otp_attempt(phone_number, OTPAttempt.AttemptType.VERIFY, False, request, {"reason": "invalid_code"})
                 return Response({"error": "El código de verificación es inválido o ha expirado."}, status=status.HTTP_400_BAD_REQUEST)
         except CustomUser.DoesNotExist:
@@ -287,8 +356,10 @@ class LogoutView(views.APIView):
             jti = str(token['jti'])
             _deactivate_session_for_jti(request.user, jti)
             return Response(status=status.HTTP_204_NO_CONTENT)
-        except Exception as exc:
+        except TokenError as exc:
             return Response({"error": f"No se pudo cerrar la sesión: {exc}"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response({"error": "Error desconocido al cerrar sesión."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class LogoutAllView(views.APIView):
@@ -299,16 +370,48 @@ class LogoutAllView(views.APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class ChangePasswordView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        old_password = request.data.get("old_password")
+        new_password = request.data.get("new_password")
+        if not old_password or not new_password:
+            return Response(
+                {"detail": "Debes enviar old_password y new_password."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user = request.user
+        if not user.check_password(old_password):
+            return Response(
+                {"detail": "La contraseña actual es incorrecta."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            validate_password(new_password, user=user)
+        except Exception as exc:
+            return Response(
+                {"detail": " ".join([str(x) for x in exc])},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user.set_password(new_password)
+        user.save()
+        _revoke_all_sessions(user)
+        return Response({"detail": "Contraseña actualizada. Inicia sesión nuevamente."}, status=status.HTTP_200_OK)
+
+
 class FlagNonGrataView(generics.UpdateAPIView):
     queryset = CustomUser.objects.all()
     serializer_class = FlagNonGrataSerializer
     permission_classes = [IsAdminUser]
+    throttle_classes = [AdminRateThrottle]
     lookup_field = 'phone_number'
+
 
     @transaction.atomic
     def perform_update(self, serializer):
         instance = self.get_object()
-        new_unusable_password = CustomUser.objects.make_random_password(length=16)
+        new_unusable_password = get_random_string(length=16)
         now = timezone.now()
         
         future_appointments = Appointment.objects.filter(
@@ -353,13 +456,27 @@ class FlagNonGrataView(generics.UpdateAPIView):
             },
         )
 
+        # Invalidar todos los tokens JWT existentes
         tokens = OutstandingToken.objects.filter(user=instance)
         for token in tokens:
             try:
                 BlacklistedToken.objects.get_or_create(token=token)
             except Exception:
                 continue
-        
+
+        # MEJORA #11: Invalidar todas las sesiones activas del usuario
+        invalidated_sessions = UserSession.objects.filter(
+            user=instance,
+            is_active=True
+        ).update(is_active=False)
+
+        if invalidated_sessions:
+            logger.info(
+                "Usuario CNG: %d sesiones invalidadas para %s",
+                invalidated_sessions,
+                instance.phone_number
+            )
+
         instance.save()
         try:
             NotificationService.send_notification(
@@ -407,3 +524,107 @@ class UserSessionDeleteView(generics.DestroyAPIView):
             pass
         instance.is_active = False
         instance.save(update_fields=['is_active', 'updated_at'])
+
+
+class BlockIPView(views.APIView):
+    permission_classes = [IsAdminUser]
+
+    def post(self, request, *args, **kwargs):
+        ip = request.data.get("ip")
+        ttl = int(request.data.get("ttl", 3600))
+        if not ip:
+            return Response({"detail": "IP requerida."}, status=status.HTTP_400_BAD_REQUEST)
+        cache.set(f"blocked_ip:{ip}", True, timeout=ttl)
+        return Response({"detail": f"IP {ip} bloqueada por {ttl} segundos."}, status=status.HTTP_200_OK)
+
+
+class TOTPSetupView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        secret = TOTPService.generate_secret()
+        user.totp_secret = secret
+        user.save(update_fields=['totp_secret'])
+        
+        uri = TOTPService.get_provisioning_uri(user, secret)
+        serializer = TOTPSetupSerializer({"secret": secret, "provisioning_uri": uri})
+        return Response(serializer.data)
+
+
+class TOTPVerifyView(views.APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = TOTPVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        token = serializer.validated_data['token']
+        user = request.user
+        
+        if not user.totp_secret:
+            return Response({"error": "2FA no configurado."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        if TOTPService.verify_token(user.totp_secret, token):
+            return Response({"detail": "Código verificado correctamente. 2FA activado."}, status=status.HTTP_200_OK)
+        
+        return Response({"error": "Código inválido."}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class UserExportView(generics.ListAPIView):
+    permission_classes = [IsAdminUser]
+    throttle_classes = [AdminRateThrottle]
+    queryset = CustomUser.objects.all()
+    serializer_class = UserExportSerializer
+
+    def get(self, request, *args, **kwargs):
+        if request.query_params.get('format') == 'csv':
+            response = HttpResponse(content_type='text/csv')
+            response['Content-Disposition'] = 'attachment; filename="users_export.csv"'
+            
+            writer = csv.writer(response)
+            writer.writerow(['ID', 'Phone', 'Email', 'First Name', 'Last Name', 'Role', 'Status', 'Created At'])
+            
+            for user in self.get_queryset():
+                status_label = "Active" if user.is_active else "Inactive"
+                if user.is_persona_non_grata:
+                    status_label = "CNG"
+                writer.writerow([
+                    user.id, user.phone_number, user.email, user.first_name, user.last_name, 
+                    user.role, status_label, user.created_at
+                ])
+            return response
+        return super().get(request, *args, **kwargs)
+
+
+class TwilioWebhookView(views.APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        data = request.data
+        logger.info("Twilio Webhook: %s", data)
+        return Response(status=status.HTTP_200_OK)
+
+
+class EmailVerificationView(views.APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        uidb64 = request.data.get('uidb64')
+        token = request.data.get('token')
+        
+        if not uidb64 or not token:
+            return Response({"error": "Faltan parámetros."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = CustomUser.objects.get(pk=uid)
+        except (TypeError, ValueError, OverflowError, CustomUser.DoesNotExist):
+            return Response({"error": "Usuario inválido."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if default_token_generator.check_token(user, token):
+            user.email_verified = True
+            user.save(update_fields=['email_verified'])
+            return Response({"detail": "Email verificado correctamente."}, status=status.HTTP_200_OK)
+        
+        return Response({"error": "Token inválido o expirado."}, status=status.HTTP_400_BAD_REQUEST)
+

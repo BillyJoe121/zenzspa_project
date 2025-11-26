@@ -11,3 +11,16 @@ class BurstUserThrottle(UserRateThrottle):
 
 class LoginThrottle(AnonRateThrottle):
     scope = "login"        # '5/min'
+
+class AdminThrottle(UserRateThrottle):
+    scope = "admin"  # '1000/hour' en settings
+    
+    def allow_request(self, request, view):
+        # Solo aplicar a usuarios admin
+        if not request.user or not request.user.is_authenticated:
+            return True
+        
+        if getattr(request.user, 'role', '') != 'ADMIN':
+            return True
+        
+        return super().allow_request(request, view)

@@ -1,0 +1,64 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.3, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Scripts\python.exe
+cachedir: .pytest_cache
+django: version: 5.2.3, settings: zenzspa.settings (from ini)
+rootdir: C:\Users\joshe\Desktop\Zenz\zenzspa_project
+configfile: pytest.ini
+plugins: anyio-4.11.0, cov-7.0.0, django-4.11.1, mock-3.15.1
+collecting ... collected 15 items
+
+bot/tests/test_tasks.py::TestBotTasks::test_report_daily_token_usage PASSED [  6%]
+bot/tests/test_tasks.py::TestBotTasks::test_cleanup_old_logs PASSED      [ 13%]
+bot/tests/test_tasks.py::TestBotTasks::test_monitor_bot_health_no_activity PASSED [ 20%]
+bot/tests/test_tasks.py::TestBotTasks::test_monitor_bot_health_normal PASSED [ 26%]
+bot/tests/test_tasks.py::TestBotTasks::test_monitor_bot_health_high_block_rate PASSED [ 33%]
+bot/tests/test_tasks.py::TestBotTasks::test_monitor_bot_health_high_latency PASSED [ 40%]
+bot/tests/test_tasks.py::TestBotTasks::test_check_rate_limit_blocks_when_full PASSED [ 46%]
+bot/tests/test_tasks.py::TestBotTasks::test_check_rate_limit_allows_when_empty PASSED [ 53%]
+bot/tests/test_tasks.py::TestBotTasks::test_process_bot_message_async_rate_limited PASSED [ 60%]
+bot/tests/test_tasks.py::TestBotTasks::test_process_bot_message_async_creates_log PASSED [ 66%]
+bot/tests/test_tasks.py::TestBotTasks::test_process_bot_message_async_missing_user PASSED [ 73%]
+bot/tests/test_tasks.py::TestBotTasks::test_process_bot_message_async_returns_error_after_retries FAILED [ 80%]
+bot/tests/test_tasks.py::TestBotTasks::test_report_daily_token_usage_without_config PASSED [ 86%]
+bot/tests/test_tasks.py::TestBotTasks::test_report_daily_token_usage_estimates_tokens PASSED [ 93%]
+bot/tests/test_tasks.py::TestBotTasks::test_cleanup_expired_anonymous_users PASSED [100%]
+
+================================== FAILURES ===================================
+___ TestBotTasks.test_process_bot_message_async_returns_error_after_retries ___
+bot\tests\test_tasks.py:278: in test_process_bot_message_async_returns_error_after_retries
+    result = process_bot_message_async.run(
+bot\tasks.py:271: in process_bot_message_async
+    raise self.retry(countdown=10, exc=e)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\celery\app\task.py:727: in retry
+    raise_with_context(exc or Retry('Task can be retried', None))
+bot\tasks.py:146: in process_bot_message_async
+    agent_response, meta = gemini.generate_response(prompt)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\unittest\mock.py:1169: in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\unittest\mock.py:1173: in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\unittest\mock.py:1228: in _execute_mock_call
+    raise effect
+E   ValueError: boom
+---------------------------- Captured stderr call -----------------------------
+[ERROR] Error procesando mensaje en task None: boom
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\tasks.py", line 146, in process_bot_message_async
+    agent_response, meta = gemini.generate_response(prompt)
+                           ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\joshe\AppData\Local\Programs\Python\Python313\Lib\unittest\mock.py", line 1169, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\AppData\Local\Programs\Python\Python313\Lib\unittest\mock.py", line 1173, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\AppData\Local\Programs\Python\Python313\Lib\unittest\mock.py", line 1228, in _execute_mock_call
+    raise effect
+ValueError: boom
+=========================== short test summary info ===========================
+FAILED bot/tests/test_tasks.py::TestBotTasks::test_process_bot_message_async_returns_error_after_retries
+=================== 1 failed, 14 passed, 1 warning in 4.76s ===================

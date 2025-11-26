@@ -1,19 +1,28 @@
 from django.urls import path
 from .views import (
+    ChangePasswordView,
     UserRegistrationView,
     VerifySMSView,
     CustomTokenObtainPairView,
     CustomTokenRefreshView,
     CurrentUserView,
     FlagNonGrataView,
+    BlockIPView,
     PasswordResetRequestView,
     PasswordResetConfirmView,
     StaffListView,
     UserSessionListView,
     UserSessionDeleteView,
     LogoutView,
+    LogoutView,
     LogoutAllView,
+    TOTPSetupView,
+    TOTPVerifyView,
+    UserExportView,
+    TwilioWebhookView,
+    EmailVerificationView,
 )
+
 
 
 urlpatterns = [
@@ -24,6 +33,8 @@ urlpatterns = [
     path('token/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),
     path('logout/', LogoutView.as_view(), name='logout'),
     path('logout_all/', LogoutAllView.as_view(), name='logout_all'),
+    path('password/change/', ChangePasswordView.as_view(), name='password_change'),
+    path('admin/block-ip/', BlockIPView.as_view(), name='block_ip'),
 
     # Password management
     path(
@@ -47,4 +58,12 @@ urlpatterns = [
     path('staff/', StaffListView.as_view(), name='staff-list'),
     path('sessions/', UserSessionListView.as_view(), name='session-list'),
     path('sessions/<uuid:id>/', UserSessionDeleteView.as_view(), name='session-delete'),
+
+    # New Features
+    path('totp/setup/', TOTPSetupView.as_view(), name='totp-setup'),
+    path('totp/verify/', TOTPVerifyView.as_view(), name='totp-verify'),
+    path('admin/export/', UserExportView.as_view(), name='user-export'),
+    path('twilio/webhook/', TwilioWebhookView.as_view(), name='twilio-webhook'),
+    path('email/verify/', EmailVerificationView.as_view(), name='email-verify'),
 ]
+

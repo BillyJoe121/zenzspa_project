@@ -9,7 +9,18 @@
       "Bash(./venv/Scripts/python.exe -m pytest bot/tests/test_views.py::TestBotWebhook::test_concurrency_lock_failure -v)",
       "Bash(./venv/Scripts/python.exe -m pytest bot/tests/test_tasks.py -v)",
       "Bash(./venv/Scripts/python.exe manage.py makemigrations:*)",
-      "Bash(./venv/Scripts/python.exe:*)"
+      "Bash(./venv/Scripts/python.exe:*)",
+      "Bash(bot/management/__init__.py)",
+      "Bash(bot/management/commands/__init__.py)",
+      "Bash(bot/tests/test_admin.py)",
+      "Bash(echo:*)",
+      "Bash(./venv/Scripts/pip install:*)",
+      "Bash(./venv/Scripts/pip freeze:*)",
+      "Bash(./venv/Scripts/pip:*)",
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python manage.py test:*)",
+      "Bash(del botteststest_views_extended.py botteststest_tasks_extended.py)"
     ],
     "deny": [],
     "ask": []

@@ -51,7 +51,9 @@ class TestBotConfigurationModels:
         cache.set('bot_config_version', 1)
         # Usamos template válido mínimo
         BotConfiguration.objects.create(
-            site_name="Test", 
-            system_prompt_template="{{user_message}}{{services_context}}{{products_context}}{{booking_url}}{{admin_phone}}"
+            site_name="Test",
+            booking_url="https://test.com",
+            admin_phone="+573001234567",
+            system_prompt_template="{{user_message}} {{services_context}} {{products_context}} {{booking_url}} {{admin_phone}}"
         )
         assert cache.get('bot_config_version') == 2

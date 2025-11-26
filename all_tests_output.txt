@@ -1,0 +1,1626 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.3, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Scripts\python.exe
+cachedir: .pytest_cache
+django: version: 5.2.3, settings: zenzspa.settings (from ini)
+rootdir: C:\Users\joshe\Desktop\Zenz\zenzspa_project
+configfile: pytest.ini
+plugins: anyio-4.11.0, cov-7.0.0, django-4.11.1, mock-3.15.1
+collecting ... collected 278 items
+
+bot/tests/test_admin.py::BotConfigurationAdminTest::test_has_add_permission_admin PASSED [  0%]
+bot/tests/test_admin.py::BotConfigurationAdminTest::test_has_add_permission_regular PASSED [  0%]
+bot/tests/test_admin.py::BotConfigurationAdminTest::test_has_add_permission_staff PASSED [  1%]
+bot/tests/test_admin.py::BotConfigurationAdminTest::test_has_add_permission_superuser PASSED [  1%]
+bot/tests/test_admin.py::BotConfigurationAdminTest::test_has_change_permission_admin PASSED [  1%]
+bot/tests/test_admin.py::BotConfigurationAdminTest::test_has_change_permission_staff PASSED [  2%]
+bot/tests/test_admin.py::BotConfigurationAdminTest::test_has_change_permission_superuser PASSED [  2%]
+bot/tests/test_admin.py::BotConfigurationAdminTest::test_has_delete_permission_admin PASSED [  2%]
+bot/tests/test_admin.py::BotConfigurationAdminTest::test_has_delete_permission_staff PASSED [  3%]
+bot/tests/test_admin.py::BotConfigurationAdminTest::test_has_delete_permission_superuser PASSED [  3%]
+bot/tests/test_admin.py::BotConfigurationAdminTest::test_list_display PASSED [  3%]
+bot/tests/test_admin.py::AnonymousUserAdminTest::test_converted_status_false PASSED [  4%]
+bot/tests/test_admin.py::AnonymousUserAdminTest::test_converted_status_true PASSED [  4%]
+bot/tests/test_admin.py::AnonymousUserAdminTest::test_has_add_permission PASSED [  5%]
+bot/tests/test_admin.py::AnonymousUserAdminTest::test_has_change_permission_admin PASSED [  5%]
+bot/tests/test_admin.py::AnonymousUserAdminTest::test_has_change_permission_staff PASSED [  5%]
+bot/tests/test_admin.py::AnonymousUserAdminTest::test_has_change_permission_superuser PASSED [  6%]
+bot/tests/test_admin.py::AnonymousUserAdminTest::test_has_delete_permission_admin PASSED [  6%]
+bot/tests/test_admin.py::AnonymousUserAdminTest::test_has_delete_permission_staff PASSED [  6%]
+bot/tests/test_admin.py::AnonymousUserAdminTest::test_has_delete_permission_superuser PASSED [  7%]
+bot/tests/test_admin.py::AnonymousUserAdminTest::test_has_view_permission_regular PASSED [  7%]
+bot/tests/test_admin.py::AnonymousUserAdminTest::test_has_view_permission_staff PASSED [  7%]
+bot/tests/test_admin.py::AnonymousUserAdminTest::test_is_expired_status_false PASSED [  8%]
+bot/tests/test_admin.py::AnonymousUserAdminTest::test_is_expired_status_true PASSED [  8%]
+bot/tests/test_admin.py::BotConversationLogAdminTest::test_changelist_view_adds_extra_context PASSED [  8%]
+bot/tests/test_admin.py::BotConversationLogAdminTest::test_has_add_permission PASSED [  9%]
+bot/tests/test_admin.py::BotConversationLogAdminTest::test_has_change_permission PASSED [  9%]
+bot/tests/test_admin.py::BotConversationLogAdminTest::test_has_delete_permission_admin PASSED [ 10%]
+bot/tests/test_admin.py::BotConversationLogAdminTest::test_has_delete_permission_staff PASSED [ 10%]
+bot/tests/test_admin.py::BotConversationLogAdminTest::test_has_delete_permission_superuser PASSED [ 10%]
+bot/tests/test_admin.py::BotConversationLogAdminTest::test_has_view_permission_admin PASSED [ 11%]
+bot/tests/test_admin.py::BotConversationLogAdminTest::test_has_view_permission_staff PASSED [ 11%]
+bot/tests/test_admin.py::BotConversationLogAdminTest::test_has_view_permission_superuser PASSED [ 11%]
+bot/tests/test_admin.py::BotConversationLogAdminTest::test_participant_display_anonymous_user PASSED [ 12%]
+bot/tests/test_admin.py::BotConversationLogAdminTest::test_participant_display_registered_user PASSED [ 12%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_assign_to_me_action_already_assigned PASSED [ 12%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_assign_to_me_action_pending PASSED [ 13%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_client_contact_display PASSED [ 13%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_client_interests_display PASSED [ 14%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_conversation_context_display PASSED [ 14%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_has_add_permission PASSED [ 14%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_has_change_permission_admin PASSED [ 15%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_has_change_permission_regular PASSED [ 15%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_has_change_permission_staff PASSED [ 15%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_has_delete_permission_admin PASSED [ 16%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_has_delete_permission_staff PASSED [ 16%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_has_view_permission_regular PASSED [ 16%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_has_view_permission_staff PASSED [ 17%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_mark_as_resolved_action PASSED [ 17%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_mark_as_resolved_action_pending_ignored PASSED [ 17%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_resolution_time_display_not_resolved PASSED [ 18%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_resolution_time_display_resolved PASSED [ 18%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_response_time_display_assigned PASSED [ 19%]
+bot/tests/test_admin.py::HumanHandoffRequestAdminTest::test_response_time_display_not_assigned PASSED [ 19%]
+bot/tests/test_admin.py::HumanMessageAdminTest::test_direction_display_from_client PASSED [ 19%]
+bot/tests/test_admin.py::HumanMessageAdminTest::test_direction_display_from_staff PASSED [ 20%]
+bot/tests/test_admin.py::HumanMessageAdminTest::test_has_add_permission PASSED [ 20%]
+bot/tests/test_admin.py::HumanMessageAdminTest::test_has_change_permission PASSED [ 20%]
+bot/tests/test_admin.py::HumanMessageAdminTest::test_has_delete_permission_admin PASSED [ 21%]
+bot/tests/test_admin.py::HumanMessageAdminTest::test_has_delete_permission_staff PASSED [ 21%]
+bot/tests/test_admin.py::HumanMessageAdminTest::test_has_view_permission_admin PASSED [ 21%]
+bot/tests/test_admin.py::HumanMessageAdminTest::test_has_view_permission_staff PASSED [ 22%]
+bot/tests/test_admin.py::HumanMessageAdminTest::test_message_preview_long PASSED [ 22%]
+bot/tests/test_admin.py::HumanMessageAdminTest::test_message_preview_short PASSED [ 23%]
+bot/tests/test_admin.py::IPBlocklistAdminTest::test_actions_activate_and_deactivate PASSED [ 23%]
+bot/tests/test_admin.py::IPBlocklistAdminTest::test_blocked_by_display_system PASSED [ 23%]
+bot/tests/test_admin.py::IPBlocklistAdminTest::test_permissions PASSED   [ 24%]
+bot/tests/test_admin.py::IPBlocklistAdminTest::test_reason_display PASSED [ 24%]
+bot/tests/test_admin.py::IPBlocklistAdminTest::test_save_model_sets_blocked_by PASSED [ 24%]
+bot/tests/test_admin.py::SuspiciousActivityAdminTest::test_changelist_view_extra_context PASSED [ 25%]
+bot/tests/test_admin.py::SuspiciousActivityAdminTest::test_displays PASSED [ 25%]
+bot/tests/test_admin.py::SuspiciousActivityAdminTest::test_mark_as_reviewed_and_unreviewed PASSED [ 25%]
+bot/tests/test_alerts.py::test_get_admin_emails_fallback_to_settings PASSED [ 26%]
+bot/tests/test_alerts.py::test_get_admin_emails_returns_admins_and_superusers PASSED [ 26%]
+bot/tests/test_alerts.py::test_send_critical_activity_alert_sends_email PASSED [ 26%]
+bot/tests/test_alerts.py::test_send_critical_activity_alert_respects_disabled_flag PASSED [ 27%]
+bot/tests/test_alerts.py::test_send_daily_security_report_collects_stats PASSED [ 27%]
+bot/tests/test_alerts.py::test_auto_block_returns_false_without_config PASSED [ 28%]
+bot/tests/test_alerts.py::test_auto_block_blocks_when_threshold_met PASSED [ 28%]
+bot/tests/test_alerts.py::test_auto_block_returns_existing_block PASSED  [ 28%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserExpirationTest::test_expiration_date_auto_set PASSED [ 29%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserExpirationTest::test_expired_session_converted_preserved PASSED [ 29%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserExpirationTest::test_expired_session_not_converted PASSED [ 29%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserExpirationTest::test_is_expired_after_expiration PASSED [ 30%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserExpirationTest::test_is_expired_before_expiration PASSED [ 30%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserConversionTest::test_conversation_logs_preserved_after_conversion PASSED [ 30%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserConversionTest::test_convert_anonymous_to_registered PASSED [ 31%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserConversionTest::test_multiple_anonymous_sessions_same_user PASSED [ 31%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserDisplayNameTest::test_display_name_empty_string_name PASSED [ 32%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserDisplayNameTest::test_display_name_with_name PASSED [ 32%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserDisplayNameTest::test_display_name_without_name PASSED [ 32%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserValidationTest::test_email_format_validation PASSED [ 33%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserValidationTest::test_invalid_email_format_rejected PASSED [ 33%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserValidationTest::test_ip_address_required PASSED [ 33%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserValidationTest::test_session_id_is_uuid PASSED [ 34%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserValidationTest::test_session_id_unique PASSED [ 34%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserLastActivityTest::test_last_activity_auto_updates PASSED [ 34%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserLastActivityTest::test_last_activity_set_on_creation PASSED [ 35%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserQueryTest::test_filter_by_ip PASSED [ 35%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserQueryTest::test_filter_expired_sessions PASSED [ 35%]
+bot/tests/test_anonymous_user_sad_paths.py::AnonymousUserQueryTest::test_ordering_by_last_activity PASSED [ 36%]
+bot/tests/test_conversation_memory.py::TestConversationMemory::test_add_and_get_history PASSED [ 36%]
+bot/tests/test_conversation_memory.py::TestConversationMemory::test_window_size_limit PASSED [ 37%]
+bot/tests/test_conversation_memory.py::TestConversationMemory::test_clear_history PASSED [ 37%]
+bot/tests/test_conversation_memory.py::TestConversationMemory::test_separate_user_histories PASSED [ 37%]
+bot/tests/test_conversation_memory.py::TestConversationMemory::test_timestamps_added PASSED [ 38%]
+bot/tests/test_gemini_integration.py::TestGeminiSDKIntegration::test_bot_webhook_end_to_end FAILED [ 38%]
+bot/tests/test_gemini_integration.py::TestGeminiSDKIntegration::test_gemini_service_has_correct_config FAILED [ 38%]
+bot/tests/test_gemini_integration.py::TestGeminiSDKIntegration::test_gemini_service_initialization PASSED [ 39%]
+bot/tests/test_gemini_integration.py::TestGeminiSDKIntegration::test_prompt_orchestrator_integration FAILED [ 39%]
+bot/tests/test_gemini_integration.py::TestGeminiSDKIntegration::test_real_gemini_call_if_key_exists SKIPPED [ 39%]
+bot/tests/test_gemini_integration.py::TestGeminiSDKIntegration::test_security_guardrail_detection FAILED [ 40%]
+bot/tests/test_gemini_integration.py::TestGeminiSDKIntegration::test_token_tracking FAILED [ 40%]
+bot/tests/test_gemini_integration.py::TestGeminiErrorHandling::test_fallback_on_error PASSED [ 41%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_assign_action PASSED [ 41%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_assign_action_already_assigned PASSED [ 41%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_cannot_update_readonly_fields PASSED [ 42%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_filter_assigned_to_me PASSED [ 42%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_filter_by_status PASSED [ 42%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_list_handoffs_as_admin PASSED [ 43%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_list_handoffs_as_regular_user PASSED [ 43%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_list_handoffs_as_staff PASSED [ 43%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_list_handoffs_unauthenticated PASSED [ 44%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_messages_action PASSED [ 44%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_messages_action_marks_as_read PASSED [ 44%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_resolve_action PASSED [ 45%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_resolve_action_not_assigned PASSED [ 45%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_retrieve_handoff_as_staff PASSED [ 46%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_send_message_action PASSED [ 46%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_send_message_action_empty_message PASSED [ 46%]
+bot/tests/test_handoff_api.py::HumanHandoffRequestViewSetTest::test_update_handoff_status PASSED [ 47%]
+bot/tests/test_handoff_api.py::HandoffSerializerTest::test_handoff_detail_serializer PASSED [ 47%]
+bot/tests/test_handoff_api.py::HandoffSerializerTest::test_handoff_list_serializer PASSED [ 47%]
+bot/tests/test_handoff_api.py::HandoffSerializerTest::test_handoff_update_auto_assign_timestamp PASSED [ 48%]
+bot/tests/test_handoff_api.py::HandoffSerializerTest::test_handoff_update_serializer PASSED [ 48%]
+bot/tests/test_handoff_api.py::HandoffSerializerTest::test_message_create_serializer_anonymous PASSED [ 48%]
+bot/tests/test_handoff_api.py::HandoffSerializerTest::test_message_create_serializer_staff PASSED [ 49%]
+bot/tests/test_handoff_api.py::HandoffSerializerTest::test_message_serializer_validation PASSED [ 49%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffRequestValidationTest::test_cannot_have_both_user_and_anonymous PASSED [ 50%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffRequestValidationTest::test_client_score_within_range PASSED [ 50%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffRequestValidationTest::test_must_have_user_or_anonymous PASSED [ 50%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffRequestPropertiesTest::test_client_contact_info_anonymous_partial PASSED [ 51%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffRequestPropertiesTest::test_client_contact_info_registered_user PASSED [ 51%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffRequestPropertiesTest::test_is_active_assigned PASSED [ 51%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffRequestPropertiesTest::test_is_active_cancelled PASSED [ 52%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffRequestPropertiesTest::test_is_active_pending PASSED [ 52%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffRequestPropertiesTest::test_is_active_resolved PASSED [ 52%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffRequestPropertiesTest::test_resolution_time_calculated_correctly PASSED [ 53%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffRequestPropertiesTest::test_resolution_time_not_resolved PASSED [ 53%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffRequestPropertiesTest::test_response_time_calculated_correctly PASSED [ 53%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffRequestPropertiesTest::test_response_time_not_assigned PASSED [ 54%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffAPIPermissionsTest::test_admin_can_access_handoffs PASSED [ 54%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffAPIPermissionsTest::test_anonymous_cannot_access_handoffs PASSED [ 55%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffAPIPermissionsTest::test_regular_user_cannot_access_handoffs PASSED [ 55%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffAPIPermissionsTest::test_staff_can_access_handoffs PASSED [ 55%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffAPIActionsSadPathsTest::test_assign_already_assigned_handoff PASSED [ 56%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffAPIActionsSadPathsTest::test_assign_resolved_handoff PASSED [ 56%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffAPIActionsSadPathsTest::test_resolve_already_resolved_handoff PASSED [ 56%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffAPIActionsSadPathsTest::test_resolve_pending_handoff PASSED [ 57%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffAPIActionsSadPathsTest::test_send_empty_message PASSED [ 57%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffAPIActionsSadPathsTest::test_send_message_to_nonexistent_handoff PASSED [ 57%]
+bot/tests/test_handoff_sad_paths.py::HumanMessageTest::test_mark_as_read PASSED [ 58%]
+bot/tests/test_handoff_sad_paths.py::HumanMessageTest::test_mark_as_read_idempotent PASSED [ 58%]
+bot/tests/test_handoff_sad_paths.py::HumanMessageTest::test_sender_name_anonymous_client PASSED [ 58%]
+bot/tests/test_handoff_sad_paths.py::HumanMessageTest::test_sender_name_staff PASSED [ 59%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffJSONFieldsTest::test_client_interests_default_empty_dict PASSED [ 59%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffJSONFieldsTest::test_conversation_context_complex_data PASSED [ 60%]
+bot/tests/test_handoff_sad_paths.py::HumanHandoffJSONFieldsTest::test_conversation_context_default_empty_dict PASSED [ 60%]
+bot/tests/test_models.py::TestBotConfigurationModels::test_validation_clean_happy_path PASSED [ 60%]
+bot/tests/test_models.py::TestBotConfigurationModels::test_validation_invalid_url PASSED [ 61%]
+bot/tests/test_models.py::TestBotConfigurationModels::test_validation_invalid_phone PASSED [ 61%]
+bot/tests/test_models.py::TestBotConfigurationModels::test_validation_missing_variables_in_prompt PASSED [ 61%]
+bot/tests/test_models.py::TestBotConfigurationModels::test_cache_invalidation_on_save PASSED [ 62%]
+bot/tests/test_orchestrator.py::test_prompt_construction FAILED          [ 62%]
+bot/tests/test_orchestrator.py::test_prompt_missing_config PASSED        [ 62%]
+bot/tests/test_security.py::TestBotSecurity::test_validate_jailbreak_attempts PASSED [ 63%]
+bot/tests/test_security.py::TestBotSecurity::test_validate_delimiter_injection PASSED [ 63%]
+bot/tests/test_security.py::TestBotSecurity::test_validate_clean_input PASSED [ 64%]
+bot/tests/test_security.py::TestBotSecurity::test_check_velocity_limit PASSED [ 64%]
+bot/tests/test_security.py::TestBotSecurity::test_check_repetition_fuzzy PASSED [ 64%]
+bot/tests/test_security.py::TestBotSecurity::test_handle_off_topic_strikes PASSED [ 65%]
+bot/tests/test_security_fixes.py::SessionHijackingPreventionTest::test_session_hijacking_blocked FAILED [ 65%]
+bot/tests/test_security_fixes.py::SessionHijackingPreventionTest::test_session_reuse_same_ip_allowed FAILED [ 65%]
+bot/tests/test_security_fixes.py::IPInjectionProtectionTest::test_invalid_ip_handled_gracefully FAILED [ 66%]
+bot/tests/test_security_fixes.py::IPInjectionProtectionTest::test_valid_ipv4_accepted FAILED [ 66%]
+bot/tests/test_security_fixes.py::IPInjectionProtectionTest::test_valid_ipv6_accepted FAILED [ 66%]
+bot/tests/test_security_fixes.py::PrematureUserCreationPreventionTest::test_empty_message_no_user_created PASSED [ 67%]
+bot/tests/test_security_fixes.py::PrematureUserCreationPreventionTest::test_invalid_message_type_no_user_created PASSED [ 67%]
+bot/tests/test_security_fixes.py::PrematureUserCreationPreventionTest::test_valid_message_creates_user FAILED [ 67%]
+bot/tests/test_security_fixes.py::PrematureUserCreationPreventionTest::test_whitespace_message_no_user_created PASSED [ 68%]
+bot/tests/test_security_fixes.py::ImprovedGuardrailDetectionTest::test_guardrail_case_insensitive FAILED [ 68%]
+bot/tests/test_security_fixes.py::ImprovedGuardrailDetectionTest::test_guardrail_partial_match_not_detected FAILED [ 69%]
+bot/tests/test_security_fixes.py::ImprovedGuardrailDetectionTest::test_guardrail_with_whitespace FAILED [ 69%]
+bot/tests/test_security_fixes.py::HealthCheckSecurityTest::test_health_check_minimal_info FAILED [ 69%]
+bot/tests/test_security_fixes.py::HealthCheckSecurityTest::test_health_check_status_values PASSED [ 70%]
+bot/tests/test_security_fixes.py::PIIAnonymizationTest::test_anonymous_user_no_pii_in_context PASSED [ 70%]
+bot/tests/test_security_fixes.py::PIIAnonymizationTest::test_only_first_name_in_prompt PASSED [ 70%]
+bot/tests/test_services.py::TestDataContextService::test_get_services_empty PASSED [ 71%]
+bot/tests/test_services.py::TestDataContextService::test_get_services_with_data PASSED [ 71%]
+bot/tests/test_services.py::TestDataContextService::test_get_products_formatting PASSED [ 71%]
+bot/tests/test_services.py::TestDataContextService::test_get_staff_empty PASSED [ 72%]
+bot/tests/test_services.py::TestDataContextService::test_get_staff_with_data PASSED [ 72%]
+bot/tests/test_services.py::TestDataContextService::test_cache_behavior PASSED [ 73%]
+bot/tests/test_services.py::TestGeminiServiceInternals::test_init_missing_api_key PASSED [ 73%]
+bot/tests/test_services.py::TestGeminiServiceInternals::test_generate_response_success PASSED [ 73%]
+bot/tests/test_services.py::TestGeminiServiceInternals::test_generate_response_security_block PASSED [ 74%]
+bot/tests/test_services.py::TestGeminiServiceInternals::test_generate_response_api_error PASSED [ 74%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_check_ip_blocked_not_blocked PASSED [ 74%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_check_ip_blocked_is_blocked PASSED [ 75%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_check_ip_blocked_expired PASSED [ 75%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_check_ip_blocked_inactive PASSED [ 75%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_record_activity_critical PASSED [ 76%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_record_activity_with_user PASSED [ 76%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_detect_jailbreak_attempt PASSED [ 76%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_detect_jailbreak_no_attempt PASSED [ 77%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_detect_daily_limit_abuse_first_hit PASSED [ 77%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_detect_daily_limit_abuse_repeated PASSED [ 78%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_detect_rate_limit_abuse PASSED [ 78%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_detect_repetitive_messages PASSED [ 78%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_detect_repetitive_messages_no_spam PASSED [ 79%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_detect_off_topic_spam PASSED [ 79%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityDetector::test_detect_off_topic_spam_occasional PASSED [ 79%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityAnalyzer::test_get_suspicious_users_summary_empty PASSED [ 80%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityAnalyzer::test_get_suspicious_users_summary_with_data PASSED [ 80%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityAnalyzer::test_get_activity_timeline_by_user PASSED [ 80%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityAnalyzer::test_get_activity_timeline_by_ip PASSED [ 81%]
+bot/tests/test_suspicious_activity_detector.py::TestSuspiciousActivityAnalyzer::test_get_activity_timeline_date_filtering PASSED [ 81%]
+bot/tests/test_tasks.py::TestBotTasks::test_report_daily_token_usage PASSED [ 82%]
+bot/tests/test_tasks.py::TestBotTasks::test_cleanup_old_logs PASSED      [ 82%]
+bot/tests/test_tasks.py::TestBotTasks::test_monitor_bot_health_no_activity PASSED [ 82%]
+bot/tests/test_tasks.py::TestBotTasks::test_monitor_bot_health_normal PASSED [ 83%]
+bot/tests/test_tasks.py::TestBotTasks::test_monitor_bot_health_high_block_rate PASSED [ 83%]
+bot/tests/test_tasks.py::TestBotTasks::test_monitor_bot_health_high_latency PASSED [ 83%]
+bot/tests/test_tasks.py::TestBotTasks::test_check_rate_limit_blocks_when_full PASSED [ 84%]
+bot/tests/test_tasks.py::TestBotTasks::test_check_rate_limit_allows_when_empty PASSED [ 84%]
+bot/tests/test_tasks.py::TestBotTasks::test_process_bot_message_async_rate_limited PASSED [ 84%]
+bot/tests/test_tasks.py::TestBotTasks::test_process_bot_message_async_creates_log FAILED [ 85%]
+bot/tests/test_tasks.py::TestBotTasks::test_process_bot_message_async_missing_user PASSED [ 85%]
+bot/tests/test_tasks.py::TestBotTasks::test_process_bot_message_async_returns_error_after_retries FAILED [ 85%]
+bot/tests/test_tasks.py::TestBotTasks::test_report_daily_token_usage_without_config PASSED [ 86%]
+bot/tests/test_tasks.py::TestBotTasks::test_report_daily_token_usage_estimates_tokens PASSED [ 86%]
+bot/tests/test_tasks.py::TestBotTasks::test_cleanup_expired_anonymous_users PASSED [ 87%]
+bot/tests/test_views.py::TestBotWebhook::test_anonymous_access_allowed PASSED [ 87%]
+bot/tests/test_views.py::TestBotWebhook::test_happy_path_mocking_gemini PASSED [ 87%]
+bot/tests/test_views.py::TestBotWebhook::test_security_block_response PASSED [ 88%]
+bot/tests/test_views.py::TestBotWebhook::test_duplicate_request_deduplication PASSED [ 88%]
+bot/tests/test_views.py::TestBotWebhook::test_blocked_user_access_denied PASSED [ 88%]
+bot/tests/test_views.py::TestBotWebhook::test_input_length_validation PASSED [ 89%]
+bot/tests/test_views.py::TestBotWebhook::test_empty_message_validation PASSED [ 89%]
+bot/tests/test_views.py::TestBotWebhook::test_jailbreak_attempt_validation PASSED [ 89%]
+bot/tests/test_views.py::TestBotWebhook::test_velocity_limit_exceeded PASSED [ 90%]
+bot/tests/test_views.py::TestBotWebhook::test_repetition_limit_exceeded PASSED [ 90%]
+bot/tests/test_views.py::TestBotWebhook::test_gemini_service_timeout PASSED [ 91%]
+bot/tests/test_views.py::TestBotWebhook::test_concurrency_lock_failure PASSED [ 91%]
+bot/tests/test_views.py::TestBotWebhook::test_invalid_message_type_returns_400 PASSED [ 91%]
+bot/tests/test_views.py::TestBotWebhook::test_normalize_chat_response_breaks_long_lines PASSED [ 92%]
+bot/tests/test_views.py::TestBotWebhook::test_get_client_ip_invalid_value PASSED [ 92%]
+bot/tests/test_views.py::TestHealthCheck::test_health_check_endpoint PASSED [ 92%]
+bot/tests/test_views.py::TestIPBlockEndpoints::test_block_ip_requires_reason PASSED [ 93%]
+bot/tests/test_views.py::TestIPBlockEndpoints::test_block_ip_creates_entry PASSED [ 93%]
+bot/tests/test_views.py::TestIPBlockEndpoints::test_block_ip_rejects_duplicates PASSED [ 93%]
+bot/tests/test_views.py::TestIPBlockEndpoints::test_unblock_ip_success_and_not_found PASSED [ 94%]
+bot/tests/test_views.py::TestTaskStatusView::test_task_status_success PASSED [ 94%]
+bot/tests/test_views.py::TestTaskStatusView::test_task_status_pending PASSED [ 94%]
+bot/tests/test_views.py::TestHumanHandoffViewSet::test_assign_and_resolve_flow PASSED [ 95%]
+bot/tests/test_views.py::TestHumanHandoffViewSet::test_messages_mark_client_messages_as_read PASSED [ 95%]
+bot/tests/test_views.py::TestHumanHandoffViewSet::test_send_message_moves_status_in_progress PASSED [ 96%]
+bot/tests/test_views.py::TestAnalyticsAndSuspiciousViews::test_bot_analytics_view PASSED [ 96%]
+bot/tests/test_views.py::TestAnalyticsAndSuspiciousViews::test_suspicious_users_view PASSED [ 96%]
+bot/tests/test_views.py::TestAnalyticsAndSuspiciousViews::test_activity_timeline_requires_params PASSED [ 97%]
+bot/tests/test_views.py::TestAnalyticsAndSuspiciousViews::test_activity_timeline_returns_block_info PASSED [ 97%]
+bot/tests/test_security.py::TestSanitizeForLogging::test_remove_control_characters PASSED [ 97%]
+bot/tests/test_security.py::TestSanitizeForLogging::test_replace_newlines_and_tabs PASSED [ 98%]
+bot/tests/test_security.py::TestSanitizeForLogging::test_compress_multiple_spaces PASSED [ 98%]
+bot/tests/test_security.py::TestSanitizeForLogging::test_truncate_long_text PASSED [ 98%]
+bot/tests/test_security.py::TestSanitizeForLogging::test_handle_empty_string PASSED [ 99%]
+bot/tests/test_security.py::TestSanitizeForLogging::test_strip_whitespace PASSED [ 99%]
+bot/tests/test_security.py::TestSanitizeForLogging::test_real_world_attack PASSED [100%]
+
+================================== FAILURES ===================================
+____________ TestGeminiSDKIntegration.test_bot_webhook_end_to_end _____________
+bot\tests\test_gemini_integration.py:125: in test_bot_webhook_end_to_end
+    response = self.client.post('/api/v1/bot/webhook/', {
+venv\Lib\site-packages\rest_framework\test.py:299: in post
+    response = super().post(
+venv\Lib\site-packages\rest_framework\test.py:213: in post
+    return self.generic('POST', path, data, content_type, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:237: in generic
+    return super().generic(
+venv\Lib\site-packages\django\test\client.py:671: in generic
+    return self.request(**r)
+           ^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:289: in request
+    return super().request(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:241: in request
+    request = super().request(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\test\client.py:1087: in request
+    self.check_exception(response)
+venv\Lib\site-packages\django\test\client.py:802: in check_exception
+    raise exc_value
+venv\Lib\site-packages\django\core\handlers\exception.py:55: in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\core\handlers\base.py:197: in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\decorators\csrf.py:65: in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\generic\base.py:105: in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:515: in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:475: in handle_exception
+    self.raise_uncaught_exception(exc)
+venv\Lib\site-packages\rest_framework\views.py:486: in raise_uncaught_exception
+    raise exc
+venv\Lib\site-packages\rest_framework\views.py:512: in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+bot\views.py:430: in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+---------------------------- Captured stderr call -----------------------------
+[INFO] Usuario eb630fb4-5c5c-4590-830d-d7d5953129f9 (IP: 127.0.0.1): mensaje 1/30 del dÝa (IP: 1/50)
+[ERROR] Request failed: POST /api/v1/bot/webhook/ - 1.21s - 'str' object has no attribute 'get'
+[ERROR] Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+[WARNING] Slow request detected: POST /api/v1/bot/webhook/ - 1.25s
+------------------------------ Captured log call ------------------------------
+ERROR    core.middleware:middleware.py:129 Request failed: POST /api/v1/bot/webhook/ - 1.21s - 'str' object has no attribute 'get'
+ERROR    django.request:log.py:253 Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+WARNING  core.middleware:middleware.py:105 Slow request detected: POST /api/v1/bot/webhook/ - 1.25s
+_______ TestGeminiSDKIntegration.test_gemini_service_has_correct_config _______
+bot\tests\test_gemini_integration.py:62: in test_gemini_service_has_correct_config
+    assert service.timeout == 20
+E   assert 30 == 20
+E    +  where 30 = <bot.services.GeminiService object at 0x0000020EBE633D90>.timeout
+________ TestGeminiSDKIntegration.test_prompt_orchestrator_integration ________
+bot\tests\test_gemini_integration.py:103: in test_prompt_orchestrator_integration
+    assert "REGLA DE SEGURIDAD SUPREMA" in prompt
+E   assert 'REGLA DE SEGURIDAD SUPREMA' in '\n\nEres el Asistente Virtual Inteligente de Test Spa.\nTu objetivo es brindar atenci¾n al cliente excepcional, vender servicios y filtrar leads cualificados para el equipo humano.\n\n--- INSTRUCCIONES DE FORMATO (CR═TICO) ---\nDEBES RESPONDER SIEMPRE EN FORMATO JSON V┴LIDO.\nNo incluyas texto fuera del JSON.\n\nEstructura JSON requerida:\n{\n  "reply_to_user": "Texto de tu respuesta al usuario (amigable, natural, con emojis).",\n  "analysis": {\n    "toxicity_level": 0, // 0=Normal, 1=Leve, 2=Sexual/Inapropiado, 3=Acoso Grave (Bloquear)\n    "customer_score": 50, // 0-100 basado en interÚs y calidad del lead\n    "intent": "INFO", // INFO, BOOKING, HANDOFF_REQUEST, CHIT_CHAT\n    "missing_info": null, // "SERVICE_INTEREST", "CONTACT_INFO" o null\n    "action": "REPLY" // REPLY, ASK_INFO, HANDOFF, BLOCK\n  }\n}\n\n--- REGLAS DE NEGOCIO Y SEGURIDAD ---\n\n1. DETECCIËN DE TOXICIDAD (Sexual/Acoso):\n   - Nivel 0: Conversaci¾n normal.\n   - Nivel 1: Coqueteo leve o bromas suaves. -> Ignora y reencausa al Spa.\n   - Nivel 2: Insinuaciones sexuales claras o preguntas sobre "final feliz". -> ADVERTENCIA.\n   - Nivel 3: Acoso explÝcito, vulgaridad extrema o insistencia sexual tras adver...lar con una persona.\n   - REQUISITO 1: Debes saber quÚ servicio/producto le interesa. Si no lo sabes, PREGUNTA antes de escalar.\n   - REQUISITO 2: Si es un usuario an¾nimo (sin nombre/telÚfono en contexto), PIDE SU WHATSAPP antes de escalar.\n   - Si cumple requisitos -> ACCIËN: HANDOFF.\n   - Si falta info -> ACCIËN: ASK_INFO (Pregunta lo que falta).\n\n3. SCORING DE CLIENTE (0-100):\n   - Base: 10 puntos.\n   - +5 puntos por cada pregunta relevante sobre servicios.\n   - +20 puntos si menciona presupuesto alto, "VIP", "el mejor servicio".\n   - +15 puntos si muestra urgencia ("hoy", "ahora").\n   - -20 puntos si es grosero o cortante.\n\n--- CONTEXTO DEL NEGOCIO ---\nUbicaci¾n: Carrera 64 #1c-87, Cali.\nTel Admin: +57 300 000 0000\nUrl Reservas: https://test.com/booking\n\n--- SERVICIOS DISPONIBLES ---\nNo hay servicios activos en este momento.\n\n--- PRODUCTOS ---\nNo hay productos publicados actualmente.\n\n--- DATOS DEL CLIENTE ---\n\n        Cliente: Test\n        Estado VIP: No\n        Sin citas pr¾ximas agendadas.\n        \n\n\n--- HISTORIAL DE CONVERSACIËN ---\n\n\n--- MENSAJE ACTUAL DEL USUARIO ---\nUSER: ┐QuÚ servicios ofrecen?\n\nRecuerda: Responde SOLO en JSON.\n'
+_________ TestGeminiSDKIntegration.test_security_guardrail_detection __________
+bot\tests\test_gemini_integration.py:158: in test_security_guardrail_detection
+    response = self.client.post('/api/v1/bot/webhook/', {
+venv\Lib\site-packages\rest_framework\test.py:299: in post
+    response = super().post(
+venv\Lib\site-packages\rest_framework\test.py:213: in post
+    return self.generic('POST', path, data, content_type, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:237: in generic
+    return super().generic(
+venv\Lib\site-packages\django\test\client.py:671: in generic
+    return self.request(**r)
+           ^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:289: in request
+    return super().request(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:241: in request
+    request = super().request(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\test\client.py:1087: in request
+    self.check_exception(response)
+venv\Lib\site-packages\django\test\client.py:802: in check_exception
+    raise exc_value
+venv\Lib\site-packages\django\core\handlers\exception.py:55: in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\core\handlers\base.py:197: in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\decorators\csrf.py:65: in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\generic\base.py:105: in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:515: in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:475: in handle_exception
+    self.raise_uncaught_exception(exc)
+venv\Lib\site-packages\rest_framework\views.py:486: in raise_uncaught_exception
+    raise exc
+venv\Lib\site-packages\rest_framework\views.py:512: in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+bot\views.py:430: in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+---------------------------- Captured stderr call -----------------------------
+[INFO] Usuario 03a8c756-620a-4e50-a0ff-128aeb0078a2 (IP: 127.0.0.1): mensaje 1/30 del dÝa (IP: 1/50)
+[ERROR] Request failed: POST /api/v1/bot/webhook/ - 1.06s - 'str' object has no attribute 'get'
+[ERROR] Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+[WARNING] Slow request detected: POST /api/v1/bot/webhook/ - 1.07s
+------------------------------ Captured log call ------------------------------
+ERROR    core.middleware:middleware.py:129 Request failed: POST /api/v1/bot/webhook/ - 1.06s - 'str' object has no attribute 'get'
+ERROR    django.request:log.py:253 Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+WARNING  core.middleware:middleware.py:105 Slow request detected: POST /api/v1/bot/webhook/ - 1.07s
+-------------------------- Captured stderr teardown ---------------------------
+[DEBUG] close.started
+[DEBUG] close.complete
+________________ TestGeminiSDKIntegration.test_token_tracking _________________
+bot\tests\test_gemini_integration.py:189: in test_token_tracking
+    response = self.client.post('/api/v1/bot/webhook/', {
+venv\Lib\site-packages\rest_framework\test.py:299: in post
+    response = super().post(
+venv\Lib\site-packages\rest_framework\test.py:213: in post
+    return self.generic('POST', path, data, content_type, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:237: in generic
+    return super().generic(
+venv\Lib\site-packages\django\test\client.py:671: in generic
+    return self.request(**r)
+           ^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:289: in request
+    return super().request(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:241: in request
+    request = super().request(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\test\client.py:1087: in request
+    self.check_exception(response)
+venv\Lib\site-packages\django\test\client.py:802: in check_exception
+    raise exc_value
+venv\Lib\site-packages\django\core\handlers\exception.py:55: in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\core\handlers\base.py:197: in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\decorators\csrf.py:65: in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\generic\base.py:105: in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:515: in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:475: in handle_exception
+    self.raise_uncaught_exception(exc)
+venv\Lib\site-packages\rest_framework\views.py:486: in raise_uncaught_exception
+    raise exc
+venv\Lib\site-packages\rest_framework\views.py:512: in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+bot\views.py:430: in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+---------------------------- Captured stderr call -----------------------------
+[INFO] Usuario 9890963f-d9fa-487b-bdb1-da5ac8bc06b8 (IP: 127.0.0.1): mensaje 1/30 del dÝa (IP: 1/50)
+[ERROR] Request failed: POST /api/v1/bot/webhook/ - 1.07s - 'str' object has no attribute 'get'
+[ERROR] Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+[WARNING] Slow request detected: POST /api/v1/bot/webhook/ - 1.07s
+------------------------------ Captured log call ------------------------------
+ERROR    core.middleware:middleware.py:129 Request failed: POST /api/v1/bot/webhook/ - 1.07s - 'str' object has no attribute 'get'
+ERROR    django.request:log.py:253 Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+WARNING  core.middleware:middleware.py:105 Slow request detected: POST /api/v1/bot/webhook/ - 1.07s
+__________________________ test_prompt_construction ___________________________
+bot\tests\test_orchestrator.py:16: in test_prompt_construction
+    assert "[INICIO_MENSAJE_USUARIO]" in full_prompt
+E   assert '[INICIO_MENSAJE_USUARIO]' in '\n\nEres el Asistente Virtual Inteligente de Spa Test.\nTu objetivo es brindar atenci¾n al cliente excepcional, vender servicios y filtrar leads cualificados para el equipo humano.\n\n--- INSTRUCCIONES DE FORMATO (CR═TICO) ---\nDEBES RESPONDER SIEMPRE EN FORMATO JSON V┴LIDO.\nNo incluyas texto fuera del JSON.\n\nEstructura JSON requerida:\n{\n  "reply_to_user": "Texto de tu respuesta al usuario (amigable, natural, con emojis).",\n  "analysis": {\n    "toxicity_level": 0, // 0=Normal, 1=Leve, 2=Sexual/Inapropiado, 3=Acoso Grave (Bloquear)\n    "customer_score": 50, // 0-100 basado en interÚs y calidad del lead\n    "intent": "INFO", // INFO, BOOKING, HANDOFF_REQUEST, CHIT_CHAT\n    "missing_info": null, // "SERVICE_INTEREST", "CONTACT_INFO" o null\n    "action": "REPLY" // REPLY, ASK_INFO, HANDOFF, BLOCK\n  }\n}\n\n--- REGLAS DE NEGOCIO Y SEGURIDAD ---\n\n1. DETECCIËN DE TOXICIDAD (Sexual/Acoso):\n   - Nivel 0: Conversaci¾n normal.\n   - Nivel 1: Coqueteo leve o bromas suaves. -> Ignora y reencausa al Spa.\n   - Nivel 2: Insinuaciones sexuales claras o preguntas sobre "final feliz". -> ADVERTENCIA.\n   - Nivel 3: Acoso explÝcito, vulgaridad extrema o insistencia sexual tras adver...i no lo sabes, PREGUNTA antes de escalar.\n   - REQUISITO 2: Si es un usuario an¾nimo (sin nombre/telÚfono en contexto), PIDE SU WHATSAPP antes de escalar.\n   - Si cumple requisitos -> ACCIËN: HANDOFF.\n   - Si falta info -> ACCIËN: ASK_INFO (Pregunta lo que falta).\n\n3. SCORING DE CLIENTE (0-100):\n   - Base: 10 puntos.\n   - +5 puntos por cada pregunta relevante sobre servicios.\n   - +20 puntos si menciona presupuesto alto, "VIP", "el mejor servicio".\n   - +15 puntos si muestra urgencia ("hoy", "ahora").\n   - -20 puntos si es grosero o cortante.\n\n--- CONTEXTO DEL NEGOCIO ---\nUbicaci¾n: Carrera 64 #1c-87, Cali.\nTel Admin: +573001234567\nUrl Reservas: https://test.com\n\n--- SERVICIOS DISPONIBLES ---\nNo hay servicios activos en este momento.\n\n--- PRODUCTOS ---\nNo hay productos publicados actualmente.\n\n--- DATOS DEL CLIENTE ---\n\n        Cliente: oJOhhSkJzjmmwfImZjLrqXccepLkGMxDGoAiVnvaJDTEsXXvyTWHgBKVAKTLJBIyDYtLVwgfwPJKIxMegHOpYnYoXbtCFBSEIkOK\n        Estado VIP: No\n        Sin citas pr¾ximas agendadas.\n        \n\n\n--- HISTORIAL DE CONVERSACIËN ---\n\n\n--- MENSAJE ACTUAL DEL USUARIO ---\nUSER: Quiero un masaje relajante\n\nRecuerda: Responde SOLO en JSON.\n'
+________ SessionHijackingPreventionTest.test_session_hijacking_blocked ________
+bot\tests\test_security_fixes.py:41: in test_session_hijacking_blocked
+    response1 = self.client.post(
+venv\Lib\site-packages\rest_framework\test.py:299: in post
+    response = super().post(
+venv\Lib\site-packages\rest_framework\test.py:213: in post
+    return self.generic('POST', path, data, content_type, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:237: in generic
+    return super().generic(
+venv\Lib\site-packages\django\test\client.py:671: in generic
+    return self.request(**r)
+           ^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:289: in request
+    return super().request(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:241: in request
+    request = super().request(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\test\client.py:1087: in request
+    self.check_exception(response)
+venv\Lib\site-packages\django\test\client.py:802: in check_exception
+    raise exc_value
+venv\Lib\site-packages\django\core\handlers\exception.py:55: in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\core\handlers\base.py:197: in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\decorators\csrf.py:65: in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\generic\base.py:105: in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:515: in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:475: in handle_exception
+    self.raise_uncaught_exception(exc)
+venv\Lib\site-packages\rest_framework\views.py:486: in raise_uncaught_exception
+    raise exc
+venv\Lib\site-packages\rest_framework\views.py:512: in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+bot\views.py:430: in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+---------------------------- Captured stderr call -----------------------------
+[INFO] Nuevo usuario an¾nimo creado: 1e63934f-8a00-4d0b-bd71-53a35f980bc7 desde IP 127.0.0.1
+[INFO] Usuario anon_480 (IP: 127.0.0.1): mensaje 1/30 del dÝa (IP: 1/50)
+[ERROR] Request failed: POST /api/v1/bot/webhook/ - 1.23s - 'str' object has no attribute 'get'
+[ERROR] Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+[WARNING] Slow request detected: POST /api/v1/bot/webhook/ - 1.23s
+------------------------------ Captured log call ------------------------------
+ERROR    core.middleware:middleware.py:129 Request failed: POST /api/v1/bot/webhook/ - 1.23s - 'str' object has no attribute 'get'
+ERROR    django.request:log.py:253 Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+WARNING  core.middleware:middleware.py:105 Slow request detected: POST /api/v1/bot/webhook/ - 1.23s
+______ SessionHijackingPreventionTest.test_session_reuse_same_ip_allowed ______
+bot\tests\test_security_fixes.py:83: in test_session_reuse_same_ip_allowed
+    response1 = self.client.post(
+venv\Lib\site-packages\rest_framework\test.py:299: in post
+    response = super().post(
+venv\Lib\site-packages\rest_framework\test.py:213: in post
+    return self.generic('POST', path, data, content_type, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:237: in generic
+    return super().generic(
+venv\Lib\site-packages\django\test\client.py:671: in generic
+    return self.request(**r)
+           ^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:289: in request
+    return super().request(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:241: in request
+    request = super().request(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\test\client.py:1087: in request
+    self.check_exception(response)
+venv\Lib\site-packages\django\test\client.py:802: in check_exception
+    raise exc_value
+venv\Lib\site-packages\django\core\handlers\exception.py:55: in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\core\handlers\base.py:197: in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\decorators\csrf.py:65: in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\generic\base.py:105: in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:515: in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:475: in handle_exception
+    self.raise_uncaught_exception(exc)
+venv\Lib\site-packages\rest_framework\views.py:486: in raise_uncaught_exception
+    raise exc
+venv\Lib\site-packages\rest_framework\views.py:512: in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+bot\views.py:430: in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+---------------------------- Captured stderr call -----------------------------
+[INFO] Nuevo usuario an¾nimo creado: 2ee73b7f-b1e8-41ea-b590-2de880626e90 desde IP 127.0.0.1
+[INFO] Usuario anon_481 (IP: 127.0.0.1): mensaje 1/30 del dÝa (IP: 1/50)
+[ERROR] Request failed: POST /api/v1/bot/webhook/ - 1.06s - 'str' object has no attribute 'get'
+[ERROR] Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+[WARNING] Slow request detected: POST /api/v1/bot/webhook/ - 1.07s
+------------------------------ Captured log call ------------------------------
+ERROR    core.middleware:middleware.py:129 Request failed: POST /api/v1/bot/webhook/ - 1.06s - 'str' object has no attribute 'get'
+ERROR    django.request:log.py:253 Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+WARNING  core.middleware:middleware.py:105 Slow request detected: POST /api/v1/bot/webhook/ - 1.07s
+________ IPInjectionProtectionTest.test_invalid_ip_handled_gracefully _________
+bot\tests\test_security_fixes.py:136: in test_invalid_ip_handled_gracefully
+    response = self.client.post(
+venv\Lib\site-packages\rest_framework\test.py:299: in post
+    response = super().post(
+venv\Lib\site-packages\rest_framework\test.py:213: in post
+    return self.generic('POST', path, data, content_type, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:237: in generic
+    return super().generic(
+venv\Lib\site-packages\django\test\client.py:671: in generic
+    return self.request(**r)
+           ^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:289: in request
+    return super().request(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:241: in request
+    request = super().request(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\test\client.py:1087: in request
+    self.check_exception(response)
+venv\Lib\site-packages\django\test\client.py:802: in check_exception
+    raise exc_value
+venv\Lib\site-packages\django\core\handlers\exception.py:55: in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\core\handlers\base.py:197: in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\decorators\csrf.py:65: in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\generic\base.py:105: in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:515: in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:475: in handle_exception
+    self.raise_uncaught_exception(exc)
+venv\Lib\site-packages\rest_framework\views.py:486: in raise_uncaught_exception
+    raise exc
+venv\Lib\site-packages\rest_framework\views.py:512: in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+bot\views.py:430: in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+---------------------------- Captured stderr call -----------------------------
+[INFO] Nuevo usuario an¾nimo creado: 37905ac4-0eb6-476b-82ed-41c3c448bf69 desde IP 127.0.0.1
+[INFO] Usuario anon_482 (IP: 127.0.0.1): mensaje 1/30 del dÝa (IP: 1/50)
+[ERROR] Request failed: POST /api/v1/bot/webhook/ - 1.18s - 'str' object has no attribute 'get'
+[ERROR] Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+[WARNING] Slow request detected: POST /api/v1/bot/webhook/ - 1.19s
+------------------------------ Captured log call ------------------------------
+ERROR    core.middleware:middleware.py:129 Request failed: POST /api/v1/bot/webhook/ - 1.18s - 'str' object has no attribute 'get'
+ERROR    django.request:log.py:253 Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+WARNING  core.middleware:middleware.py:105 Slow request detected: POST /api/v1/bot/webhook/ - 1.19s
+_____________ IPInjectionProtectionTest.test_valid_ipv4_accepted ______________
+bot\tests\test_security_fixes.py:168: in test_valid_ipv4_accepted
+    response = self.client.post(
+venv\Lib\site-packages\rest_framework\test.py:299: in post
+    response = super().post(
+venv\Lib\site-packages\rest_framework\test.py:213: in post
+    return self.generic('POST', path, data, content_type, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:237: in generic
+    return super().generic(
+venv\Lib\site-packages\django\test\client.py:671: in generic
+    return self.request(**r)
+           ^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:289: in request
+    return super().request(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:241: in request
+    request = super().request(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\test\client.py:1087: in request
+    self.check_exception(response)
+venv\Lib\site-packages\django\test\client.py:802: in check_exception
+    raise exc_value
+venv\Lib\site-packages\django\core\handlers\exception.py:55: in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\core\handlers\base.py:197: in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\decorators\csrf.py:65: in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\generic\base.py:105: in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:515: in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:475: in handle_exception
+    self.raise_uncaught_exception(exc)
+venv\Lib\site-packages\rest_framework\views.py:486: in raise_uncaught_exception
+    raise exc
+venv\Lib\site-packages\rest_framework\views.py:512: in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+bot\views.py:430: in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+---------------------------- Captured stderr call -----------------------------
+[INFO] Nuevo usuario an¾nimo creado: e707e026-4515-421b-b325-4b70abe77cf2 desde IP 127.0.0.1
+[INFO] Usuario anon_483 (IP: 127.0.0.1): mensaje 1/30 del dÝa (IP: 1/50)
+[ERROR] Request failed: POST /api/v1/bot/webhook/ - 1.07s - 'str' object has no attribute 'get'
+[ERROR] Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+[WARNING] Slow request detected: POST /api/v1/bot/webhook/ - 1.07s
+------------------------------ Captured log call ------------------------------
+ERROR    core.middleware:middleware.py:129 Request failed: POST /api/v1/bot/webhook/ - 1.07s - 'str' object has no attribute 'get'
+ERROR    django.request:log.py:253 Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+WARNING  core.middleware:middleware.py:105 Slow request detected: POST /api/v1/bot/webhook/ - 1.07s
+_____________ IPInjectionProtectionTest.test_valid_ipv6_accepted ______________
+bot\tests\test_security_fixes.py:192: in test_valid_ipv6_accepted
+    response = self.client.post(
+venv\Lib\site-packages\rest_framework\test.py:299: in post
+    response = super().post(
+venv\Lib\site-packages\rest_framework\test.py:213: in post
+    return self.generic('POST', path, data, content_type, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:237: in generic
+    return super().generic(
+venv\Lib\site-packages\django\test\client.py:671: in generic
+    return self.request(**r)
+           ^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:289: in request
+    return super().request(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:241: in request
+    request = super().request(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\test\client.py:1087: in request
+    self.check_exception(response)
+venv\Lib\site-packages\django\test\client.py:802: in check_exception
+    raise exc_value
+venv\Lib\site-packages\django\core\handlers\exception.py:55: in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\core\handlers\base.py:197: in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\decorators\csrf.py:65: in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\generic\base.py:105: in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:515: in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:475: in handle_exception
+    self.raise_uncaught_exception(exc)
+venv\Lib\site-packages\rest_framework\views.py:486: in raise_uncaught_exception
+    raise exc
+venv\Lib\site-packages\rest_framework\views.py:512: in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+bot\views.py:430: in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+---------------------------- Captured stderr call -----------------------------
+[INFO] Nuevo usuario an¾nimo creado: f4e7a8ad-9ec5-483f-917b-55ecf972a61b desde IP 127.0.0.1
+[INFO] Usuario anon_484 (IP: 127.0.0.1): mensaje 1/30 del dÝa (IP: 1/50)
+[ERROR] Request failed: POST /api/v1/bot/webhook/ - 1.05s - 'str' object has no attribute 'get'
+[ERROR] Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+[WARNING] Slow request detected: POST /api/v1/bot/webhook/ - 1.05s
+------------------------------ Captured log call ------------------------------
+ERROR    core.middleware:middleware.py:129 Request failed: POST /api/v1/bot/webhook/ - 1.05s - 'str' object has no attribute 'get'
+ERROR    django.request:log.py:253 Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+WARNING  core.middleware:middleware.py:105 Slow request detected: POST /api/v1/bot/webhook/ - 1.05s
+_____ PrematureUserCreationPreventionTest.test_valid_message_creates_user _____
+bot\tests\test_security_fixes.py:280: in test_valid_message_creates_user
+    response = self.client.post(
+venv\Lib\site-packages\rest_framework\test.py:299: in post
+    response = super().post(
+venv\Lib\site-packages\rest_framework\test.py:213: in post
+    return self.generic('POST', path, data, content_type, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:237: in generic
+    return super().generic(
+venv\Lib\site-packages\django\test\client.py:671: in generic
+    return self.request(**r)
+           ^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:289: in request
+    return super().request(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:241: in request
+    request = super().request(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\test\client.py:1087: in request
+    self.check_exception(response)
+venv\Lib\site-packages\django\test\client.py:802: in check_exception
+    raise exc_value
+venv\Lib\site-packages\django\core\handlers\exception.py:55: in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\core\handlers\base.py:197: in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\decorators\csrf.py:65: in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\generic\base.py:105: in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:515: in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:475: in handle_exception
+    self.raise_uncaught_exception(exc)
+venv\Lib\site-packages\rest_framework\views.py:486: in raise_uncaught_exception
+    raise exc
+venv\Lib\site-packages\rest_framework\views.py:512: in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+bot\views.py:430: in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+---------------------------- Captured stderr call -----------------------------
+[INFO] Nuevo usuario an¾nimo creado: 1e5943ec-0b99-45e6-a543-1a5cc1884805 desde IP 127.0.0.1
+[INFO] Usuario anon_485 (IP: 127.0.0.1): mensaje 1/30 del dÝa (IP: 1/50)
+[ERROR] Request failed: POST /api/v1/bot/webhook/ - 1.09s - 'str' object has no attribute 'get'
+[ERROR] Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+[WARNING] Slow request detected: POST /api/v1/bot/webhook/ - 1.09s
+------------------------------ Captured log call ------------------------------
+ERROR    core.middleware:middleware.py:129 Request failed: POST /api/v1/bot/webhook/ - 1.09s - 'str' object has no attribute 'get'
+ERROR    django.request:log.py:253 Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+WARNING  core.middleware:middleware.py:105 Slow request detected: POST /api/v1/bot/webhook/ - 1.09s
+_______ ImprovedGuardrailDetectionTest.test_guardrail_case_insensitive ________
+bot\tests\test_security_fixes.py:316: in test_guardrail_case_insensitive
+    response = self.client.post(
+venv\Lib\site-packages\rest_framework\test.py:299: in post
+    response = super().post(
+venv\Lib\site-packages\rest_framework\test.py:213: in post
+    return self.generic('POST', path, data, content_type, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:237: in generic
+    return super().generic(
+venv\Lib\site-packages\django\test\client.py:671: in generic
+    return self.request(**r)
+           ^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:289: in request
+    return super().request(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:241: in request
+    request = super().request(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\test\client.py:1087: in request
+    self.check_exception(response)
+venv\Lib\site-packages\django\test\client.py:802: in check_exception
+    raise exc_value
+venv\Lib\site-packages\django\core\handlers\exception.py:55: in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\core\handlers\base.py:197: in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\decorators\csrf.py:65: in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\generic\base.py:105: in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:515: in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:475: in handle_exception
+    self.raise_uncaught_exception(exc)
+venv\Lib\site-packages\rest_framework\views.py:486: in raise_uncaught_exception
+    raise exc
+venv\Lib\site-packages\rest_framework\views.py:512: in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+bot\views.py:430: in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+---------------------------- Captured stderr call -----------------------------
+[INFO] Nuevo usuario an¾nimo creado: b3984d8c-49eb-4109-ba46-b3cb571e8a6a desde IP 127.0.0.1
+[INFO] Usuario anon_486 (IP: 127.0.0.1): mensaje 1/30 del dÝa (IP: 1/50)
+[ERROR] Request failed: POST /api/v1/bot/webhook/ - 1.06s - 'str' object has no attribute 'get'
+[ERROR] Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+[WARNING] Slow request detected: POST /api/v1/bot/webhook/ - 1.06s
+------------------------------ Captured log call ------------------------------
+ERROR    core.middleware:middleware.py:129 Request failed: POST /api/v1/bot/webhook/ - 1.06s - 'str' object has no attribute 'get'
+ERROR    django.request:log.py:253 Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+WARNING  core.middleware:middleware.py:105 Slow request detected: POST /api/v1/bot/webhook/ - 1.06s
+__ ImprovedGuardrailDetectionTest.test_guardrail_partial_match_not_detected ___
+bot\tests\test_security_fixes.py:349: in test_guardrail_partial_match_not_detected
+    response = self.client.post(
+venv\Lib\site-packages\rest_framework\test.py:299: in post
+    response = super().post(
+venv\Lib\site-packages\rest_framework\test.py:213: in post
+    return self.generic('POST', path, data, content_type, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:237: in generic
+    return super().generic(
+venv\Lib\site-packages\django\test\client.py:671: in generic
+    return self.request(**r)
+           ^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:289: in request
+    return super().request(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:241: in request
+    request = super().request(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\test\client.py:1087: in request
+    self.check_exception(response)
+venv\Lib\site-packages\django\test\client.py:802: in check_exception
+    raise exc_value
+venv\Lib\site-packages\django\core\handlers\exception.py:55: in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\core\handlers\base.py:197: in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\decorators\csrf.py:65: in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\generic\base.py:105: in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:515: in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:475: in handle_exception
+    self.raise_uncaught_exception(exc)
+venv\Lib\site-packages\rest_framework\views.py:486: in raise_uncaught_exception
+    raise exc
+venv\Lib\site-packages\rest_framework\views.py:512: in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+bot\views.py:430: in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+---------------------------- Captured stderr call -----------------------------
+[INFO] Nuevo usuario an¾nimo creado: 74dece29-6992-424a-ae38-15b5cea5cc35 desde IP 127.0.0.1
+[INFO] Usuario anon_487 (IP: 127.0.0.1): mensaje 1/30 del dÝa (IP: 1/50)
+[ERROR] Request failed: POST /api/v1/bot/webhook/ - 1.07s - 'str' object has no attribute 'get'
+[ERROR] Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+[WARNING] Slow request detected: POST /api/v1/bot/webhook/ - 1.07s
+------------------------------ Captured log call ------------------------------
+ERROR    core.middleware:middleware.py:129 Request failed: POST /api/v1/bot/webhook/ - 1.07s - 'str' object has no attribute 'get'
+ERROR    django.request:log.py:253 Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+WARNING  core.middleware:middleware.py:105 Slow request detected: POST /api/v1/bot/webhook/ - 1.07s
+________ ImprovedGuardrailDetectionTest.test_guardrail_with_whitespace ________
+bot\tests\test_security_fixes.py:336: in test_guardrail_with_whitespace
+    response = self.client.post(
+venv\Lib\site-packages\rest_framework\test.py:299: in post
+    response = super().post(
+venv\Lib\site-packages\rest_framework\test.py:213: in post
+    return self.generic('POST', path, data, content_type, **extra)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:237: in generic
+    return super().generic(
+venv\Lib\site-packages\django\test\client.py:671: in generic
+    return self.request(**r)
+           ^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:289: in request
+    return super().request(**kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\test.py:241: in request
+    request = super().request(**kwargs)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\test\client.py:1087: in request
+    self.check_exception(response)
+venv\Lib\site-packages\django\test\client.py:802: in check_exception
+    raise exc_value
+venv\Lib\site-packages\django\core\handlers\exception.py:55: in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\core\handlers\base.py:197: in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\decorators\csrf.py:65: in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\django\views\generic\base.py:105: in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:515: in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\rest_framework\views.py:475: in handle_exception
+    self.raise_uncaught_exception(exc)
+venv\Lib\site-packages\rest_framework\views.py:486: in raise_uncaught_exception
+    raise exc
+venv\Lib\site-packages\rest_framework\views.py:512: in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+bot\views.py:430: in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+---------------------------- Captured stderr call -----------------------------
+[INFO] Nuevo usuario an¾nimo creado: 6b5b3a60-f7ab-4eba-9f12-24df851ec238 desde IP 127.0.0.1
+[INFO] Usuario anon_488 (IP: 127.0.0.1): mensaje 1/30 del dÝa (IP: 1/50)
+[ERROR] Request failed: POST /api/v1/bot/webhook/ - 1.07s - 'str' object has no attribute 'get'
+[ERROR] Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+[WARNING] Slow request detected: POST /api/v1/bot/webhook/ - 1.07s
+------------------------------ Captured log call ------------------------------
+ERROR    core.middleware:middleware.py:129 Request failed: POST /api/v1/bot/webhook/ - 1.07s - 'str' object has no attribute 'get'
+ERROR    django.request:log.py:253 Internal Server Error: /api/v1/bot/webhook/
+Traceback (most recent call last):
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\exception.py", line 55, in inner
+    response = get_response(request)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\core\handlers\base.py", line 197, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\decorators\csrf.py", line 65, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 515, in dispatch
+    response = self.handle_exception(exc)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 475, in handle_exception
+    self.raise_uncaught_exception(exc)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 486, in raise_uncaught_exception
+    raise exc
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Lib\site-packages\rest_framework\views.py", line 512, in dispatch
+    response = handler(request, *args, **kwargs)
+  File "C:\Users\joshe\Desktop\Zenz\zenzspa_project\bot\views.py", line 430, in post
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+WARNING  core.middleware:middleware.py:105 Slow request detected: POST /api/v1/bot/webhook/ - 1.07s
+___________ HealthCheckSecurityTest.test_health_check_minimal_info ____________
+bot\tests\test_security_fixes.py:377: in test_health_check_minimal_info
+    self.assertEqual(len(response.data), 1)
+E   AssertionError: 2 != 1
+---------------------------- Captured stderr call -----------------------------
+[WARNING] Slow request detected: GET /api/v1/bot/health/ - 1.05s
+------------------------------ Captured log call ------------------------------
+WARNING  core.middleware:middleware.py:105 Slow request detected: GET /api/v1/bot/health/ - 1.05s
+___________ TestBotTasks.test_process_bot_message_async_creates_log ___________
+bot\tests\test_tasks.py:201: in test_process_bot_message_async_creates_log
+    result = process_bot_message_async.run(
+bot\tasks.py:271: in process_bot_message_async
+    raise self.retry(countdown=10, exc=e)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\celery\app\task.py:727: in retry
+    raise_with_context(exc or Retry('Task can be retried', None))
+bot\tasks.py:150: in process_bot_message_async
+    reply_text = agent_response.get("reply_to_user", "")
+                 ^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'get'
+---------------------------- Captured stderr call -----------------------------
+[ERROR] \u274c Error procesando mensaje en task None: 'str' object has no attribute 'get'\nTraceback (most recent call last):\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\bot\\tasks.py", line 150, in process_bot_message_async\n    reply_text = agent_response.get("reply_to_user", "")\n                 ^^^^^^^^^^^^^^^^^^\nAttributeError: 'str' object has no attribute 'get'\n--- Logging error ---\nTraceback (most recent call last):\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\bot\\tasks.py", line 150, in process_bot_message_async\n    reply_text = agent_response.get("reply_to_user", "")\n                 ^^^^^^^^^^^^^^^^^^\nAttributeError: 'str' object has no attribute 'get'\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File "C:\\Users\\joshe\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\logging\\__init__.py", line 1153, in emit\n    stream.write(msg + self.terminator)\n    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^\n  File "C:\\Users\\joshe\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\encodings\\cp1252.py", line 19, in encode\n    return codecs.charmap_encode(input,self.errors,encoding_table)[0]\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nUnicodeEncodeError: 'charmap' codec can't encode character '\\u274c' in position 55: character maps to <undefined>\nCall stack:\n  File "<frozen runpy>", line 198, in _run_module_as_main\n  File "<frozen runpy>", line 88, in _run_code\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pytest\\__main__.py", line 9, in <module>\n    raise SystemExit(pytest.console_main())\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\config\\__init__.py", line 221, in console_main\n    code = main()\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\config\\__init__.py", line 197, in main\n    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_hooks.py", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_manager.py", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_callers.py", line 121, in _multicall\n    res = hook_impl.function(*args)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\main.py", line 365, in pytest_cmdline_main\n    return wrap_session(config, _main)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\main.py", line 318, in wrap_session\n    session.exitstatus = doit(config, session) or 0\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\main.py", line 372, in _main\n    config.hook.pytest_runtestloop(session=session)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_hooks.py", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_manager.py", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_callers.py", line 121, in _multicall\n    res = hook_impl.function(*args)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\main.py", line 396, in pytest_runtestloop\n    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_hooks.py", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_manager.py", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_callers.py", line 121, in _multicall\n    res = hook_impl.function(*args)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\runner.py", line 118, in pytest_runtest_protocol\n    runtestprotocol(item, nextitem=nextitem)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\runner.py", line 137, in runtestprotocol\n    reports.append(call_and_report(item, "call", log))\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\runner.py", line 244, in call_and_report\n    call = CallInfo.from_call(\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\runner.py", line 353, in from_call\n    result: TResult | None = func()\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\runner.py", line 245, in <lambda>\n    lambda: runtest_hook(item=item, **kwds),\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_hooks.py", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_manager.py", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_callers.py", line 121, in _multicall\n    res = hook_impl.function(*args)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\runner.py", line 179, in pytest_runtest_call\n    item.runtest()\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\python.py", line 1720, in runtest\n    self.ihook.pytest_pyfunc_call(pyfuncitem=self)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_hooks.py", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_manager.py", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_callers.py", line 121, in _multicall\n    res = hook_impl.function(*args)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\python.py", line 166, in pytest_pyfunc_call\n    result = testfunction(**testargs)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\bot\\tests\\test_tasks.py", line 201, in test_process_bot_message_async_creates_log\n    result = process_bot_message_async.run(\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\bot\\tasks.py", line 269, in process_bot_message_async\n    logger.exception("\u274c Error procesando mensaje en task %s: %s", self.request.id, e)\nMessage: '\u274c Error procesando mensaje en task %s: %s'\nArguments: (None, AttributeError("'str' object has no attribute 'get'"))
+___ TestBotTasks.test_process_bot_message_async_returns_error_after_retries ___
+bot\tests\test_tasks.py:278: in test_process_bot_message_async_returns_error_after_retries
+    result = process_bot_message_async.run(
+bot\tasks.py:271: in process_bot_message_async
+    raise self.retry(countdown=10, exc=e)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+venv\Lib\site-packages\celery\app\task.py:727: in retry
+    raise_with_context(exc or Retry('Task can be retried', None))
+bot\tasks.py:146: in process_bot_message_async
+    agent_response, meta = gemini.generate_response(prompt)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\unittest\mock.py:1169: in __call__
+    return self._mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\unittest\mock.py:1173: in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\..\..\AppData\Local\Programs\Python\Python313\Lib\unittest\mock.py:1228: in _execute_mock_call
+    raise effect
+E   ValueError: boom
+---------------------------- Captured stderr call -----------------------------
+[ERROR] \u274c Error procesando mensaje en task None: boom\nTraceback (most recent call last):\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\bot\\tasks.py", line 146, in process_bot_message_async\n    agent_response, meta = gemini.generate_response(prompt)\n                           ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^\n  File "C:\\Users\\joshe\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\unittest\\mock.py", line 1169, in __call__\n    return self._mock_call(*args, **kwargs)\n           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n  File "C:\\Users\\joshe\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\unittest\\mock.py", line 1173, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n  File "C:\\Users\\joshe\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\unittest\\mock.py", line 1228, in _execute_mock_call\n    raise effect\nValueError: boom\n--- Logging error ---\nTraceback (most recent call last):\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\bot\\tasks.py", line 146, in process_bot_message_async\n    agent_response, meta = gemini.generate_response(prompt)\n                           ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^\n  File "C:\\Users\\joshe\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\unittest\\mock.py", line 1169, in __call__\n    return self._mock_call(*args, **kwargs)\n           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n  File "C:\\Users\\joshe\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\unittest\\mock.py", line 1173, in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n  File "C:\\Users\\joshe\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\unittest\\mock.py", line 1228, in _execute_mock_call\n    raise effect\nValueError: boom\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File "C:\\Users\\joshe\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\logging\\__init__.py", line 1153, in emit\n    stream.write(msg + self.terminator)\n    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^\n  File "C:\\Users\\joshe\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\encodings\\cp1252.py", line 19, in encode\n    return codecs.charmap_encode(input,self.errors,encoding_table)[0]\n           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nUnicodeEncodeError: 'charmap' codec can't encode character '\\u274c' in position 55: character maps to <undefined>\nCall stack:\n  File "<frozen runpy>", line 198, in _run_module_as_main\n  File "<frozen runpy>", line 88, in _run_code\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pytest\\__main__.py", line 9, in <module>\n    raise SystemExit(pytest.console_main())\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\config\\__init__.py", line 221, in console_main\n    code = main()\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\config\\__init__.py", line 197, in main\n    ret: ExitCode | int = config.hook.pytest_cmdline_main(config=config)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_hooks.py", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_manager.py", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_callers.py", line 121, in _multicall\n    res = hook_impl.function(*args)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\main.py", line 365, in pytest_cmdline_main\n    return wrap_session(config, _main)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\main.py", line 318, in wrap_session\n    session.exitstatus = doit(config, session) or 0\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\main.py", line 372, in _main\n    config.hook.pytest_runtestloop(session=session)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_hooks.py", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_manager.py", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_callers.py", line 121, in _multicall\n    res = hook_impl.function(*args)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\main.py", line 396, in pytest_runtestloop\n    item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_hooks.py", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_manager.py", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_callers.py", line 121, in _multicall\n    res = hook_impl.function(*args)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\runner.py", line 118, in pytest_runtest_protocol\n    runtestprotocol(item, nextitem=nextitem)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\runner.py", line 137, in runtestprotocol\n    reports.append(call_and_report(item, "call", log))\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\runner.py", line 244, in call_and_report\n    call = CallInfo.from_call(\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\runner.py", line 353, in from_call\n    result: TResult | None = func()\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\runner.py", line 245, in <lambda>\n    lambda: runtest_hook(item=item, **kwds),\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_hooks.py", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_manager.py", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_callers.py", line 121, in _multicall\n    res = hook_impl.function(*args)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\runner.py", line 179, in pytest_runtest_call\n    item.runtest()\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\python.py", line 1720, in runtest\n    self.ihook.pytest_pyfunc_call(pyfuncitem=self)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_hooks.py", line 512, in __call__\n    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_manager.py", line 120, in _hookexec\n    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\pluggy\\_callers.py", line 121, in _multicall\n    res = hook_impl.function(*args)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\venv\\Lib\\site-packages\\_pytest\\python.py", line 166, in pytest_pyfunc_call\n    result = testfunction(**testargs)\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\bot\\tests\\test_tasks.py", line 278, in test_process_bot_message_async_returns_error_after_retries\n    result = process_bot_message_async.run(\n  File "C:\\Users\\joshe\\Desktop\\Zenz\\zenzspa_project\\bot\\tasks.py", line 269, in process_bot_message_async\n    logger.exception("\u274c Error procesando mensaje en task %s: %s", self.request.id, e)\nMessage: '\u274c Error procesando mensaje en task %s: %s'\nArguments: (None, ValueError('boom'))
+=========================== short test summary info ===========================
+FAILED bot/tests/test_gemini_integration.py::TestGeminiSDKIntegration::test_bot_webhook_end_to_end
+FAILED bot/tests/test_gemini_integration.py::TestGeminiSDKIntegration::test_gemini_service_has_correct_config
+FAILED bot/tests/test_gemini_integration.py::TestGeminiSDKIntegration::test_prompt_orchestrator_integration
+FAILED bot/tests/test_gemini_integration.py::TestGeminiSDKIntegration::test_security_guardrail_detection
+FAILED bot/tests/test_gemini_integration.py::TestGeminiSDKIntegration::test_token_tracking
+FAILED bot/tests/test_orchestrator.py::test_prompt_construction - assert '[IN...
+FAILED bot/tests/test_security_fixes.py::SessionHijackingPreventionTest::test_session_hijacking_blocked
+FAILED bot/tests/test_security_fixes.py::SessionHijackingPreventionTest::test_session_reuse_same_ip_allowed
+FAILED bot/tests/test_security_fixes.py::IPInjectionProtectionTest::test_invalid_ip_handled_gracefully
+FAILED bot/tests/test_security_fixes.py::IPInjectionProtectionTest::test_valid_ipv4_accepted
+FAILED bot/tests/test_security_fixes.py::IPInjectionProtectionTest::test_valid_ipv6_accepted
+FAILED bot/tests/test_security_fixes.py::PrematureUserCreationPreventionTest::test_valid_message_creates_user
+FAILED bot/tests/test_security_fixes.py::ImprovedGuardrailDetectionTest::test_guardrail_case_insensitive
+FAILED bot/tests/test_security_fixes.py::ImprovedGuardrailDetectionTest::test_guardrail_partial_match_not_detected
+FAILED bot/tests/test_security_fixes.py::ImprovedGuardrailDetectionTest::test_guardrail_with_whitespace
+FAILED bot/tests/test_security_fixes.py::HealthCheckSecurityTest::test_health_check_minimal_info
+FAILED bot/tests/test_tasks.py::TestBotTasks::test_process_bot_message_async_creates_log
+FAILED bot/tests/test_tasks.py::TestBotTasks::test_process_bot_message_async_returns_error_after_retries
+====== 18 failed, 259 passed, 1 skipped, 2 warnings in 100.01s (0:01:40) ======

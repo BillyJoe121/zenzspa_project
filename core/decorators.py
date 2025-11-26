@@ -1,4 +1,6 @@
 from functools import wraps
+import hashlib
+import json
 
 from django.db import transaction
 from django.utils import timezone
@@ -17,9 +19,22 @@ def idempotent_view(timeout=60):
         @wraps(view_func)
         def wrapped(self, request, *args, **kwargs):
             method = getattr(request, "method", "").upper()
+            allowed_methods = {"POST", "PUT", "PATCH", "DELETE"}
+            if method not in allowed_methods:
+                return view_func(self, request, *args, **kwargs)
             key = request.headers.get("Idempotency-Key")
             if not key:
                 return view_func(self, request, *args, **kwargs)
+
+            # Calcular hash del request body
+            request_hash = ""
+            if hasattr(request, 'data') and request.data:
+                try:
+                    request_hash = hashlib.sha256(
+                        json.dumps(request.data, sort_keys=True).encode()
+                    ).hexdigest()
+                except (TypeError, ValueError):
+                    pass
 
             user = request.user if request.user.is_authenticated else None
 
@@ -31,9 +46,19 @@ def idempotent_view(timeout=60):
                         "endpoint": request.path,
                         "status": IdempotencyKey.Status.PENDING,
                         "locked_at": timezone.now(),
+                        "request_hash": request_hash,
                     },
                 )
                 if not created:
+                    # Validar que el hash coincida
+                    if record.request_hash and record.request_hash != request_hash:
+                        return Response(
+                            {
+                                "detail": "La clave de idempotencia ya fue usada con datos diferentes.",
+                                "code": "IDEMPOTENCY_KEY_MISMATCH"
+                            },
+                            status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        )
                     if record.status == IdempotencyKey.Status.COMPLETED and record.response_body is not None:
                         return Response(record.response_body, status=record.status_code)
 

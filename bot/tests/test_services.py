@@ -1,7 +1,35 @@
 import pytest
-import requests
-from model_bakery import baker  # IMPORTANTE: Usaremos baker
+import sys
+import types
+from unittest.mock import MagicMock, patch
+from model_bakery import baker
 from bot.services import GeminiService, DataContextService
+
+# Fallback de módulos google.genai solo si no están instalados.
+# No reemplazamos el paquete real cuando existe.
+try:
+    import google.genai as genai_mod  # type: ignore
+except ImportError:  # pragma: no cover - solo entornos sin google-genai
+    google_mod = sys.modules.setdefault("google", types.ModuleType("google"))
+    genai_mod = types.ModuleType("google.genai")
+    sys.modules["google.genai"] = genai_mod
+    google_mod.genai = genai_mod
+
+    class _DummyModels:
+        def generate_content(self, *args, **kwargs):
+            raise AttributeError("Dummy client cannot call generate_content")
+
+    class _DummyClient:
+        def __init__(self, *args, **kwargs):
+            self.models = _DummyModels()
+
+    genai_mod.Client = _DummyClient
+
+    types_mod = types.ModuleType("google.genai.types")
+    types_mod.GenerateContentConfig = lambda **kwargs: types.SimpleNamespace(**kwargs)
+    types_mod.ThinkingConfig = lambda **kwargs: types.SimpleNamespace(**kwargs)
+    sys.modules["google.genai.types"] = types_mod
+    genai_mod.types = types_mod
 
 @pytest.mark.django_db
 class TestDataContextService:
@@ -12,7 +40,6 @@ class TestDataContextService:
 
     def test_get_services_with_data(self):
         """Prueba que se listen los servicios activos."""
-        # CORRECCIÓN: Usamos baker.make para que cree la 'Category' obligatoria automáticamente
         baker.make('spa.Service', name="Masaje Relax", duration=60, price=100000, is_active=True, description="Desc")
         baker.make('spa.Service', name="Masaje Off", duration=60, price=100000, is_active=False, description="Desc")
         
@@ -24,9 +51,7 @@ class TestDataContextService:
     def test_get_products_formatting(self):
         from marketplace.models import ProductVariant, Product
         
-        # Setup datos reales
         prod = Product.objects.create(name="Aceite", is_active=True)
-        # Usamos SKU único para cada variante
         ProductVariant.objects.create(product=prod, name="50ml", sku="SKU-TEST-1", price=50000, stock=10)
         ProductVariant.objects.create(product=prod, name="100ml", sku="SKU-TEST-2", price=80000, stock=0)
         
@@ -42,9 +67,12 @@ class TestDataContextService:
 
     def test_get_staff_with_data(self):
         from django.contrib.auth import get_user_model
+        from django.core.cache import cache
         User = get_user_model()
 
-        # CORRECCIÓN: Agregamos emails únicos para evitar error de integridad
+        # Limpiar cache antes del test
+        cache.delete('bot_context:staff')
+
         User.objects.create(
             first_name="Ana", last_name="Terapeuta",
             role=User.Role.STAFF, is_active=True,
@@ -67,88 +95,97 @@ class TestDataContextService:
         assert "Cliente" not in ctx
 
     def test_cache_behavior(self):
-        """
-        MEJORA #8: Verifica que el caché de contexto funciona correctamente.
-        """
+        """Verifica que el caché de contexto funciona correctamente."""
         from django.core.cache import cache
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-
-        # Limpiar caché
+        
         cache.clear()
 
-        # Primera llamada - debe hacer query a DB
         baker.make('spa.Service', name="Masaje Test", duration=60, price=100000, is_active=True)
         ctx1 = DataContextService.get_services_context()
         assert "Masaje Test" in ctx1
 
-        # Crear nuevo servicio
         baker.make('spa.Service', name="Masaje Nuevo", duration=90, price=150000, is_active=True)
 
-        # Segunda llamada - debe usar caché (no incluye el nuevo servicio aún)
         ctx2 = DataContextService.get_services_context()
         assert "Masaje Test" in ctx2
-        # El caché aún no tiene "Masaje Nuevo" porque se cacheó antes
-
-        # Limpiar caché manualmente
+        
         cache.delete('bot_context:services')
 
-        # Tercera llamada - debe refrescar desde DB
         ctx3 = DataContextService.get_services_context()
         assert "Masaje Nuevo" in ctx3
 
 @pytest.mark.django_db
 class TestGeminiServiceInternals:
-    # ... (El resto de la clase TestGeminiServiceInternals se queda IGUAL que antes)
+    """
+    Tests unitarios para GeminiService usando mocks del SDK oficial (google.genai).
+    CORRECCIÓN: Ya no mockeamos requests.post, sino google.genai.Client.
+    """
+
     def test_init_missing_api_key(self, settings):
         settings.GEMINI_API_KEY = ""
-        service = GeminiService()
-        assert not service.api_key
+        # Patch os.getenv to ensure no fallback to environment variables
+        with patch("os.getenv", return_value=""):
+            service = GeminiService()
+            assert not service.api_key
+            assert service.client is None
 
-    def test_generate_response_success(self, mocker, settings):
+    @patch("google.genai.Client")
+    def test_generate_response_success(self, mock_client_cls, settings):
         settings.GEMINI_API_KEY = "fake-key"
+        
+        # Configurar el mock del cliente y su respuesta
+        mock_client_instance = mock_client_cls.return_value
+        mock_response = MagicMock()
+        mock_response.text = '{"reply_to_user": "Hola mundo", "analysis": {"action": "REPLY"}}'
+        
+        # Mock usage metadata
+        mock_usage = MagicMock()
+        mock_usage.total_token_count = 15
+        mock_response.usage_metadata = mock_usage
+        
+        mock_client_instance.models.generate_content.return_value = mock_response
+
         service = GeminiService()
-        mock_response = mocker.Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            "candidates": [{"content": {"parts": [{"text": "Hola mundo"}]}}],
-            "usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 5}
-        }
-        mocker.patch("requests.post", return_value=mock_response)
-        text, meta = service.generate_response("Hola")
-        assert text == "Hola mundo"
+        response_json, meta = service.generate_response("Hola")
+        
+        assert response_json["reply_to_user"] == "Hola mundo"
         assert meta["tokens"] == 15
+        assert meta["source"] == "gemini-json"
+        
+        # Verificar que se llamó con los argumentos correctos
+        mock_client_instance.models.generate_content.assert_called_once()
 
-    def test_generate_response_retry_logic(self, mocker, settings):
+    @patch("google.genai.Client")
+    def test_generate_response_security_block(self, mock_client_cls, settings):
+        """Verifica que si no hay texto (bloqueo), se maneja como error."""
         settings.GEMINI_API_KEY = "fake-key"
-        mocker.patch("time.sleep") 
-        service = GeminiService()
-        mock_post = mocker.patch("requests.post", side_effect=[
-            requests.Timeout, requests.Timeout,
-            mocker.Mock(status_code=200, json=lambda: {
-                "candidates": [{"content": {"parts": [{"text": "Al fin"}]}}],
-                "usageMetadata": {}
-            })
-        ])
-        text, _ = service.generate_response("Hola")
-        assert text == "Al fin"
-        assert mock_post.call_count == 3
+        
+        mock_client_instance = mock_client_cls.return_value
+        mock_response = MagicMock()
+        # Simular que acceder a .text lanza AttributeError
+        type(mock_response).text = property(fget=lambda self: (_ for _ in ()).throw(AttributeError("No text")))
 
-    def test_generate_response_security_block(self, mocker, settings):
-        settings.GEMINI_API_KEY = "fake-key"
-        service = GeminiService()
-        mock_response = mocker.Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"promptFeedback": {"blockReason": "SAFETY"}}
-        mocker.patch("requests.post", return_value=mock_response)
-        text, meta = service.generate_response("Nude")
-        assert text == "noRelated"
-        assert meta["reason"] == "blocked_content"
+        mock_client_instance.models.generate_content.return_value = mock_response
 
-    def test_generate_response_connection_error(self, mocker, settings):
-        settings.GEMINI_API_KEY = "fake-key"
         service = GeminiService()
-        mocker.patch("requests.post", side_effect=requests.ConnectionError("Fail"))
-        text, meta = service.generate_response("Hola")
-        assert "problema de conexión" in text
-        assert meta["source"] == "fallback"
+        response_json, meta = service.generate_response("Nude")
+        
+        # En la implementación actual, esto cae en el catch general
+        assert "problemas técnicos" in response_json["reply_to_user"]
+        assert meta["source"] == "error"
+
+    @patch("google.genai.Client")
+    def test_generate_response_api_error(self, mock_client_cls, settings):
+        """Verifica manejo de errores de API"""
+        settings.GEMINI_API_KEY = "fake-key"
+        
+        mock_client_instance = mock_client_cls.return_value
+        # Simular error 500
+        mock_client_instance.models.generate_content.side_effect = Exception("500 Internal Server Error")
+
+        service = GeminiService()
+        response_json, meta = service.generate_response("Hola")
+        
+        assert "problemas técnicos" in response_json["reply_to_user"]
+        assert meta["source"] == "error"
+        assert "500" in meta["reason"]

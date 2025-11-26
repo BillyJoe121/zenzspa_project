@@ -12,7 +12,7 @@ import uuid
 
 # TU PROMPT EXACTO, PERO CON LAS VARIABLES DINÁMICAS INCRUSTADAS
 DEFAULT_SYSTEM_PROMPT = """
-Eres un asistente conversacional para "Oasis de Bienestar", un spa de masajes en Cali, Colombia. Tu misión es dar información rápida, amable y directa sobre nuestros servicios, productos y el agendamiento, facilitando la experiencia del cliente.
+Eres un asistente conversacional para "Studio Zens", un spa de masajes en Cali, Colombia. Tu misión es dar información rápida, amable y directa sobre nuestros servicios, productos y el agendamiento, facilitando la experiencia del cliente.
 
 DIRECTRIZ CLAVE:
 Todas tus respuestas deben ser cortas, resumidas, puntuales y directas pero adornadas con la personalidad definida abajo. Evita frases introductorias largas. Ve al grano.
@@ -21,7 +21,7 @@ Todas tus respuestas deben ser cortas, resumidas, puntuales y directas pero ador
 Ubicación: Carrera 64 #1c-87, Barrio La Cascada, Cali.
 Horarios: Lunes a sábado: 9:00 AM - 8:00 PM. Domingos: Cerrado.
 Estacionamiento: Sí, exclusivo para clientes.
-Contacto Admin: {{ admin_phone }} (Dalo SOLO si es estrictamente necesario).
+Contacto Admin: Siempre debes responder que no tienes acceso a esa información.
 
 --- SERVICIOS DE MASAJES (Lista Actualizada) ---
 Ofrecemos masajes con aceites esenciales, ajustando la presión.
@@ -74,10 +74,17 @@ Inactividad: "¿Necesitas algo más? Si no, ¡que tengas un gran día!"
 
 --- PERSONALIDAD Y TONO (MUY IMPORTANTE) ---
 Eres Femenina, amable, cariñosa, comprensiva, respetuosa. Haces sentir al cliente valioso sin cruzar el límite profesional.
-JAMÁS menciones que eres un asistente virtual o IA. Habla con naturalidad.
+JAMÁS menciones que eres un asistente virtual o IA. Habla con naturalidad. Siempre buscando responder de una manera que haga sentir al 
+cliente valioso y apreciado sin cruzar el limite profesional.
 
-REGLA DE ORO - UBICACIÓN DEL CLIENTE:
-Siempre consulta sutilmente dónde está el cliente. SOLO atendemos en Cali, Colombia. No tenemos sucursales en otras ciudades.
+REGLAS DE ORO - UBICACIÓN DEL CLIENTE:
+1. Siempre consulta sutilmente dónde está el cliente. SOLO atendemos en Cali, Colombia. No tenemos sucursales en otras ciudades.
+2. No se realiza ningun tipo de masaje tantrico, sexual, con final feliz ni estimulación de ningun tipo en las zonas genitales; durante las
+sesiones el personal que realiza el masaje usa su uniforme y bajo ninguna circunstancia se desnudará el personal; el cliente permanecerá en ropa interior
+con una toalla que cubre sus zonas mas privadas: Cualquier pregunta realicionada con estos temas podras responderla con amabilidad
+pero siendo muy directa y clara.
+3. Cualquier pregunta como, donde estan?, donde se ubican?, donde están ubicados?, donde es? y cualquiera similar se responde brindando la ubicación.
+4. No somos fisioterapeutas ni doctores si alguien pregunta debe serse claro sobre esto.
 
 PROFUNDIDAD EN SERVICIOS:
 Cuando pregunten "¿De qué trata X masaje?", ahí tienes libertad para explayarte emocionalmente.
@@ -90,13 +97,13 @@ Mensaje del cliente: {{ user_message }}
 """
 
 class BotConfiguration(models.Model):
-    site_name = models.CharField(max_length=100, default="Oasis de Bienestar")
+    site_name = models.CharField(max_length=100, default="Studio Zens")
 
     booking_url = models.URLField(
-        default="https://www.oasisbienestar.com/agendar",
+        default="https://www.studiozens.com/agendar",
         help_text="Enlace para agendar."
     )
-    admin_phone = models.CharField(max_length=20, default="+57 323 394 0530")
+    admin_phone = models.CharField(max_length=20, default="+57 0")
 
     # Aquí guardamos TU prompt maestro. Es editable desde el admin si quieres ajustar la personalidad luego.
     system_prompt_template = models.TextField(
@@ -135,6 +142,30 @@ class BotConfiguration(models.Model):
         help_text="Alertar si el promedio de tokens por conversación excede este valor"
     )
 
+    # Configuración de Alertas de Seguridad
+    enable_critical_alerts = models.BooleanField(
+        default=True,
+        verbose_name="Habilitar Alertas Críticas",
+        help_text="Enviar email cuando se detecten actividades críticas"
+    )
+
+    # Configuración de Auto-Bloqueo
+    enable_auto_block = models.BooleanField(
+        default=True,
+        verbose_name="Habilitar Auto-Bloqueo",
+        help_text="Bloquear automáticamente IPs con comportamiento abusivo"
+    )
+    auto_block_critical_threshold = models.IntegerField(
+        default=3,
+        verbose_name="Umbral de Actividades Críticas",
+        help_text="Número de actividades críticas antes de bloquear automáticamente"
+    )
+    auto_block_analysis_period_hours = models.IntegerField(
+        default=24,
+        verbose_name="Período de Análisis (horas)",
+        help_text="Ventana de tiempo para contar actividades críticas"
+    )
+
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -170,12 +201,13 @@ class BotConfiguration(models.Model):
         ]
         
         for var in required_vars:
-            placeholder = f'{{{{{var}}}}}'
-            if placeholder not in self.system_prompt_template:
+            # Regex que permite espacios opcionales: {{ var }} o {{var}}
+            pattern = r'\{\{\s*' + re.escape(var) + r'\s*\}\}'
+            if not re.search(pattern, self.system_prompt_template):
                 if 'system_prompt_template' not in errors:
                     errors['system_prompt_template'] = []
                 errors['system_prompt_template'].append(
-                    f'Falta la variable requerida: {placeholder}'
+                    f'Falta la variable requerida: {{{{{var}}}}}'
                 )
         
         # Consolidar errores de prompt en un solo mensaje
@@ -323,6 +355,13 @@ class BotConversationLog(models.Model):
         help_text="Tokens consumidos en esta conversación (prompt + completion)"
     )
 
+    # AUDITORÍA: Tracking de IP para detección de fraude
+    ip_address = models.GenericIPAddressField(
+        null=True,
+        blank=True,
+        help_text="IP del cliente para auditoría de fraude y análisis de patrones"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -373,6 +412,7 @@ class HumanHandoffRequest(models.Model):
         IN_PROGRESS = 'IN_PROGRESS', 'En Progreso'
         RESOLVED = 'RESOLVED', 'Resuelto'
         CANCELLED = 'CANCELLED', 'Cancelado'
+        EXPIRED = 'EXPIRED', 'Expirado por Tiempo'
 
     # Usuario (registrado o anónimo)
     user = models.ForeignKey(
@@ -607,3 +647,242 @@ class HumanMessage(models.Model):
     def __str__(self):
         direction = "→ Cliente" if self.is_from_staff else "← Cliente"
         return f"{self.handoff_request.client_identifier} {direction}: {self.message[:50]}..."
+
+
+class IPBlocklist(models.Model):
+    """
+    Modelo para bloquear IPs maliciosas o abusivas.
+    Permite al admin bloquear completamente el acceso de una IP al bot.
+    """
+    class BlockReason(models.TextChoices):
+        ABUSE = 'ABUSE', 'Abuso de Límites'
+        MALICIOUS_CONTENT = 'MALICIOUS_CONTENT', 'Contenido Malicioso'
+        SPAM = 'SPAM', 'Spam/Flooding'
+        FRAUD = 'FRAUD', 'Fraude Detectado'
+        MANUAL = 'MANUAL', 'Bloqueo Manual por Admin'
+
+    ip_address = models.GenericIPAddressField(
+        unique=True,
+        help_text="IP bloqueada"
+    )
+
+    reason = models.CharField(
+        max_length=30,
+        choices=BlockReason.choices,
+        help_text="Razón del bloqueo"
+    )
+
+    notes = models.TextField(
+        blank=True,
+        default="",
+        help_text="Notas internas sobre el bloqueo"
+    )
+
+    # Quien bloqueó
+    blocked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='blocked_ips',
+        help_text="Admin que bloqueó la IP"
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Fecha de expiración del bloqueo (null = permanente)"
+    )
+
+    # Estado
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Si el bloqueo está activo"
+    )
+
+    class Meta:
+        verbose_name = "IP Bloqueada"
+        verbose_name_plural = "IPs Bloqueadas"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['ip_address', 'is_active']),
+            models.Index(fields=['-created_at']),
+        ]
+
+    @property
+    def is_expired(self):
+        """Verifica si el bloqueo ha expirado"""
+        if self.expires_at is None:
+            return False
+        return timezone.now() > self.expires_at
+
+    @property
+    def is_effective(self):
+        """Verifica si el bloqueo está activo y no ha expirado"""
+        return self.is_active and not self.is_expired
+
+    def __str__(self):
+        status = "Activo" if self.is_effective else "Inactivo"
+        return f"{self.ip_address} - {self.get_reason_display()} ({status})"
+
+
+class SuspiciousActivity(models.Model):
+    """
+    Modelo para rastrear actividad sospechosa de usuarios/IPs.
+    Permite al admin ver un historial completo de comportamiento problemático.
+    """
+    class ActivityType(models.TextChoices):
+        RATE_LIMIT_HIT = 'RATE_LIMIT_HIT', 'Límite de Velocidad Alcanzado'
+        DAILY_LIMIT_HIT = 'DAILY_LIMIT_HIT', 'Límite Diario Alcanzado'
+        REPETITIVE_MESSAGES = 'REPETITIVE_MESSAGES', 'Mensajes Repetitivos'
+        JAILBREAK_ATTEMPT = 'JAILBREAK_ATTEMPT', 'Intento de Jailbreak'
+        MALICIOUS_CONTENT = 'MALICIOUS_CONTENT', 'Contenido Malicioso'
+        OFF_TOPIC_SPAM = 'OFF_TOPIC_SPAM', 'Spam Fuera de Tema'
+        EXCESSIVE_TOKENS = 'EXCESSIVE_TOKENS', 'Uso Excesivo de Tokens'
+        IP_ROTATION = 'IP_ROTATION', 'Rotación de IP Sospechosa'
+
+    class SeverityLevel(models.IntegerChoices):
+        LOW = 1, 'Baja'
+        MEDIUM = 2, 'Media'
+        HIGH = 3, 'Alta'
+        CRITICAL = 4, 'Crítica'
+
+    # Usuario (registrado o anónimo)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='suspicious_activities',
+        null=True,
+        blank=True,
+        help_text="Usuario registrado (null si es anónimo)"
+    )
+    anonymous_user = models.ForeignKey(
+        AnonymousUser,
+        on_delete=models.CASCADE,
+        related_name='suspicious_activities',
+        null=True,
+        blank=True,
+        help_text="Usuario anónimo (null si es registrado)"
+    )
+
+    # IP asociada
+    ip_address = models.GenericIPAddressField(
+        help_text="IP desde donde se realizó la actividad sospechosa"
+    )
+
+    # Tipo de actividad sospechosa
+    activity_type = models.CharField(
+        max_length=30,
+        choices=ActivityType.choices,
+        help_text="Tipo de actividad sospechosa detectada"
+    )
+
+    # Severidad
+    severity = models.IntegerField(
+        choices=SeverityLevel.choices,
+        default=SeverityLevel.MEDIUM,
+        help_text="Nivel de severidad de la actividad"
+    )
+
+    # Detalles
+    description = models.TextField(
+        help_text="Descripción detallada de la actividad sospechosa"
+    )
+
+    # Contexto (JSON con datos adicionales)
+    context = models.JSONField(
+        default=dict,
+        help_text="Contexto adicional: mensaje enviado, respuesta, metadata, etc."
+    )
+
+    # Referencia al log de conversación si existe
+    conversation_log = models.ForeignKey(
+        BotConversationLog,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='suspicious_activities',
+        help_text="Log de conversación asociado"
+    )
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # Estado de revisión
+    reviewed = models.BooleanField(
+        default=False,
+        help_text="Si un admin ya revisó esta actividad"
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_suspicious_activities',
+        help_text="Admin que revisó la actividad"
+    )
+    reviewed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Fecha de revisión"
+    )
+
+    # Notas del admin
+    admin_notes = models.TextField(
+        blank=True,
+        default="",
+        help_text="Notas del admin sobre esta actividad"
+    )
+
+    class Meta:
+        verbose_name = "Actividad Sospechosa"
+        verbose_name_plural = "Actividades Sospechosas"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['ip_address', '-created_at']),
+            models.Index(fields=['user', '-created_at']),
+            models.Index(fields=['anonymous_user', '-created_at']),
+            models.Index(fields=['activity_type', '-created_at']),
+            models.Index(fields=['severity', '-created_at']),
+            models.Index(fields=['reviewed', '-created_at']),
+        ]
+
+    def clean(self):
+        """Validación: debe tener usuario O usuario anónimo, pero no ambos"""
+        if self.user and self.anonymous_user:
+            raise ValidationError("Una actividad no puede tener usuario y usuario anónimo simultáneamente")
+        if not self.user and not self.anonymous_user:
+            raise ValidationError("Una actividad debe tener usuario o usuario anónimo")
+
+    @property
+    def participant_identifier(self):
+        """Identificador del participante"""
+        if self.user:
+            return self.user.phone_number
+        elif self.anonymous_user:
+            return self.anonymous_user.display_name
+        return "Desconocido"
+
+    @property
+    def severity_color(self):
+        """Color para mostrar en el admin"""
+        colors = {
+            self.SeverityLevel.LOW: 'green',
+            self.SeverityLevel.MEDIUM: 'orange',
+            self.SeverityLevel.HIGH: 'red',
+            self.SeverityLevel.CRITICAL: 'darkred',
+        }
+        return colors.get(self.severity, 'gray')
+
+    def mark_as_reviewed(self, admin_user, notes=""):
+        """Marca la actividad como revisada"""
+        self.reviewed = True
+        self.reviewed_by = admin_user
+        self.reviewed_at = timezone.now()
+        if notes:
+            self.admin_notes = notes
+        self.save()
+
+    def __str__(self):
+        return f"{self.participant_identifier} - {self.get_activity_type_display()} ({self.get_severity_display()})"

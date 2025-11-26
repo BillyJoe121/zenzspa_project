@@ -186,9 +186,20 @@ class CartItemCreateUpdateSerializer(serializers.ModelSerializer):
         if quantity is None and instance:
             quantity = instance.quantity
 
-        if quantity and quantity > variant.stock:
+        available = variant.stock - variant.reserved_stock
+        if quantity and quantity > available:
             raise serializers.ValidationError(
-                f"No hay suficiente stock para '{variant}'. Disponible: {variant.stock}."
+                f"No hay suficiente stock para '{variant}'. Disponible: {available}."
+            )
+        
+        if quantity and variant.min_order_quantity and quantity < variant.min_order_quantity:
+            raise serializers.ValidationError(
+                f"La cantidad mínima para '{variant}' es {variant.min_order_quantity}."
+            )
+
+        if quantity and variant.max_order_quantity and quantity > variant.max_order_quantity:
+            raise serializers.ValidationError(
+                f"La cantidad máxima para '{variant}' es {variant.max_order_quantity}."
             )
 
         return data
@@ -228,8 +239,18 @@ class CheckoutSerializer(serializers.Serializer):
     associated_appointment_id = serializers.UUIDField(required=False)
 
     def validate(self, data):
-        if data['delivery_option'] == Order.DeliveryOptions.DELIVERY and not data.get('delivery_address'):
-            raise serializers.ValidationError("La dirección de envío es obligatoria para esta opción de entrega.")
+        if data['delivery_option'] == Order.DeliveryOptions.DELIVERY:
+            address = data.get('delivery_address')
+            if not address:
+                raise serializers.ValidationError("La dirección de envío es obligatoria para esta opción de entrega.")
+            
+            if len(address.strip()) < 10:
+                raise serializers.ValidationError("La dirección debe tener al menos 10 caracteres.")
+            
+            required_keywords = ['calle', 'carrera', 'avenida', 'transversal', 'diagonal', 'circular', 'manzana', 'lote']
+            if not any(keyword in address.lower() for keyword in required_keywords):
+                raise serializers.ValidationError("La dirección debe incluir el tipo de vía (Calle, Carrera, etc.).")
+
         if data['delivery_option'] == Order.DeliveryOptions.ASSOCIATE_TO_APPOINTMENT and not data.get('associated_appointment_id'):
             raise serializers.ValidationError("Debe seleccionar una cita para asociar la entrega.")
         return data

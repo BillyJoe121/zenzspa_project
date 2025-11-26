@@ -2,6 +2,8 @@
 from django.contrib import admin
 from django.urls import include, path
 
+from .health import health_check_view
+
 api_patterns = [
     path('catalog/', include('spa.urls_catalog')),
     path('', include('marketplace.urls')),
@@ -17,4 +19,5 @@ urlpatterns = [
     path('api/v1/analytics/', include('analytics.urls')),
     path('api/v1/finances/', include('finances.urls')),
     path('api/v1/', include(api_patterns)),
+    path('health/', health_check_view, name='health-check'),
 ]

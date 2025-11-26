@@ -1,10 +1,15 @@
+import logging
 import uuid
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.core.validators import MinLengthValidator
+from django.db import models, transaction
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 
 GLOBAL_SETTINGS_CACHE_KEY = "core:global_settings:v1"
@@ -23,7 +28,13 @@ class BaseModel(models.Model):
 
 class SoftDeleteQuerySet(models.QuerySet):
     def delete(self):
-        return super().update(is_deleted=True, deleted_at=timezone.now())
+        now_ts = timezone.now()
+        with transaction.atomic():
+            return super().update(
+                is_deleted=True,
+                deleted_at=now_ts,
+                updated_at=now_ts,
+            )
 
     def hard_delete(self):
         return super().delete()
@@ -65,11 +76,37 @@ class SoftDeleteModel(BaseModel):
         default_manager_name = "objects"
 
     def delete(self, using=None, keep_parents=False):
+        """
+        Soft delete atómico para prevenir race conditions.
+
+        Usa all_objects (incluye eliminados) para evitar DoesNotExist
+        si otro thread ya marcó como eliminado. Maneja gracefully
+        deletes concurrentes siendo idempotente.
+        """
         if self.is_deleted:
             return
-        self.is_deleted = True
-        self.deleted_at = timezone.now()
-        self.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
+
+        with transaction.atomic():
+            try:
+                # Usar all_objects para incluir registros ya eliminados
+                fresh = type(self).all_objects.select_for_update().get(pk=self.pk)
+
+                # Si ya fue eliminado por otro thread, salir silenciosamente
+                if fresh.is_deleted:
+                    return
+
+                fresh.is_deleted = True
+                fresh.deleted_at = timezone.now()
+                fresh.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
+
+            except type(self).DoesNotExist:
+                # El objeto ya fue hard-deleted, no hacer nada
+                logger.warning(
+                    "Intento de soft-delete en objeto ya eliminado: %s pk=%s",
+                    type(self).__name__,
+                    self.pk
+                )
+                return
 
     def hard_delete(self, using=None, keep_parents=False):
         return super().delete(using=using, keep_parents=keep_parents)
@@ -302,12 +339,41 @@ class GlobalSettings(BaseModel):
         threshold = self.developer_payout_threshold
         if threshold is None or threshold <= 0:
             errors["developer_payout_threshold"] = "El umbral de pago debe ser mayor que cero."
+        
+        # Validar timezone
+        if self.timezone_display:
+            try:
+                ZoneInfo(self.timezone_display)
+            except Exception:
+                errors["timezone_display"] = f"Timezone inválido: {self.timezone_display}"
+        
         if errors:
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
         # Forzamos UUID singleton
         self.pk = self.id = GLOBAL_SETTINGS_SINGLETON_UUID
+        
+        # Log cambios importantes
+        if self.pk:
+            try:
+                old = GlobalSettings.objects.get(pk=self.pk)
+                changes = []
+                for field in ['advance_payment_percentage', 'low_supervision_capacity', 
+                             'developer_commission_percentage']:
+                    old_val = getattr(old, field)
+                    new_val = getattr(self, field)
+                    if old_val != new_val:
+                        changes.append(f"{field}: {old_val} -> {new_val}")
+                
+                if changes:
+                    logger.warning(
+                        "GlobalSettings modificado: %s",
+                        ", ".join(changes)
+                    )
+            except GlobalSettings.DoesNotExist:
+                pass
+        
         self.full_clean()
         super().save(*args, **kwargs)
         # Invalida/actualiza caché después de guardar
@@ -317,18 +383,25 @@ class GlobalSettings(BaseModel):
     def load(cls) -> "GlobalSettings":
         """
         Obtiene la instancia desde caché o DB, creándola si no existe.
+        Usa select_for_update para prevenir race conditions.
         """
         cached = cache.get(GLOBAL_SETTINGS_CACHE_KEY)
         if cached is not None:
             return cached
 
-        obj, _ = cls.objects.get_or_create(id=GLOBAL_SETTINGS_SINGLETON_UUID)
-        # Asegura timestamps coherentes en primer create
-        if not obj.created_at:
-            obj.created_at = timezone.now()
-            obj.save(update_fields=["created_at"])
-        cache.set(GLOBAL_SETTINGS_CACHE_KEY, obj, timeout=None)
-        return obj
+        # Usar select_for_update con get_or_create para evitar race conditions
+        with transaction.atomic():
+            try:
+                obj = cls.objects.select_for_update().get(id=GLOBAL_SETTINGS_SINGLETON_UUID)
+            except cls.DoesNotExist:
+                obj = cls.objects.create(id=GLOBAL_SETTINGS_SINGLETON_UUID)
+            
+            if not obj.created_at:
+                obj.created_at = timezone.now()
+                obj.save(update_fields=["created_at"])
+            
+            cache.set(GLOBAL_SETTINGS_CACHE_KEY, obj, timeout=None)
+            return obj
 
     def __str__(self) -> str:
         return "Configuraciones Globales del Sistema"
@@ -347,7 +420,11 @@ class IdempotencyKey(BaseModel):
         PENDING = "PENDING", "Pendiente"
         COMPLETED = "COMPLETED", "Completado"
 
-    key = models.CharField(max_length=255, unique=True)
+    key = models.CharField(
+        max_length=255,
+        unique=True,
+        validators=[MinLengthValidator(16)]
+    )
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -367,6 +444,12 @@ class IdempotencyKey(BaseModel):
         verbose_name = "Idempotency Key"
         verbose_name_plural = "Idempotency Keys"
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["key"]),
+            models.Index(fields=["status", "completed_at"]),
+            models.Index(fields=["status", "locked_at"]),
+            models.Index(fields=["user", "created_at"]),
+        ]
 
     def mark_processing(self):
         self.status = self.Status.PENDING

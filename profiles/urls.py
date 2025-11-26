@@ -19,6 +19,8 @@ from .views import (
     KioskSessionStatusView,
     KioskStartSessionView,
     AnonymizeProfileView,
+    SignConsentView,
+    ExportClinicalDataView,
 )
 # --- FIN DE LA MODIFICACIÓN ---
 
@@ -45,6 +47,8 @@ urlpatterns = [
     path('kiosk/secure-screen/', KioskSessionSecureScreenView.as_view(), name='kiosk-secure-screen'),
     path('kiosk/pending-changes/', KioskSessionPendingChangesView.as_view(), name='kiosk-pending-changes'),
     path('anonymize/<str:phone_number>/', AnonymizeProfileView.as_view(), name='clinical-profile-anonymize'),
+    path('consents/sign/', SignConsentView.as_view(), name='sign-consent'),
+    path('export/', ExportClinicalDataView.as_view(), name='export-clinical-data'),
     
     # Se incluye el router al final para que maneje todas las rutas registradas.
     path('', include(router.urls)),

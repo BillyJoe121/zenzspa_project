@@ -26,5 +26,12 @@ def bot_config():
     return BotConfiguration.objects.create(
         site_name="Spa Test",
         booking_url="https://test.com",
-        system_prompt_template="Eres un bot. Contexto: {{ user_message }}. Agenda aquí: {{ booking_url }}"
+        admin_phone="+573001234567",
+        system_prompt_template=(
+            "Eres un bot. Contexto: {{user_message}}. "
+            "Servicios: {{services_context}}. "
+            "Productos: {{products_context}}. "
+            "Agenda aquí: {{booking_url}}. "
+            "Admin: {{admin_phone}}."
+        )
     )

@@ -13,8 +13,8 @@ def test_prompt_construction(user, bot_config):
     assert is_valid is True
     assert user_message in full_prompt
     assert bot_config.booking_url in full_prompt
-    assert "[INICIO_MENSAJE_USUARIO]" in full_prompt
-    assert "REGLA DE SEGURIDAD SUPREMA" in full_prompt
+    assert "MENSAJE ACTUAL DEL USUARIO" in full_prompt
+    assert "Responde SOLO en JSON" in full_prompt
 
 @pytest.mark.django_db
 def test_prompt_missing_config(user):

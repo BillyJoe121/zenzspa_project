@@ -25,6 +25,17 @@ def get_global_settings() -> SettingsDTO:
         vip_monthly_price=obj.vip_monthly_price,
     )
 
+def get_setting(key: str, default=None):
+    """
+    Obtiene un setting específico sin cargar todo el objeto.
+    Útil para optimizar queries.
+    """
+    try:
+        settings = GlobalSettings.load()
+        return getattr(settings, key, default)
+    except Exception:
+        return default
+
 @transaction.atomic
 def admin_flag_non_grata(admin_user, target_user, details: Optional[Dict[str, Any]] = None):
     """

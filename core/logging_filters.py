@@ -63,38 +63,47 @@ class SanitizeAPIKeyFilter(logging.Filter):
     def filter(self, record):
         """
         Sanitiza el mensaje de log antes de que sea emitido.
-        
-        Args:
-            record: LogRecord a filtrar
-            
-        Returns:
-            bool: Siempre True (no bloqueamos logs, solo los sanitizamos)
         """
-        # Sanitizar el mensaje principal
-        if isinstance(record.msg, str):
-            for pattern, replacement in self.PATTERNS:
-                record.msg = pattern.sub(replacement, record.msg)
-        
-        # Sanitizar argumentos del mensaje
-        if record.args:
-            if isinstance(record.args, dict):
-                # Sanitizar valores del diccionario
-                sanitized_args = {}
-                for key, value in record.args.items():
-                    if isinstance(value, str):
-                        for pattern, replacement in self.PATTERNS:
-                            value = pattern.sub(replacement, value)
-                    sanitized_args[key] = value
-                record.args = sanitized_args
-            elif isinstance(record.args, (tuple, list)):
-                # Sanitizar elementos de la tupla/lista
-                sanitized_args = []
-                for arg in record.args:
-                    if isinstance(arg, str):
-                        for pattern, replacement in self.PATTERNS:
-                            arg = pattern.sub(replacement, arg)
-                    sanitized_args.append(arg)
-                record.args = tuple(sanitized_args) if isinstance(record.args, tuple) else sanitized_args
+        try:
+            # Sanitizar el mensaje principal
+            if isinstance(record.msg, str):
+                for pattern, replacement in self.PATTERNS:
+                    try:
+                        record.msg = pattern.sub(replacement, record.msg)
+                    except Exception:
+                        continue
+            
+            # Sanitizar argumentos del mensaje
+            if record.args:
+                try:
+                    if isinstance(record.args, dict):
+                        sanitized_args = {}
+                        for key, value in record.args.items():
+                            if isinstance(value, str):
+                                for pattern, replacement in self.PATTERNS:
+                                    try:
+                                        value = pattern.sub(replacement, value)
+                                    except Exception:
+                                        continue
+                            sanitized_args[key] = value
+                        record.args = sanitized_args
+                    elif isinstance(record.args, (tuple, list)):
+                        sanitized_args = []
+                        for arg in record.args:
+                            if isinstance(arg, str):
+                                for pattern, replacement in self.PATTERNS:
+                                    try:
+                                        arg = pattern.sub(replacement, arg)
+                                    except Exception:
+                                        continue
+                            sanitized_args.append(arg)
+                        record.args = tuple(sanitized_args) if isinstance(record.args, tuple) else sanitized_args
+                except Exception:
+                    # Si falla la sanitización de args, dejar args originales
+                    pass
+        except Exception:
+            # En el peor caso, no sanitizar pero permitir que el log se emita
+            pass
         
         return True
 
@@ -107,10 +116,10 @@ class SanitizePIIFilter(logging.Filter):
     """
     
     PATTERNS = [
-        # Números de teléfono (formato internacional)
+        # Números de tarjeta de crédito (PRIMERO - más específico)
         (
-            re.compile(r'\+?\d{1,3}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}'),
-            '***PHONE***'
+            re.compile(r'\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b'),
+            '****-****-****-****'
         ),
         
         # Emails
@@ -119,17 +128,58 @@ class SanitizePIIFilter(logging.Filter):
             '***EMAIL***'
         ),
         
-        # Números de documento (formato colombiano)
+        # Números de teléfono (formato internacional) - más restrictivo
         (
-            re.compile(r'\b\d{6,10}\b'),  # Cédulas colombianas
+            re.compile(r'\+\d{1,3}[-.\s]?\(?\d{1,4}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,9}'),
+            '***PHONE***'
+        ),
+        
+        # Números de documento (formato colombiano) - solo si no es tarjeta
+        (
+            re.compile(r'(?<!\d)\b\d{6,10}\b(?!\d)'),  # Cédulas colombianas
             '***ID***'
         ),
     ]
     
     def filter(self, record):
         """Sanitiza PII del mensaje de log."""
-        if isinstance(record.msg, str):
-            for pattern, replacement in self.PATTERNS:
-                record.msg = pattern.sub(replacement, record.msg)
+        try:
+            if isinstance(record.msg, str):
+                for pattern, replacement in self.PATTERNS:
+                    try:
+                        record.msg = pattern.sub(replacement, record.msg)
+                    except Exception:
+                        continue
+            
+            # Sanitizar argumentos del mensaje para evitar fugas de PII
+            if record.args:
+                try:
+                    if isinstance(record.args, dict):
+                        sanitized_args = {}
+                        for key, value in record.args.items():
+                            if isinstance(value, str):
+                                for pattern, replacement in self.PATTERNS:
+                                    try:
+                                        value = pattern.sub(replacement, value)
+                                    except Exception:
+                                        continue
+                            sanitized_args[key] = value
+                        record.args = sanitized_args
+                    elif isinstance(record.args, (tuple, list)):
+                        sanitized_args = []
+                        for arg in record.args:
+                            if isinstance(arg, str):
+                                for pattern, replacement in self.PATTERNS:
+                                    try:
+                                        arg = pattern.sub(replacement, arg)
+                                    except Exception:
+                                        continue
+                            sanitized_args.append(arg)
+                        record.args = tuple(sanitized_args) if isinstance(record.args, tuple) else sanitized_args
+                except Exception:
+                    # Si falla la sanitización de args, dejar args originales
+                    pass
+        except Exception:
+            pass
         
         return True

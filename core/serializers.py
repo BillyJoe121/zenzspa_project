@@ -59,6 +59,25 @@ class DynamicFieldsModelSerializer(serializers.ModelSerializer):
                         self.fields.pop(field_name, None)
 
 
+class ReadOnlyModelSerializer(serializers.ModelSerializer):
+    """
+    ModelSerializer de solo lectura.
+    Útil para endpoints de listado/detalle donde no se permite modificación.
+    
+    Ejemplo:
+        class UserListSerializer(ReadOnlyModelSerializer):
+            class Meta:
+                model = User
+                fields = ['id', 'name', 'email']
+    """
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Marcar todos los campos como read_only
+        for field in self.fields.values():
+            field.read_only = True
+
+
 class DataMaskingMixin:
     """
     Proporciona enmascaramiento sistemático de campos sensibles basado en roles.

@@ -1,0 +1,58 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.3, pytest-9.0.1, pluggy-1.6.0 -- C:\Users\joshe\Desktop\Zenz\zenzspa_project\venv\Scripts\python.exe
+cachedir: .pytest_cache
+django: version: 5.2.3, settings: zenzspa.settings (from ini)
+rootdir: C:\Users\joshe\Desktop\Zenz\zenzspa_project
+configfile: pytest.ini
+plugins: anyio-4.11.0, cov-7.0.0, django-4.11.1, mock-3.15.1
+collecting ... collected 29 items
+
+bot/tests/test_views.py::TestBotWebhook::test_anonymous_access_allowed PASSED [  3%]
+bot/tests/test_views.py::TestBotWebhook::test_happy_path_mocking_gemini PASSED [  6%]
+bot/tests/test_views.py::TestBotWebhook::test_security_block_response FAILED [ 10%]
+bot/tests/test_views.py::TestBotWebhook::test_duplicate_request_deduplication PASSED [ 13%]
+bot/tests/test_views.py::TestBotWebhook::test_blocked_user_access_denied PASSED [ 17%]
+bot/tests/test_views.py::TestBotWebhook::test_input_length_validation PASSED [ 20%]
+bot/tests/test_views.py::TestBotWebhook::test_empty_message_validation PASSED [ 24%]
+bot/tests/test_views.py::TestBotWebhook::test_jailbreak_attempt_validation PASSED [ 27%]
+bot/tests/test_views.py::TestBotWebhook::test_velocity_limit_exceeded PASSED [ 31%]
+bot/tests/test_views.py::TestBotWebhook::test_repetition_limit_exceeded PASSED [ 34%]
+bot/tests/test_views.py::TestBotWebhook::test_gemini_service_timeout PASSED [ 37%]
+bot/tests/test_views.py::TestBotWebhook::test_concurrency_lock_failure PASSED [ 41%]
+bot/tests/test_views.py::TestBotWebhook::test_invalid_message_type_returns_400 PASSED [ 44%]
+bot/tests/test_views.py::TestBotWebhook::test_normalize_chat_response_breaks_long_lines PASSED [ 48%]
+bot/tests/test_views.py::TestBotWebhook::test_get_client_ip_invalid_value PASSED [ 51%]
+bot/tests/test_views.py::TestHealthCheck::test_health_check_endpoint PASSED [ 55%]
+bot/tests/test_views.py::TestIPBlockEndpoints::test_block_ip_requires_reason PASSED [ 58%]
+bot/tests/test_views.py::TestIPBlockEndpoints::test_block_ip_creates_entry PASSED [ 62%]
+bot/tests/test_views.py::TestIPBlockEndpoints::test_block_ip_rejects_duplicates PASSED [ 65%]
+bot/tests/test_views.py::TestIPBlockEndpoints::test_unblock_ip_success_and_not_found PASSED [ 68%]
+bot/tests/test_views.py::TestTaskStatusView::test_task_status_success PASSED [ 72%]
+bot/tests/test_views.py::TestTaskStatusView::test_task_status_pending PASSED [ 75%]
+bot/tests/test_views.py::TestHumanHandoffViewSet::test_assign_and_resolve_flow PASSED [ 79%]
+bot/tests/test_views.py::TestHumanHandoffViewSet::test_messages_mark_client_messages_as_read PASSED [ 82%]
+bot/tests/test_views.py::TestHumanHandoffViewSet::test_send_message_moves_status_in_progress PASSED [ 86%]
+bot/tests/test_views.py::TestAnalyticsAndSuspiciousViews::test_bot_analytics_view PASSED [ 89%]
+bot/tests/test_views.py::TestAnalyticsAndSuspiciousViews::test_suspicious_users_view PASSED [ 93%]
+bot/tests/test_views.py::TestAnalyticsAndSuspiciousViews::test_activity_timeline_requires_params PASSED [ 96%]
+bot/tests/test_views.py::TestAnalyticsAndSuspiciousViews::test_activity_timeline_returns_block_info PASSED [100%]
+
+================================== FAILURES ===================================
+_________________ TestBotWebhook.test_security_block_response _________________
+bot\tests\test_views.py:91: in test_security_block_response
+    assert "bloqueada" in str(response.data['meta']) or "security_guardrail" in str(response.data['meta'])
+E   assert ('bloqueada' in "{'blocked': True, 'reason': 'toxicity'}" or 'security_guardrail' in "{'blocked': True, 'reason': 'toxicity'}")
+E    +  where "{'blocked': True, 'reason': 'toxicity'}" = str({'blocked': True, 'reason': 'toxicity'})
+E    +  and   "{'blocked': True, 'reason': 'toxicity'}" = str({'blocked': True, 'reason': 'toxicity'})
+---------------------------- Captured stderr call -----------------------------
+[INFO] Usuario 050de6a7-fcfa-4eeb-8825-952fdf6d6992 (IP: 127.0.0.1): mensaje 1/30 del dÝa (IP: 1/50)
+[WARNING] Bloqueando usuario 050de6a7-fcfa-4eeb-8825-952fdf6d6992. Raz¾n: Bloqueo por toxicidad grave (Agente IA).
+[WARNING] Usuario 050de6a7-fcfa-4eeb-8825-952fdf6d6992 bloqueado por 24h. Limpiando strikes/historial/velocidad.
+[WARNING] Slow request detected: POST /api/v1/bot/webhook/ - 1.07s
+[WARNING] Forbidden: /api/v1/bot/webhook/
+------------------------------ Captured log call ------------------------------
+WARNING  core.middleware:middleware.py:105 Slow request detected: POST /api/v1/bot/webhook/ - 1.07s
+WARNING  django.request:log.py:253 Forbidden: /api/v1/bot/webhook/
+=========================== short test summary info ===========================
+FAILED bot/tests/test_views.py::TestBotWebhook::test_security_block_response
+================== 1 failed, 28 passed, 1 warning in 10.09s ===================

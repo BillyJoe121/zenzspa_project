@@ -4,8 +4,10 @@ import secrets
 import uuid
 
 from django.conf import settings
+from django.core.validators import MaxLengthValidator
 from django.db import models, transaction
 from django.utils import timezone
+from fernet_fields import EncryptedTextField
 from simple_history.models import HistoricalRecords
 
 from core.models import BaseModel
@@ -55,18 +57,30 @@ class ClinicalProfile(BaseModel):
         max_length=10, choices=SleepQuality.choices, blank=True, verbose_name="Calidad de Sueño")
     activity_level = models.CharField(
         max_length=15, choices=ActivityLevel.choices, blank=True, verbose_name="Nivel de Actividad")
-    accidents_notes = models.TextField(
-        blank=True, verbose_name="Notas sobre Accidentes")
-    general_notes = models.TextField(
-        blank=True, verbose_name="Notas Generales del Terapeuta")
-    medical_conditions = models.TextField(
-        blank=True, verbose_name="Condiciones médicas o diagnósticos relevantes"
+    accidents_notes = EncryptedTextField(
+        blank=True,
+        validators=[MaxLengthValidator(5000)],
+        verbose_name="Notas sobre Accidentes"
     )
-    allergies = models.TextField(
-        blank=True, verbose_name="Alergias conocidas"
+    general_notes = EncryptedTextField(
+        blank=True,
+        validators=[MaxLengthValidator(5000)],
+        verbose_name="Notas Generales del Terapeuta"
     )
-    contraindications = models.TextField(
-        blank=True, verbose_name="Contraindicaciones"
+    medical_conditions = EncryptedTextField(
+        blank=True,
+        validators=[MaxLengthValidator(5000)],
+        verbose_name="Condiciones médicas o diagnósticos relevantes"
+    )
+    allergies = EncryptedTextField(
+        blank=True,
+        validators=[MaxLengthValidator(5000)],
+        verbose_name="Alergias conocidas"
+    )
+    contraindications = EncryptedTextField(
+        blank=True,
+        validators=[MaxLengthValidator(5000)],
+        verbose_name="Contraindicaciones"
     )
     history = HistoricalRecords(inherit=True)
 
@@ -151,15 +165,20 @@ class ClinicalProfile(BaseModel):
                 'updated_at',
             ])
 
+            # CRITICO - Eliminar historial versionado (GDPR compliance)
+            self.history.all().delete()
+
+            # Eliminar registros relacionados
             self.pains.all().delete()
             self.consents.all().delete()
             self.dosha_answers.all().delete()
+            self.kiosk_sessions.all().delete()
 
             AuditLog.objects.create(
                 admin_user=performed_by,
                 target_user=user,
                 action=AuditLog.Action.CLINICAL_PROFILE_ANONYMIZED,
-                details=f"Perfil {self.id} anonimizado",
+                details=f"Perfil {self.id} anonimizado completamente (incluye historial)",
             )
             logger.info("Perfil clínico %s anonimizado por %s", self.id, getattr(performed_by, 'id', None))
 
@@ -169,6 +188,10 @@ class ClinicalProfile(BaseModel):
     class Meta:
         verbose_name = "Perfil Clínico"
         verbose_name_plural = "Perfiles Clínicos"
+        indexes = [
+            models.Index(fields=['user']),
+            models.Index(fields=['dosha', 'element']),
+        ]
 
 
 class LocalizedPain(BaseModel):
@@ -190,7 +213,11 @@ class LocalizedPain(BaseModel):
         max_length=10, choices=PainLevel.choices, verbose_name="Nivel de Dolor")
     periodicity = models.CharField(
         max_length=15, choices=PainPeriodicity.choices, verbose_name="Periodicidad")
-    notes = models.TextField(blank=True, verbose_name="Notas Adicionales")
+    notes = EncryptedTextField(
+        blank=True,
+        validators=[MaxLengthValidator(2000)],
+        verbose_name="Notas Adicionales"
+    )
 
     def __str__(self):
         return f"Dolor en {self.body_part} para {self.profile.user.first_name}"
@@ -291,6 +318,10 @@ class ConsentDocument(BaseModel):
         verbose_name = "Consentimiento Clínico"
         verbose_name_plural = "Consentimientos Clínicos"
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['profile', 'is_signed']),
+            models.Index(fields=['template_version', 'created_at']),
+        ]
 
     def __str__(self):
         status = "Firmado" if self.is_signed else "Pendiente"
@@ -335,6 +366,12 @@ class KioskSession(BaseModel):
         verbose_name = "Sesión de Quiosco"
         verbose_name_plural = "Sesiones de Quiosco"
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['token']),
+            models.Index(fields=['status', 'expires_at']),
+            models.Index(fields=['profile', 'created_at']),
+            models.Index(fields=['staff_member', 'created_at']),
+        ]
 
     def __str__(self):
         return f"Sesión para {self.profile.user} expira {self.expires_at}"

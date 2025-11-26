@@ -1,5 +1,6 @@
 # Reemplaza todo el contenido de zenzspa_project/users/services.py
 import logging
+import time
 from typing import Optional
 
 import requests
@@ -7,13 +8,78 @@ from django.conf import settings
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 
+from core.exceptions import BusinessLogicError
+
 logger = logging.getLogger(__name__)
+
+# Imports for TOTP
+import hmac
+import struct
+import hashlib
+import base64
+import os
+
+
+
+class CircuitBreakerOpen(Exception):
+    """Raised when the circuit breaker is open."""
+
+
+class SimpleCircuitBreaker:
+    """
+    Minimal circuit breaker to prevent cascading failures when Twilio is unavailable.
+    """
+
+    def __init__(self, failure_threshold=5, recovery_timeout=60):
+        self.failure_threshold = failure_threshold
+        self.recovery_timeout = recovery_timeout
+        self.failures = 0
+        self.opened_at = None
+
+    def _is_open(self):
+        if self.opened_at is None:
+            return False
+        if time.monotonic() - self.opened_at > self.recovery_timeout:
+            # Half-open: allow new attempt and reset counters
+            self.failures = 0
+            self.opened_at = None
+            return False
+        return True
+
+    def record_success(self):
+        self.failures = 0
+        self.opened_at = None
+
+    def record_failure(self):
+        self.failures += 1
+        if self.failures >= self.failure_threshold:
+            self.opened_at = time.monotonic()
+
+    def call(self, func, *args, **kwargs):
+        if self._is_open():
+            raise CircuitBreakerOpen()
+        try:
+            result = func(*args, **kwargs)
+        except Exception:
+            self.record_failure()
+            raise
+        else:
+            self.record_success()
+            return result
+
+
+twilio_breaker = SimpleCircuitBreaker(
+    failure_threshold=getattr(settings, "TWILIO_CB_FAILURES", 5),
+    recovery_timeout=getattr(settings, "TWILIO_CB_TIMEOUT", 60),
+)
 
 
 class TwilioService:
     """
     Servicio para manejar las interacciones con la API de Twilio Verify.
     """
+
+    REQUEST_TIMEOUT = getattr(settings, "TWILIO_TIMEOUT", 10)
 
     def __init__(self):
         self.account_sid = settings.TWILIO_ACCOUNT_SID
@@ -23,48 +89,91 @@ class TwilioService:
                 "El SID de la cuenta y el Token de autenticación de Twilio deben estar configurados.")
         self.client = Client(self.account_sid, self.auth_token)
 
+    def _call_with_breaker(self, func):
+        try:
+            return twilio_breaker.call(func)
+        except CircuitBreakerOpen:
+            logger.error("Circuit breaker abierto para Twilio.")
+            raise BusinessLogicError(
+                detail="Servicio de verificación no disponible temporalmente.",
+                internal_code="USER-TWILIO-BLOCKED",
+            )
+
     def send_verification_code(self, phone_number):
         """
         Envía un código de verificación usando el servicio Twilio Verify.
+        Incluye timeout explícito para prevenir bloqueos indefinidos.
         """
         verify_service_sid = settings.TWILIO_VERIFY_SERVICE_SID
         if not verify_service_sid:
             raise ValueError(
                 "El SID del servicio de verificación de Twilio no está configurado.")
 
-        try:
+        def _perform():
+            # Timeout explícito configurado en el cliente HTTP de Twilio
             verification = self.client.verify.v2.services(verify_service_sid).verifications.create(
                 to=phone_number,
-                channel='sms'
+                channel='sms',
+                timeout=self.REQUEST_TIMEOUT
             )
+            logger.info("OTP sent via Twilio", extra={"phone": phone_number[-4:], "context": "send_verification"})
             return verification.status
+
+        try:
+            return self._call_with_breaker(_perform)
         except TwilioRestException as e:
-            print(
-                f"Error desde la API de Twilio al enviar código de verificación: {e}")
-            raise e
+            logger.error("Error desde la API de Twilio al enviar código de verificación: %s", e)
+            raise BusinessLogicError(
+                detail="Error al enviar código de verificación. Intenta más tarde.",
+                internal_code="USER-TWILIO-ERROR",
+            )
+        except BusinessLogicError:
+            raise
+        except Exception as exc:
+            logger.exception("Error inesperado enviando OTP: %s", exc, extra={"phone": phone_number[-4:]})
+            raise BusinessLogicError(
+                detail="Servicio de verificación no disponible.",
+                internal_code="USER-TWILIO-UNAVAILABLE",
+            )
 
     def check_verification_code(self, phone_number, code):
         """
         Verifica un código de SMS con el servicio Twilio Verify.
+        Incluye timeout explícito para prevenir bloqueos indefinidos.
         """
         verify_service_sid = settings.TWILIO_VERIFY_SERVICE_SID
         if not verify_service_sid:
             raise ValueError(
                 "El SID del servicio de verificación de Twilio no está configurado.")
 
-        try:
+        def _perform():
+            # Timeout explícito configurado en el cliente HTTP de Twilio
             verification_check = self.client.verify.v2.services(verify_service_sid).verification_checks.create(
                 to=phone_number,
-                code=code
+                code=code,
+                timeout=self.REQUEST_TIMEOUT
             )
+            logger.info("OTP verification checked", extra={"phone": phone_number[-4:], "context": "check_verification"})
             return verification_check.status == 'approved'
+
+        try:
+            return self._call_with_breaker(_perform)
         except TwilioRestException as e:
-            # Si el código es incorrecto, Twilio devuelve un 404 Not Found. Lo manejamos como un False.
             if e.status == 404:
                 return False
-            else:
-                print(f"Error desde la API de Twilio al verificar código: {e}")
-                raise e
+            logger.error("Error verificando código OTP en Twilio: %s", e)
+            raise BusinessLogicError(
+                detail="Error al verificar código de verificación.",
+                internal_code="USER-TWILIO-ERROR",
+            )
+        except BusinessLogicError:
+            raise
+        except Exception as exc:
+            logger.exception("Error inesperado verificando OTP: %s", exc, extra={"phone": phone_number[-4:]})
+            raise BusinessLogicError(
+                detail="Servicio de verificación no disponible.",
+                internal_code="USER-TWILIO-UNAVAILABLE",
+            )
 
 
 def _resolve_recaptcha_secret():
@@ -120,3 +229,77 @@ def verify_recaptcha(token, remote_ip=None, action=None, min_score=None):
         logger.info("reCAPTCHA score %s por debajo del umbral %s para acción %s", score, threshold, expected_action)
         return False
     return True
+
+
+class TOTPService:
+    """
+    Servicio para manejar 2FA con aplicaciones (Google Authenticator, etc.)
+    Implementación básica de RFC 6238 (TOTP) para evitar dependencias externas si no están disponibles.
+    """
+    @staticmethod
+    def generate_secret():
+        return base64.b32encode(os.urandom(20)).decode('utf-8')
+
+    @staticmethod
+    def get_totp_token(secret, interval=30):
+        if not secret:
+            return None
+        try:
+            key = base64.b32decode(secret, casefold=True)
+        except Exception:
+            return None
+        msg = struct.pack(">Q", int(time.time()) // interval)
+        h = hmac.new(key, msg, hashlib.sha1).digest()
+        o = h[19] & 15
+        h = (struct.unpack(">I", h[o:o+4])[0] & 0x7fffffff) % 1000000
+        return str(h).zfill(6)
+
+    @staticmethod
+    def verify_token(secret, token, window=1):
+        """
+        Verifica el token TOTP permitiendo una ventana de tiempo (window * 30s) hacia atrás y adelante.
+        """
+        if not secret or not token:
+            return False
+        
+        try:
+            key = base64.b32decode(secret, casefold=True)
+        except Exception:
+            return False
+
+        current_ts = int(time.time()) // 30
+        for i in range(-window, window + 1):
+            ts = current_ts + i
+            msg = struct.pack(">Q", ts)
+            h = hmac.new(key, msg, hashlib.sha1).digest()
+            o = h[19] & 15
+            h_val = (struct.unpack(">I", h[o:o+4])[0] & 0x7fffffff) % 1000000
+            if str(h_val).zfill(6) == str(token):
+                return True
+        return False
+
+    @staticmethod
+    def get_provisioning_uri(user, secret, issuer_name="ZenzSpa"):
+        return f"otpauth://totp/{issuer_name}:{user.email or user.phone_number}?secret={secret}&issuer={issuer_name}"
+
+
+class GeoIPService:
+    """
+    Servicio Mock para Geolocalización.
+    En producción, usaría GeoIP2 o un servicio externo.
+    """
+    @staticmethod
+    def get_country_from_ip(ip_address):
+        # TODO: Integrar con base de datos MaxMind o API externa
+        # Por ahora, retornamos 'CO' (Colombia) por defecto para permitir tráfico local
+        if ip_address in ['127.0.0.1', '::1']:
+            return 'CO'
+        return 'CO'  # Default seguro
+
+    @staticmethod
+    def is_ip_allowed(ip_address, allowed_countries=None):
+        if allowed_countries is None:
+            allowed_countries = ['CO'] # Default Colombia
+        country = GeoIPService.get_country_from_ip(ip_address)
+        return country in allowed_countries
+

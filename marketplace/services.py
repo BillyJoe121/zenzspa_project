@@ -16,6 +16,106 @@ from marketplace.tasks import notify_order_status_change
 
 logger = logging.getLogger(__name__)
 
+class MarketplaceNotificationService:
+    @staticmethod
+    def _send_whatsapp(to_number, body):
+        try:
+            from twilio.rest import Client
+            account_sid = settings.TWILIO_ACCOUNT_SID
+            auth_token = settings.TWILIO_AUTH_TOKEN
+            from_number = getattr(settings, 'TWILIO_WHATSAPP_NUMBER', 'whatsapp:+14155238886')
+            
+            if not account_sid or not auth_token:
+                logger.warning("Twilio no configurado, saltando WhatsApp")
+                return
+
+            client = Client(account_sid, auth_token)
+            if not to_number.startswith('whatsapp:'):
+                to_number = f"whatsapp:{to_number}"
+            
+            message = client.messages.create(
+                from_=from_number,
+                body=body,
+                to=to_number
+            )
+            logger.info("WhatsApp enviado a %s: %s", to_number, message.sid)
+        except Exception as e:
+            logger.error("Error enviando WhatsApp: %s", e)
+
+    @classmethod
+    def send_order_status_update(cls, order, new_status):
+        user = order.user
+        if not user.phone_number:
+            return
+
+        status_display = dict(Order.OrderStatus.choices).get(new_status, new_status)
+        
+        # Emojis y mensajes personalizados
+        emoji = "📦"
+        msg_detail = f"Tu orden ha cambiado a: *{status_display}*"
+        
+        if new_status == Order.OrderStatus.SHIPPED:
+            emoji = "🚚"
+            tracking = order.tracking_number or "Pendiente"
+            msg_detail = f"Tu orden ha sido enviada. Guía: {tracking}"
+        elif new_status == Order.OrderStatus.DELIVERED:
+            emoji = "🎉"
+            msg_detail = "Tu orden ha sido entregada. ¡Gracias por tu compra!"
+        elif new_status == getattr(Order.OrderStatus, "READY_FOR_PICKUP", "READY_FOR_PICKUP"):
+            emoji = "🏪"
+            msg_detail = "Tu orden está lista para recoger en tienda."
+
+        body = f"""{emoji} *ACTUALIZACIÓN DE ORDEN #{order.id}*
+Hola {user.first_name},
+
+{msg_detail}
+
+Total: ${order.total_amount}
+"""
+        cls._send_whatsapp(user.phone_number, body)
+
+    @classmethod
+    def send_low_stock_alert(cls, variants):
+        from bot.models import BotConfiguration
+        bot_config = BotConfiguration.objects.filter(is_active=True).first()
+        admin_phone = bot_config.admin_phone if bot_config else None
+        
+        if not admin_phone:
+            return
+
+        items_list = "\n".join([f"- {v.product.name} ({v.name}): {v.stock} unid." for v in variants])
+        body = f"""⚠️ *ALERTA DE STOCK BAJO*
+Los siguientes productos tienen pocas unidades:
+
+{items_list}
+
+Por favor reabastecer."""
+        
+        cls._send_whatsapp(admin_phone, body)
+
+    @classmethod
+    def send_return_processed(cls, order, amount):
+        user = order.user
+        if not user.phone_number:
+            return
+            
+        body = f"""💸 *DEVOLUCIÓN PROCESADA*
+Orden #{order.id}
+
+Se han abonado ${amount} créditos a tu cuenta.
+Puedes usarlos en tu próxima compra.
+"""
+        cls._send_whatsapp(user.phone_number, body)
+
+class InventoryService:
+    @staticmethod
+    def check_low_stock(variant):
+        if variant.stock <= variant.low_stock_threshold:
+            # En un sistema real, usaríamos cache para no spammear alertas
+            # Por ahora, enviamos alerta directa
+            MarketplaceNotificationService.send_low_stock_alert([variant])
+
+
 class OrderCreationService:
     """
     Servicio para encapsular la lógica de creación de una orden a partir de un carrito.
@@ -43,6 +143,20 @@ class OrderCreationService:
             associated_appointment=self.data.get('associated_appointment'),
             total_amount=0 # Se calculará a continuación
         )
+
+        # Calcular fecha estimada de entrega
+        max_prep_days = 0
+        if self.cart.items.exists():
+            max_prep_days = max(
+                (item.variant.product.preparation_days for item in self.cart.items.all()),
+                default=1
+            )
+        
+        if self.data.get('delivery_option') == Order.DeliveryOptions.DELIVERY:
+            max_prep_days += 3 # Días promedio de envío
+            
+        order.estimated_delivery_date = timezone.now().date() + timedelta(days=max_prep_days)
+        order.save(update_fields=['estimated_delivery_date'])
 
         total_amount = 0
         items_to_create = []
@@ -104,6 +218,10 @@ class OrderCreationService:
         # 5. Vaciar el carrito de compras
         self.cart.items.all().delete()
         
+        logger.info(
+            "Orden creada: order_id=%s, user=%s, total=%s, items=%d",
+            order.id, self.user.id, order.total_amount, len(items_to_create)
+        )
         return order
 
 
@@ -139,15 +257,25 @@ class OrderService:
             return order
         allowed = cls.ALLOWED_TRANSITIONS.get(current, set())
         if new_status not in allowed:
+            logger.warning(
+                "Intento de transición inválida: order_id=%s, from=%s, to=%s, user=%s",
+                order.id, current, new_status, changed_by.id if changed_by else None
+            )
             raise BusinessLogicError(
                 detail=f"No se puede cambiar el estado de {current} a {new_status}.",
                 internal_code="MKT-STATE",
+                extra={"current_status": current, "attempted_status": new_status}
             )
 
         order.status = new_status
         if new_status == Order.OrderStatus.DELIVERED:
             order.delivered_at = timezone.now()
         order.save(update_fields=['status', 'delivered_at', 'updated_at'])
+
+        logger.info(
+            "Transición de estado: order_id=%s, from=%s, to=%s, changed_by=%s",
+            order.id, current, new_status, changed_by.id if changed_by else None
+        )
 
         if (
             new_status == Order.OrderStatus.CANCELLED
@@ -170,48 +298,13 @@ class OrderService:
                 notify_order_status_change.delay(str(order.id), new_status)
             except Exception:
                 logger.exception("No se pudo notificar el cambio de estado de la orden %s", order.id)
-        cls._send_status_email(order, new_status)
+        cls._send_status_whatsapp(order, new_status)
 
     @classmethod
-    def _send_status_email(cls, order, new_status):
-        recipient = getattr(order.user, "email", None)
-        if not recipient:
-            return
+    def _send_status_whatsapp(cls, order, new_status):
+        MarketplaceNotificationService.send_order_status_update(order, new_status)
 
-        subject = body = None
-        if cls._is_ready_for_pickup_state(order, new_status):
-            subject = "Tu orden está lista para recoger"
-            body = (
-                f"Hola {cls._format_customer_name(order)}, "
-                f"tu orden {order.id} ya está lista para recogerse en ZenzSpa. "
-                "Acércate con tu identificación para completar la entrega."
-            )
-        elif new_status == Order.OrderStatus.SHIPPED:
-            tracking = order.tracking_number or "Sin número de seguimiento disponible"
-            subject = "Tu orden ha sido enviada"
-            body = (
-                f"Hola {cls._format_customer_name(order)}, "
-                f"tu orden {order.id} ha sido enviada. "
-                f"Número de seguimiento: {tracking}."
-            )
 
-        if not body:
-            return
-
-        try:
-            send_mail(
-                subject,
-                body,
-                getattr(settings, "DEFAULT_FROM_EMAIL", None),
-                [recipient],
-                fail_silently=False,
-            )
-        except Exception:
-            logger.exception(
-                "No se pudo enviar el correo para el estado %s de la orden %s",
-                new_status,
-                order.id,
-            )
 
     @classmethod
     def _is_ready_for_pickup_state(cls, order, new_status):
@@ -255,11 +348,37 @@ class OrderService:
 
     @classmethod
     @transaction.atomic
-    def confirm_payment(cls, order):
+    def confirm_payment(cls, order, paid_amount=None):
+        """
+        Confirma el pago de una orden.
+        
+        Args:
+            order: Orden a confirmar
+            paid_amount: Monto pagado según gateway (opcional pero recomendado)
+        """
         cls._validate_pricing(order)
+        
+        # Validar monto pagado si se proporciona
+        if paid_amount is not None:
+            # Convertir a Decimal si es necesario
+            if not isinstance(paid_amount, Decimal):
+                paid_amount = Decimal(str(paid_amount))
+                
+            if abs(paid_amount - order.total_amount) > Decimal('0.01'):
+                raise BusinessLogicError(
+                    detail=f"El monto pagado ({paid_amount}) no coincide con el total de la orden ({order.total_amount}).",
+                    internal_code="MKT-AMOUNT-MISMATCH"
+                )
+
         cls._capture_stock(order)
         order.reservation_expires_at = None
         order.save(update_fields=['reservation_expires_at', 'updated_at'])
+        
+        logger.info(
+            "Pago confirmado: order_id=%s, user=%s, total=%s",
+            order.id, order.user.id, order.total_amount
+        )
+
         if order.status == Order.OrderStatus.CANCELLED:
             order.status = Order.OrderStatus.PAID
             order.save(update_fields=['status', 'updated_at'])
@@ -311,6 +430,7 @@ class OrderService:
                 description="Venta confirmada",
                 created_by=None,
             )
+            InventoryService.check_low_stock(variant)
 
 
 class ReturnService:
@@ -432,29 +552,7 @@ class ReturnService:
 
     @staticmethod
     def _notify_return_processed(order, credited_amount):
-        recipient = getattr(order.user, "email", None)
-        if not recipient:
-            return
-
-        amount_str = format(credited_amount, ".2f")
-        subject = "Devolución procesada"
-        message = (
-            "Devolución procesada. "
-            f"Se han agregado ${amount_str} créditos a tu cuenta en ZenzSpa."
-        )
-        try:
-            send_mail(
-                subject,
-                message,
-                getattr(settings, "DEFAULT_FROM_EMAIL", None),
-                [recipient],
-                fail_silently=False,
-            )
-        except Exception:
-            logger.exception(
-                "No se pudo enviar el correo de confirmación de devolución para la orden %s",
-                order.id,
-            )
+        MarketplaceNotificationService.send_return_processed(order, credited_amount)
 
     @staticmethod
     def _log_return_audit(order, processed_by, credited_amount, refunded_items):

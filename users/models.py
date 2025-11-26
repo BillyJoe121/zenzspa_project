@@ -1,19 +1,22 @@
+import re
+
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.utils import timezone
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 
 from core.models import BaseModel
 
 
 class CustomUserManager(BaseUserManager):
-    def create_user(self, phone_number, email, first_name, password=None, **extra_fields):
+    def make_random_password(self, length=10, allowed_chars=None):
+        return super().make_random_password(length=length, allowed_chars=allowed_chars)
+    def create_user(self, phone_number, email=None, first_name="", password=None, **extra_fields):
         if not phone_number:
             raise ValueError('El número de teléfono es obligatorio.')
-        if not email:
-            raise ValueError('El correo electrónico es obligatorio.')
 
-        email = self.normalize_email(email)
+        email = self.normalize_email(email) if email else None
         user = self.model(
             phone_number=phone_number,
             email=email,
@@ -39,6 +42,12 @@ class CustomUserManager(BaseUserManager):
         return self.create_user(phone_number, email, first_name, password, **extra_fields)
 
 
+PHONE_NUMBER_REGEX = RegexValidator(
+    regex=r"^\+[1-9]\d{9,14}$",
+    message="El número debe estar en formato internacional (+573001234567).",
+)
+
+
 class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
     class Role(models.TextChoices):
         CLIENT = 'CLIENT', 'Cliente'
@@ -47,9 +56,17 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
         ADMIN = 'ADMIN', 'Administrador'
 
     phone_number = models.CharField(
-        max_length=15, unique=True, verbose_name='Número de Teléfono')
+        max_length=15,
+        unique=True,
+        verbose_name='Número de Teléfono',
+        validators=[PHONE_NUMBER_REGEX],
+    )
     email = models.EmailField(
-        max_length=255, unique=True, verbose_name='Correo Electrónico')
+        max_length=255,
+        unique=True,
+        null=True,
+        blank=True,
+        verbose_name='Correo Electrónico')
     first_name = models.CharField(max_length=100, verbose_name='Nombre')
     last_name = models.CharField(
         max_length=100, blank=True, verbose_name='Apellido')
@@ -96,6 +113,18 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
         blank=True, null=True, verbose_name="Notas Internas (Staff/Admin)")
     internal_photo_url = models.URLField(
         max_length=512, blank=True, null=True, verbose_name="URL de Foto Interna (Staff/Admin)")
+    
+    # --- MEJORAS IMPLEMENTADAS ---
+    email_verified = models.BooleanField(
+        default=False, verbose_name="Email Verificado"
+    )
+    totp_secret = models.CharField(
+        max_length=32, blank=True, null=True, verbose_name="Secreto TOTP (2FA App)"
+    )
+    is_deleted = models.BooleanField(
+        default=False, verbose_name="Eliminado Suavemente"
+    )
+    # --- FIN MEJORAS ---
     # --- FIN DE LA MODIFICACIÓN ---
     cancellation_streak = models.JSONField(
         default=list,
@@ -107,7 +136,7 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
     objects = CustomUserManager()
 
     USERNAME_FIELD = 'phone_number'
-    REQUIRED_FIELDS = ['email', 'first_name']
+    REQUIRED_FIELDS = ['first_name']
 
     def __str__(self):
         return f"{self.first_name} ({self.phone_number})"
@@ -115,10 +144,22 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
     class Meta:
         verbose_name = 'Usuario'
         verbose_name_plural = 'Usuarios'
+        indexes = [
+            models.Index(fields=['email']),
+            models.Index(fields=['role', 'is_active']),
+            models.Index(fields=['is_persona_non_grata']),
+            models.Index(fields=['vip_expires_at']),
+        ]
 
     def clean(self):
         super().clean()
         self.vip_payment_token = self._normalize_vip_payment_token(self.vip_payment_token)
+        if self.phone_number:
+            digits = self.phone_number.replace("+", "")
+            if not digits.isdigit() or len(digits) < 10 or len(digits) > 15:
+                raise ValidationError(
+                    {'phone_number': 'Número de teléfono inválido. Usa formato internacional (+573001234567).'}
+                )
 
     def save(self, *args, **kwargs):
         self.vip_payment_token = self._normalize_vip_payment_token(self.vip_payment_token)
@@ -197,6 +238,10 @@ class UserSession(BaseModel):
         verbose_name = "Sesión de Usuario"
         verbose_name_plural = "Sesiones de Usuarios"
         ordering = ['-last_activity']
+        indexes = [
+            models.Index(fields=['user', 'is_active']),
+            models.Index(fields=['last_activity']),
+        ]
 
     def __str__(self):
         return f"Sesión {self.refresh_token_jti} para {self.user}"
@@ -217,6 +262,10 @@ class OTPAttempt(BaseModel):
         verbose_name = "Intento OTP"
         verbose_name_plural = "Intentos OTP"
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['phone_number', 'created_at']),
+            models.Index(fields=['attempt_type', 'is_successful']),
+        ]
 
     def __str__(self):
         return f"{self.phone_number} ({self.attempt_type}) - {'OK' if self.is_successful else 'FAIL'}"
@@ -232,3 +281,26 @@ class BlockedPhoneNumber(BaseModel):
 
     def __str__(self):
         return f"Número bloqueado: {self.phone_number}"
+
+
+class BlockedDevice(BaseModel):
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='blocked_devices',
+        null=True,
+        blank=True
+    )
+    device_fingerprint = models.CharField(max_length=255, unique=True)
+    user_agent = models.TextField(blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    is_blocked = models.BooleanField(default=True)
+    reason = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "Dispositivo Bloqueado"
+        verbose_name_plural = "Dispositivos Bloqueados"
+
+    def __str__(self):
+        return f"Device {self.device_fingerprint[:8]}... ({'Blocked' if self.is_blocked else 'Active'})"
+

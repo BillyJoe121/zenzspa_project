@@ -1,7 +1,15 @@
+import logging
+from datetime import timedelta
+
 from celery import shared_task
 from django.conf import settings
 from django.core.mail import send_mail
-from .models import CustomUser
+from django.db.models import Q
+from django.utils import timezone
+
+from .models import CustomUser, UserSession
+
+logger = logging.getLogger(__name__)
 
 
 @shared_task
@@ -36,3 +44,17 @@ def send_non_grata_alert_to_admins(phone_number):
         f"ALERTA 'NO GRATO': Notificación enviada a los administradores sobre el número {phone_number}.")
 
     return f"Notificación enviada para el número {phone_number}"
+
+
+@shared_task
+def cleanup_inactive_sessions():
+    """
+    Elimina sesiones inactivas hace más de 30 días o marcadas como inactivas.
+    """
+    cutoff = timezone.now() - timedelta(days=30)
+    deleted_count, _ = UserSession.objects.filter(
+        Q(is_active=False) | Q(last_activity__lt=cutoff)
+    ).delete()
+    if deleted_count:
+        logger.info("Eliminadas %s sesiones inactivas o antiguas", deleted_count)
+    return {"deleted_count": deleted_count}

@@ -1,6 +1,8 @@
 from datetime import timedelta
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -10,10 +12,11 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import ClinicalProfile, ConsentTemplate, DoshaQuestion, ClientDoshaAnswer, KioskSession
+from .models import ClinicalProfile, ConsentTemplate, ConsentDocument, DoshaQuestion, ClientDoshaAnswer, KioskSession
 from .permissions import (
     ClinicalProfileAccessPermission,
     IsKioskSession,
+    IsKioskSessionAllowExpired,
     IsVerifiedUserOrKioskSession,
     load_kiosk_session_from_request,
 )
@@ -29,8 +32,8 @@ from .serializers import (
 from .services import calculate_dominant_dosha_and_element
 from users.models import CustomUser
 from users.permissions import IsAdminUser, IsStaffOrAdmin, IsVerified
-from core.models import AuditLog
-from core.utils import safe_audit_log
+from core.models import AuditLog, GlobalSettings
+from core.utils import get_client_ip, safe_audit_log
 
 class ClinicalProfileViewSet(viewsets.ModelViewSet):
     """
@@ -56,6 +59,27 @@ class ClinicalProfileViewSet(viewsets.ModelViewSet):
             return base_queryset
         return base_queryset.filter(user=user)
 
+
+    def retrieve(self, request, *args, **kwargs):
+        """Sobrescribir para auditar acceso a datos médicos"""
+        instance = self.get_object()
+        
+        # Auditar acceso a perfil médico (HIPAA Compliance)
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            admin_user=request.user if request.user.is_authenticated else None,
+            target_user=instance.user,
+            details={
+                "action": "view_clinical_profile",
+                "profile_id": str(instance.id),
+                "accessed_by_role": getattr(request.user, 'role', 'UNKNOWN'),
+                "kiosk_session": bool(getattr(request, 'kiosk_session', None)),
+            }
+        )
+        
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
     def get_object(self):
         phone_number = self.kwargs.get(self.lookup_url_kwarg)
         queryset = self.get_queryset()
@@ -65,6 +89,44 @@ class ClinicalProfileViewSet(viewsets.ModelViewSet):
         if kiosk_client and obj.user != kiosk_client:
             raise PermissionDenied("La sesión de quiosco no puede acceder a este perfil.")
         return obj
+
+
+    def update(self, request, *args, **kwargs):
+        """Sobrescribir para auditar modificaciones a datos médicos"""
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        
+        # Capturar datos antes de actualizar
+        old_data = {
+            'medical_conditions': instance.medical_conditions,
+            'allergies': instance.allergies,
+            'contraindications': instance.contraindications,
+        }
+        
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        
+        # Auditar cambios en campos sensibles
+        changes = []
+        for field in ['medical_conditions', 'allergies', 'contraindications']:
+            if old_data[field] != getattr(instance, field):
+                changes.append(field)
+        
+        if changes:
+            safe_audit_log(
+                action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+                admin_user=request.user if request.user.is_authenticated else None,
+                target_user=instance.user,
+                details={
+                    "action": "update_clinical_profile",
+                    "profile_id": str(instance.id),
+                    "fields_modified": changes,
+                    "kiosk_session": bool(getattr(request, 'kiosk_session', None)),
+                }
+            )
+        
+        return Response(serializer.data)
 
     def perform_update(self, serializer):
         instance = serializer.save()
@@ -123,9 +185,23 @@ class DoshaQuizSubmitView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         answers_data = serializer.validated_data.get('answers', [])
-        
+
+        # CRÍTICO - Validar que se respondieron todas las preguntas
+        total_questions = DoshaQuestion.objects.count()
+        answered_questions = len(set(a['question_id'] for a in answers_data))
+
+        if answered_questions < total_questions:
+            return Response(
+                {
+                    "detail": f"Debes responder todas las preguntas. Respondidas: {answered_questions}/{total_questions}",
+                    "code": "QUIZ_INCOMPLETE",
+                    "missing_count": total_questions - answered_questions
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Lógica bimodal: Determinar el perfil a actualizar.
         kiosk_session = getattr(request, 'kiosk_session', None)
         if hasattr(request, 'kiosk_client'):
@@ -182,9 +258,25 @@ class KioskStartSessionView(generics.GenericAPIView):
     permission_classes = [IsStaffOrAdmin]
 
     def post(self, request, *args, **kwargs):
+        # CRÍTICO - Rate limiting: máximo 10 sesiones por hora por staff
+        cache_key = f"kiosk_rate_limit:{request.user.id}"
+        count = cache.get(cache_key, 0)
+
+        if count >= 10:
+            return Response(
+                {
+                    "detail": "Has excedido el límite de sesiones de kiosk por hora.",
+                    "code": "KIOSK_RATE_LIMIT",
+                    "retry_after": 3600
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+
+        cache.set(cache_key, count + 1, timeout=3600)
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        
+
         client_phone = serializer.validated_data['client_phone_number']
         try:
             client = CustomUser.objects.get(phone_number=client_phone)
@@ -197,7 +289,28 @@ class KioskStartSessionView(generics.GenericAPIView):
         staff_member = request.user
 
         timeout_minutes = getattr(settings, "KIOSK_SESSION_TIMEOUT_MINUTES", 5)
-        expires_at = timezone.now() + timedelta(minutes=timeout_minutes)
+
+        # MEJORA #9: Usar timezone del spa desde GlobalSettings
+        # Esto asegura que expires_at se calcula correctamente según la zona horaria del spa
+        try:
+            from datetime import timezone as dt_timezone
+
+            settings_obj = GlobalSettings.load()
+            spa_tz = ZoneInfo(settings_obj.timezone_display)
+            now_spa = timezone.now().astimezone(spa_tz)
+            expires_at = now_spa + timedelta(minutes=timeout_minutes)
+            expires_at_utc = expires_at.astimezone(dt_timezone.utc)
+
+            expires_at = expires_at_utc
+        except Exception as e:
+            # Fallback a timezone por defecto si hay error
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                "Error al obtener timezone del spa para kiosk session: %s. Usando UTC.",
+                str(e)
+            )
+            expires_at = timezone.now() + timedelta(minutes=timeout_minutes)
         session = KioskSession.objects.create(
             profile=profile,
             staff_member=staff_member,
@@ -309,7 +422,7 @@ class KioskSessionDiscardChangesView(generics.GenericAPIView):
 
 
 class KioskSessionSecureScreenView(generics.GenericAPIView):
-    permission_classes = [IsKioskSession]
+    permission_classes = [IsKioskSessionAllowExpired]
 
     def post(self, request, *args, **kwargs):
         session = request.kiosk_session
@@ -389,3 +502,168 @@ class AnonymizeProfileView(generics.GenericAPIView):
         )
         profile.anonymize(performed_by=request.user)
         return Response({"detail": "Perfil anonimizado correctamente."}, status=status.HTTP_200_OK)
+
+
+class SignConsentView(generics.GenericAPIView):
+    """
+    Endpoint para que un usuario firme un consentimiento.
+    CRÍTICO: Captura IP real del cliente para cumplimiento legal.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        template_id = request.data.get('template_id')
+
+        if not template_id:
+            return Response(
+                {"detail": "El campo 'template_id' es requerido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            template = ConsentTemplate.objects.get(id=template_id, is_active=True)
+        except ConsentTemplate.DoesNotExist:
+            return Response(
+                {"detail": "Template de consentimiento no encontrado o inactivo."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        profile, _ = ClinicalProfile.objects.get_or_create(user=request.user)
+
+        # CRÍTICO - Capturar IP real del cliente
+        client_ip = get_client_ip(request)
+
+        # Verificar si ya existe un consentimiento firmado
+        existing_consent = ConsentDocument.objects.filter(
+            profile=profile,
+            template_version=template.version,
+            is_signed=True
+        ).first()
+
+        if existing_consent:
+            return Response(
+                {
+                    "detail": "Ya existe un consentimiento firmado para esta versión.",
+                    "consent_id": str(existing_consent.id),
+                    "signed_at": existing_consent.signed_at.isoformat()
+                },
+                status=status.HTTP_409_CONFLICT
+            )
+
+        # Crear consentimiento firmado
+        consent = ConsentDocument.objects.create(
+            profile=profile,
+            template=template,
+            is_signed=True,
+            signed_at=timezone.now(),
+            ip_address=client_ip,
+        )
+
+        # Auditar firma
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            admin_user=None,
+            target_user=request.user,
+            details={
+                "action": "sign_consent",
+                "consent_id": str(consent.id),
+                "template_version": template.version,
+                "ip_address": client_ip,
+            }
+        )
+
+        return Response(
+            {
+                "detail": "Consentimiento firmado exitosamente.",
+                "consent_id": str(consent.id),
+                "template_version": template.version,
+                "signed_at": consent.signed_at.isoformat(),
+                "signature_hash": consent.signature_hash
+            },
+            status=status.HTTP_201_CREATED
+        )
+
+
+class ExportClinicalDataView(generics.GenericAPIView):
+    """
+    Exporta todos los datos clínicos del usuario en formato JSON.
+    COMPLIANCE: GDPR Art. 20 (Right to Data Portability)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            profile = ClinicalProfile.objects.get(user=request.user)
+        except ClinicalProfile.DoesNotExist:
+            return Response(
+                {"detail": "No se encontró un perfil clínico para este usuario."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Construir datos de exportación
+        data = {
+            "user": {
+                "first_name": request.user.first_name,
+                "last_name": request.user.last_name,
+                "email": request.user.email,
+                "phone_number": request.user.phone_number,
+            },
+            "profile": {
+                "dosha": profile.dosha,
+                "element": profile.element,
+                "diet_type": profile.diet_type,
+                "sleep_quality": profile.sleep_quality,
+                "activity_level": profile.activity_level,
+                "medical_conditions": profile.medical_conditions,
+                "allergies": profile.allergies,
+                "contraindications": profile.contraindications,
+                "accidents_notes": profile.accidents_notes,
+                "general_notes": profile.general_notes,
+            },
+            "pains": [
+                {
+                    "body_part": pain.body_part,
+                    "pain_level": pain.pain_level,
+                    "periodicity": pain.periodicity,
+                    "notes": pain.notes,
+                    "created_at": pain.created_at.isoformat(),
+                }
+                for pain in profile.pains.all()
+            ],
+            "consents": [
+                {
+                    "template_version": consent.template_version,
+                    "document_text": consent.document_text,
+                    "is_signed": consent.is_signed,
+                    "signed_at": consent.signed_at.isoformat() if consent.signed_at else None,
+                    "ip_address": consent.ip_address,
+                    "signature_hash": consent.signature_hash,
+                    "created_at": consent.created_at.isoformat(),
+                }
+                for consent in profile.consents.filter(is_signed=True)
+            ],
+            "dosha_answers": [
+                {
+                    "question": answer.question.text,
+                    "selected_option": answer.selected_option.text,
+                    "associated_dosha": answer.selected_option.associated_dosha,
+                }
+                for answer in profile.dosha_answers.select_related('question', 'selected_option').all()
+            ],
+            "exported_at": timezone.now().isoformat(),
+            "export_format_version": "1.0",
+        }
+
+        # Auditar exportación
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            admin_user=None,
+            target_user=request.user,
+            details={
+                "action": "export_clinical_data",
+                "exported_at": data["exported_at"],
+                "data_categories": list(data.keys())
+            }
+        )
+
+        return Response(data, status=status.HTTP_200_OK)

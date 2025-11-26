@@ -64,6 +64,19 @@ class ProductVariant(BaseModel):
     )
     stock = models.PositiveIntegerField(default=0, verbose_name="Cantidad en Stock")
     reserved_stock = models.PositiveIntegerField(default=0, verbose_name="Stock Reservado")
+    low_stock_threshold = models.PositiveIntegerField(
+        default=5,
+        verbose_name="Umbral de Stock Bajo",
+        help_text="Avisar al admin cuando el stock baje de esta cantidad."
+    )
+    min_order_quantity = models.PositiveSmallIntegerField(
+        default=1,
+        verbose_name="Mínimo por Orden"
+    )
+    max_order_quantity = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        verbose_name="Máximo por Orden"
+    )
 
     class Meta:
         verbose_name = "Variante de Producto"
@@ -258,6 +271,10 @@ class Order(BaseModel):
     shipping_date = models.DateField(
         null=True, blank=True,
         verbose_name="Fecha de Envío"
+    )
+    estimated_delivery_date = models.DateField(
+        null=True, blank=True,
+        verbose_name="Fecha Estimada de Entrega"
     )
     voucher = models.ForeignKey(
         Voucher,

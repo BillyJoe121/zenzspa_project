@@ -1,13 +1,14 @@
 import logging
 
 from rest_framework import serializers
-from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.settings import api_settings
 from django.db import transaction
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.utils import timezone
+from django.core.cache import cache
 
 from .models import CustomUser, UserSession, BlockedPhoneNumber
 from .tasks import send_non_grata_alert_to_admins
@@ -16,6 +17,7 @@ from profiles.models import ClinicalProfile # Se actualiza la importación
 # --- FIN DE LA MODIFICACIÓN ---
 from core.serializers import DataMaskingMixin, DynamicFieldsModelSerializer
 from .utils import register_user_session
+from .services import verify_recaptcha
 
 
 CustomUser = get_user_model()
@@ -29,8 +31,27 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['role'] = user.role
         return token
 
+    MAX_LOGIN_ATTEMPTS = 5
+
     def validate(self, attrs):
+        request = self.context.get("request")
+        phone_number = attrs.get("phone_number")
+        ip = getattr(request, "META", {}).get("REMOTE_ADDR") if request else None
+
+        cache_key = f"login_attempts:{phone_number}"
+        attempts = cache.get(cache_key, 0)
+
+        # Incrementar contador de intentos antes de validar
+        cache.set(cache_key, attempts + 1, timeout=3600)
+        recaptcha_token = None
+        if attempts >= self.MAX_LOGIN_ATTEMPTS:
+            recaptcha_token = (getattr(request, "data", {}) or {}).get("recaptcha_token")
+            if not recaptcha_token or not verify_recaptcha(recaptcha_token, remote_ip=ip, action="auth__login"):
+                raise serializers.ValidationError({"detail": "Completa reCAPTCHA para continuar."})
+
         data = super().validate(attrs)
+        cache.set(cache_key, 0, timeout=3600)  # reset on success
+
         if not self.user.is_verified:
             raise serializers.ValidationError({
                 "detail": "El número de teléfono no ha sido verificado. Por favor, completa la verificación por SMS."
@@ -44,7 +65,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 register_user_session(
                     user=self.user,
                     refresh_token_jti=jti,
-                    request=self.context.get('request'),
+                    request=request,
                     sender=self.__class__,
                 )
             except Exception as exc:
@@ -53,58 +74,36 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 
 class SessionAwareTokenRefreshSerializer(TokenRefreshSerializer):
+    default_error_messages = {
+        **TokenRefreshSerializer.default_error_messages,
+        "session_not_found": "Token inválido o sesión expirada.",
+    }
+
     def validate(self, attrs):
         refresh = self.token_class(attrs['refresh'])
-        user = self._get_user_from_refresh(refresh)
-        data = {'access': str(refresh.access_token)}
-
-        if api_settings.ROTATE_REFRESH_TOKENS:
-            if api_settings.BLACKLIST_AFTER_ROTATION:
-                try:
-                    refresh.blacklist()
-                except AttributeError:
-                    pass
-
-            refresh.set_jti()
-            refresh.set_exp()
-            refresh.set_iat()
-            refresh.outstand()
-            data['refresh'] = str(refresh)
-
-        if user is not None:
-            jti = str(refresh[api_settings.JTI_CLAIM])
-            register_user_session(
-                user=user,
-                refresh_token_jti=jti,
-                request=self.context.get('request'),
-                sender=self.__class__,
-            )
-        return data
-
-    def _get_user_from_refresh(self, refresh):
-        user_id = refresh.payload.get(api_settings.USER_ID_CLAIM, None)
-        if not user_id:
-            return None
-        user_model = get_user_model()
+        jti = str(refresh[api_settings.JTI_CLAIM])
         try:
-            user = user_model.objects.get(**{api_settings.USER_ID_FIELD: user_id})
-        except user_model.DoesNotExist:
-            return None
-        if not api_settings.USER_AUTHENTICATION_RULE(user):
-            raise AuthenticationFailed(
-                self.error_messages["no_active_account"],
-                "no_active_account",
+            session = UserSession.objects.get(refresh_token_jti=jti, is_active=True)
+        except UserSession.DoesNotExist:
+            raise serializers.ValidationError(
+                {"detail": "Token inválido o revocado.", "code": "token_not_valid"}
             )
-        return user
+
+        data = super().validate(attrs)
+
+        new_refresh_token = data.get("refresh")
+        if new_refresh_token:
+            new_refresh = self.token_class(new_refresh_token)
+            session.refresh_token_jti = str(new_refresh[api_settings.JTI_CLAIM])
+        session.last_activity = timezone.now()
+        session.save(update_fields=['refresh_token_jti', 'last_activity'])
+        return data
 
 
 class SimpleUserSerializer(DataMaskingMixin, DynamicFieldsModelSerializer):
     class Meta:
         model = CustomUser
         fields = ('id', 'phone_number', 'email', 'first_name', 'last_name', 'role')
-        role_based_fields = {
-            'ADMIN': ['phone_number', 'email']
-        }
         mask_fields = {
             'phone_number': {'mask_with': 'phone', 'visible_for': ['STAFF']},
             'email': {'mask_with': 'email', 'visible_for': ['STAFF']},
@@ -118,12 +117,54 @@ class SimpleUserSerializer(DataMaskingMixin, DynamicFieldsModelSerializer):
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
-        write_only=True, style={'input_type': 'password'}, validators=[validate_password])
+        write_only=True, style={'input_type': 'password'})
+    email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
 
     class Meta:
         model = CustomUser
         fields = ['phone_number', 'first_name',
-                  'last_name', 'email', 'password']
+                  'last_name', 'email', 'password', 'role']
+        extra_kwargs = {
+            'phone_number': {'validators': []},
+            'role': {'required': False},
+        }
+
+    def validate_password(self, value):
+        """
+        MEJORA #13: Política de contraseñas fortalecida con validaciones granulares.
+        Valida longitud, complejidad y uso de caracteres especiales.
+        """
+        # Aplicar validadores estándar de Django
+        validate_password(value)
+
+        errors = []
+
+        # Longitud mínima
+        if len(value) < 8:
+            errors.append("Debe tener al menos 8 caracteres.")
+
+        # Al menos una mayúscula
+        if not any(c.isupper() for c in value):
+            errors.append("Debe incluir al menos una letra mayúscula.")
+
+        # Al menos una minúscula
+        if not any(c.islower() for c in value):
+            errors.append("Debe incluir al menos una letra minúscula.")
+
+        # Al menos un dígito
+        if not any(c.isdigit() for c in value):
+            errors.append("Debe incluir al menos un número.")
+
+        # Al menos un símbolo
+        if not any(c in "!@#$%^&*(),.?\":{}|<>_-+=[]\\;'/~`" for c in value):
+            errors.append("Debe incluir al menos un símbolo (!@#$%^&*, etc.).")
+
+        if errors:
+            raise serializers.ValidationError({
+                "password": "Contraseña insegura. " + " ".join(errors)
+            })
+
+        return value
 
     def validate_phone_number(self, value):
         if BlockedPhoneNumber.objects.filter(phone_number=value).exists():
@@ -145,12 +186,14 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        role = validated_data.pop('role', CustomUser.Role.CLIENT)
         user = CustomUser.objects.create_user(
             phone_number=validated_data['phone_number'],
             password=validated_data['password'],
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
-            email=validated_data.get('email', '')
+            email=validated_data.get('email'),
+            role=role,
         )
         
         if user.role in [CustomUser.Role.CLIENT, CustomUser.Role.VIP]:
@@ -206,3 +249,31 @@ class UserSessionSerializer(serializers.ModelSerializer):
             'created_at',
         ]
         read_only_fields = fields
+
+
+class TOTPSetupSerializer(serializers.Serializer):
+    secret = serializers.CharField(read_only=True)
+    provisioning_uri = serializers.CharField(read_only=True)
+
+
+class TOTPVerifySerializer(serializers.Serializer):
+    token = serializers.CharField(max_length=6, min_length=6)
+
+
+class UserExportSerializer(serializers.ModelSerializer):
+    status = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = CustomUser
+        fields = [
+            'id', 'phone_number', 'email', 'first_name', 'last_name', 
+            'role', 'is_verified', 'email_verified', 'status', 'created_at', 'last_login'
+        ]
+
+    def get_status(self, obj):
+        if obj.is_persona_non_grata:
+            return "CNG"
+        if not obj.is_active:
+            return "Inactivo"
+        return "Activo"
+

@@ -40,16 +40,21 @@ class TestConversationMemory:
 
         history = ConversationMemoryService.get_conversation_history(user.id)
 
-        # Debe mantener solo los últimos 6 mensajes (3 pares)
-        assert len(history) == 6
+        # Debe mantener solo los últimos 10 mensajes (WINDOW_SIZE = 20, suficiente para 10 pares)
+        # Como agregamos 5 pares, todos deben estar presentes
+        assert len(history) == 10
 
-        # Verificar que son los últimos 3 pares (índices 2, 3, 4)
-        assert history[0]['content'] == "Pregunta 2"
-        assert history[1]['content'] == "Respuesta 2"
-        assert history[2]['content'] == "Pregunta 3"
-        assert history[3]['content'] == "Respuesta 3"
-        assert history[4]['content'] == "Pregunta 4"
-        assert history[5]['content'] == "Respuesta 4"
+        # Verificar que son todos los pares (índices 0, 1, 2, 3, 4)
+        assert history[0]['content'] == "Pregunta 0"
+        assert history[1]['content'] == "Respuesta 0"
+        assert history[2]['content'] == "Pregunta 1"
+        assert history[3]['content'] == "Respuesta 1"
+        assert history[4]['content'] == "Pregunta 2"
+        assert history[5]['content'] == "Respuesta 2"
+        assert history[6]['content'] == "Pregunta 3"
+        assert history[7]['content'] == "Respuesta 3"
+        assert history[8]['content'] == "Pregunta 4"
+        assert history[9]['content'] == "Respuesta 4"
 
     def test_clear_history(self, user):
         """Debe limpiar el historial correctamente"""

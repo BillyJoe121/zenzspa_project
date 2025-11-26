@@ -60,7 +60,18 @@ class IsKioskSession(BasePermission):
     def has_permission(self, request, view):
         session = load_kiosk_session_from_request(request, attach=True)
         return session is not None
-        
+
+class IsKioskSessionAllowExpired(BasePermission):
+    """
+    Permiso para endpoints de quiosco que necesitan funcionar incluso con sesiones expiradas.
+    Usado principalmente para el endpoint de secure-screen que necesita poder bloquear sesiones expiradas.
+    """
+    message = "Token de sesión de quiosco inválido."
+
+    def has_permission(self, request, view):
+        session = load_kiosk_session_from_request(request, attach=True, allow_inactive=True)
+        return session is not None
+
 class IsVerifiedUserOrKioskSession(BasePermission):
     """
     Permite el acceso si el usuario está autenticado y verificado
