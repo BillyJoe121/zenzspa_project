@@ -113,12 +113,30 @@ def _parse_action_scores(raw: str) -> Dict[str, float]:
 ALLOWED_HOSTS = _split_env("ALLOWED_HOSTS", "localhost 127.0.0.1")
 CSRF_TRUSTED_ORIGINS = _split_env(
     "CSRF_TRUSTED_ORIGINS",
-    "http://localhost http://127.0.0.1 http://localhost:3000 http://127.0.0.1:3000",
+    "http://localhost http://127.0.0.1 http://localhost:3000 http://127.0.0.1:3000 http://localhost:8000 http://127.0.0.1:8000",
 )
 CORS_ALLOWED_ORIGINS = _split_env(
     "CORS_ALLOWED_ORIGINS",
     "http://localhost:3000 http://127.0.0.1:3000",
 )
+
+# Configuraciones de cookies y CSRF para desarrollo
+if DEBUG:
+    CSRF_COOKIE_SECURE = False
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_HTTPONLY = False
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_USE_SESSIONS = False  # Asegura que CSRF use cookies, no sesiones
+    CSRF_COOKIE_NAME = 'csrftoken'  # Nombre estándar
+    # TEMPORAL: Deshabilitar CSRF para admin en desarrollo
+    CSRF_TRUSTED_ORIGINS.extend(['http://localhost:8000', 'http://127.0.0.1:8000'])
+else:
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_HTTPONLY = True
+    CSRF_COOKIE_SAMESITE = 'Strict'
+    SESSION_COOKIE_SAMESITE = 'Strict'
 
 # --------------------------------------------------------------------------------------
 # Apps
@@ -209,8 +227,9 @@ DATABASES = {
         "PORT": os.getenv("DB_PORT", "5432"),
         "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
         "OPTIONS": {
-            "sslmode": os.getenv("DB_SSLMODE", "require" if not DEBUG else "prefer"),
+            "sslmode": os.getenv("DB_SSLMODE", "require" if not DEBUG else "disable"),
             "connect_timeout": 10,
+            "client_encoding": "UTF8",
         },
     }
 }

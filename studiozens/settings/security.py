@@ -50,7 +50,12 @@ SESSION_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
 CSRF_COOKIE_HTTPONLY = False  # Debe ser False para que JavaScript pueda leerla
-CSRF_COOKIE_SAMESITE = "None" if CORS_ALLOW_CREDENTIALS else "Lax"
+# SameSite=None requiere Secure=True, lo cual no funciona en desarrollo HTTP
+# En desarrollo usamos Lax que es más permisivo
+if DEBUG:
+    CSRF_COOKIE_SAMESITE = "Lax"
+else:
+    CSRF_COOKIE_SAMESITE = "None" if CORS_ALLOW_CREDENTIALS else "Lax"
 
 # --------------------------------------------------------------------------------------
 # Seguridad adicional en prod
