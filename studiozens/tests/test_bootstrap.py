@@ -7,25 +7,25 @@ from django.urls import URLResolver
 
 class BootstrapTests(SimpleTestCase):
     def test_asgi_application_configured(self):
-        from zenzspa import asgi
+        from studiozens import asgi
 
-        self.assertEqual(os.environ.get("DJANGO_SETTINGS_MODULE"), "zenzspa.settings")
+        self.assertEqual(os.environ.get("DJANGO_SETTINGS_MODULE"), "studiozens.settings")
         self.assertTrue(callable(asgi.application))
 
     def test_wsgi_application_configured(self):
-        from zenzspa import wsgi
+        from studiozens import wsgi
 
         self.assertTrue(callable(wsgi.application))
 
     def test_celery_app_exports(self):
-        from zenzspa import celery, celery_app
+        from studiozens import celery, celery_app
 
         self.assertIs(celery.app, celery_app)
-        self.assertEqual(celery.app.main, "zenzspa")
+        self.assertEqual(celery.app.main, "studiozens")
         self.assertEqual(celery.app.conf.timezone, settings.TIME_ZONE)
 
     def test_urlpatterns_include_expected_routes(self):
-        from zenzspa import urls
+        from studiozens import urls
 
         route_map = {resolver.pattern._route: resolver for resolver in urls.urlpatterns if isinstance(resolver, URLResolver)}
         self.assertIn("api/v1/auth/", route_map)
@@ -33,7 +33,7 @@ class BootstrapTests(SimpleTestCase):
         self.assertIn("api/v1/", route_map)
 
     def test_api_patterns_include_apps(self):
-        from zenzspa import urls
+        from studiozens import urls
 
         included_modules = {
             getattr(resolver.urlconf_module, "__name__", "")
@@ -56,7 +56,7 @@ class BootstrapTests(SimpleTestCase):
         data = response.json()
         self.assertIn("status", data)
         self.assertIn("app", data)
-        self.assertEqual(data["app"], "zenzspa")
+        self.assertEqual(data["app"], "studiozens")
         # Verificar que incluye checks de dependencias
         if "checks" in data:
             self.assertIn("db", data["checks"])

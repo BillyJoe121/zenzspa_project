@@ -26,9 +26,9 @@ https://tu-dominio.com/api/v1/bot/whatsapp/
 ```
 
 **Ejemplos**:
-- Render: `https://zenzspa.onrender.com/api/v1/bot/whatsapp/`
-- Railway: `https://zenzspa-production.up.railway.app/api/v1/bot/whatsapp/`
-- Custom: `https://api.zenzspa.com/api/v1/bot/whatsapp/`
+- Render: `https://studiozens.onrender.com/api/v1/bot/whatsapp/`
+- Railway: `https://studiozens-production.up.railway.app/api/v1/bot/whatsapp/`
+- Custom: `https://api.studiozens.com/api/v1/bot/whatsapp/`
 
 **IMPORTANTE**: Debe ser HTTPS (Twilio requiere conexión segura).
 
@@ -79,11 +79,11 @@ https://tu-dominio.com/api/v1/bot/whatsapp/
 #### Ejemplo de interacción:
 ```
 [Usuario WhatsApp]: Hola
-[Bot]: ¡Hola! 👋 Soy el asistente virtual de ZenzSpa. ¿En qué puedo ayudarte hoy?
+[Bot]: ¡Hola! 👋 Soy el asistente virtual de StudioZens. ¿En qué puedo ayudarte hoy?
 
 [Usuario]: Quiero reservar una cita
 [Bot]: ¡Perfecto! Te puedo ayudar con eso. Para reservar una cita, por favor visita:
-https://reservas.zenzspa.com o llámanos al +57 300 123 4567.
+https://reservas.studiozens.com o llámanos al +57 300 123 4567.
 ```
 
 ---
@@ -94,7 +94,7 @@ https://reservas.zenzspa.com o llámanos al +57 300 123 4567.
 
 Para mayor seguridad, puedes activar la validación de firma de Twilio:
 
-1. **En `zenzspa/settings.py`** (o `.env`):
+1. **En `studiozens/settings.py`** (o `.env`):
 ```python
 # Activar validación de firma
 VALIDATE_TWILIO_SIGNATURE = True
@@ -334,7 +334,7 @@ self.timeout = 8  # Reducir a 8 segundos max
 
 **Solución Completa** (modo asíncrono):
 ```python
-# zenzspa/settings.py
+# studiozens/settings.py
 BOT_ASYNC_MODE = True
 
 # El webhook responderá "Procesando..." y enviará la respuesta después

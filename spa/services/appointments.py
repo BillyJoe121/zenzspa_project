@@ -480,20 +480,20 @@ class AppointmentService:
             timezone.utc).strftime('%Y%m%dT%H%M%SZ')
         dtend = appointment.end_time.astimezone(
             timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-        summary = appointment.get_service_names() or "Cita ZenzSpa"
+        summary = appointment.get_service_names() or "Cita StudioZens"
         description = f"Cita #{appointment.id}"
 
         lines = [
             "BEGIN:VCALENDAR",
             "VERSION:2.0",
-            "PRODID:-//ZenzSpa//Appointments//ES",
+            "PRODID:-//StudioZens//Appointments//ES",
             "BEGIN:VEVENT",
-            f"UID:{appointment.id}@zenzspa",
+            f"UID:{appointment.id}@studiozens",
             f"DTSTAMP:{dtstamp}",
             f"DTSTART:{dtstart}",
             f"DTEND:{dtend}",
             f"SUMMARY:{summary}",
-            "LOCATION:ZenzSpa",
+            "LOCATION:StudioZens",
             f"DESCRIPTION:{description}",
             "END:VEVENT",
             "END:VCALENDAR",

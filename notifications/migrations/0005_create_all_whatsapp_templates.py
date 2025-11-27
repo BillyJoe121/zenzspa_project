@@ -24,7 +24,7 @@ Te recordamos que tienes una cita mañana:
 
 _Si no puedes asistir, cancela con al menos 24h de anticipación._
 
-¡Te esperamos en ZenzSpa!"""
+¡Te esperamos en StudioZens!"""
         ),
         (
             "APPOINTMENT_REMINDER_2H",

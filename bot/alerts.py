@@ -236,7 +236,7 @@ class SuspiciousActivityAlertService:
             subject = f"[Reporte Diario] Seguridad del Bot - {timezone.now().strftime('%Y-%m-%d')}"
 
             message = f"""
-📊 REPORTE DIARIO DE SEGURIDAD - ZENZSPA BOT 📊
+📊 REPORTE DIARIO DE SEGURIDAD - STUDIOZENS BOT 📊
 Período: {yesterday.strftime('%Y-%m-%d %H:%M')} - {timezone.now().strftime('%Y-%m-%d %H:%M')}
 
 ═══════════════════════════════════════════════════

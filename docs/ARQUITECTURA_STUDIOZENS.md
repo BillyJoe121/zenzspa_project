@@ -61,8 +61,8 @@ Esta es la configuración más profesional y escalable:
 ┌──────────┬─────────┬──────────────────────────────────┬──────────┐
 │   Type   │  Name   │            Value                 │   TTL    │
 ├──────────┼─────────┼──────────────────────────────────┼──────────┤
-│ CNAME    │ api     │ zenzspa-web.onrender.com         │ 1 Hour   │
-│ CNAME    │ admin   │ zenzspa-web.onrender.com         │ 1 Hour   │
+│ CNAME    │ api     │ studiozens-web.onrender.com         │ 1 Hour   │
+│ CNAME    │ admin   │ studiozens-web.onrender.com         │ 1 Hour   │
 │ CNAME    │ www     │ studiozens.com                   │ 1 Hour   │
 │ A        │ @       │ [IP de tu hosting frontend]      │ 1 Hour   │
 └──────────┴─────────┴──────────────────────────────────┴──────────┘
@@ -154,7 +154,7 @@ Solo para sitios estáticos simples.
 
 #### En Render:
 ```
-Dashboard → zenzspa-web → Settings → Custom Domains
+Dashboard → studiozens-web → Settings → Custom Domains
 → Add: api.studiozens.com
 → Add: admin.studiozens.com
 ```
@@ -166,21 +166,21 @@ DNS Management → Add
 Record 1:
 Type: CNAME
 Name: api
-Value: zenzspa-web.onrender.com
+Value: studiozens-web.onrender.com
 TTL: 1 Hour
 
 Record 2:
 Type: CNAME
 Name: admin
-Value: zenzspa-web.onrender.com
+Value: studiozens-web.onrender.com
 TTL: 1 Hour
 ```
 
 #### Variables de Entorno en Render:
 ```bash
-ALLOWED_HOSTS=zenzspa-web.onrender.com,api.studiozens.com,admin.studiozens.com,studiozens.com,www.studiozens.com
+ALLOWED_HOSTS=studiozens-web.onrender.com,api.studiozens.com,admin.studiozens.com,studiozens.com,www.studiozens.com
 
-CSRF_TRUSTED_ORIGINS=https://zenzspa-web.onrender.com,https://api.studiozens.com,https://admin.studiozens.com,https://studiozens.com,https://www.studiozens.com
+CSRF_TRUSTED_ORIGINS=https://studiozens-web.onrender.com,https://api.studiozens.com,https://admin.studiozens.com,https://studiozens.com,https://www.studiozens.com
 
 CORS_ALLOWED_ORIGINS=https://studiozens.com,https://www.studiozens.com
 
@@ -322,8 +322,8 @@ Django Admin:            https://admin.studiozens.com/admin/
 Type    Name    Value                           TTL
 A       @       76.76.21.21 (Vercel)            1 Hour
 CNAME   www     cname.vercel-dns.com            1 Hour
-CNAME   api     zenzspa-web.onrender.com        1 Hour
-CNAME   admin   zenzspa-web.onrender.com        1 Hour
+CNAME   api     studiozens-web.onrender.com        1 Hour
+CNAME   admin   studiozens-web.onrender.com        1 Hour
 ```
 
 ### **Servicios y Costos**:

@@ -1,11 +1,11 @@
-# zenzspa_project/zenzspa/celery.py
+# studiozens_project/studiozens/celery.py
 import os
 from celery import Celery
 
 # Establece el módulo de configuración de Django para el programa 'celery'.
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'zenzspa.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'studiozens.settings')
 
-app = Celery('zenzspa')
+app = Celery('studiozens')
 
 # Usa una cadena aquí para que el worker no tenga que serializar
 # el objeto de configuración a los procesos hijos.

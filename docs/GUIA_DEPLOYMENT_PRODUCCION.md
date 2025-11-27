@@ -1,8 +1,8 @@
-# 🚀 GUÍA COMPLETA DE DEPLOYMENT A PRODUCCIÓN - ZENZSPA
+# 🚀 GUÍA COMPLETA DE DEPLOYMENT A PRODUCCIÓN - STUDIOZENS
 
 **Fecha**: 2025-11-23  
 **Autor**: Guía para primer deployment en Render  
-**Objetivo**: Desplegar zenzspa_project a producción de forma segura
+**Objetivo**: Desplegar studiozens_project a producción de forma segura
 
 ---
 
@@ -46,8 +46,8 @@ Antes de desplegar, implementa **mínimo las top 20 críticas**:
 git checkout -b feature/production-improvements
 
 # Implementar en orden:
-# 1. Zenzspa: Validación de env vars
-# 2. Zenzspa: Rate limiting
+# 1. Studiozens: Validación de env vars
+# 2. Studiozens: Rate limiting
 # 3. Core: Race conditions
 # 4. Spa: Race conditions + Circuit breaker
 # 5. Users: Rate limiting OTP + Circuit breaker
@@ -210,7 +210,7 @@ RUN python manage.py collectstatic --noinput
 EXPOSE 8000
 
 # Comando de inicio
-CMD ["gunicorn", "zenzspa.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "4"]
+CMD ["gunicorn", "studiozens.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "4"]
 ```
 
 #### C. Crear `render.yaml` (Blueprint de Render)
@@ -220,23 +220,23 @@ CMD ["gunicorn", "zenzspa.wsgi:application", "--bind", "0.0.0.0:8000", "--worker
 services:
   # Web Service (Django)
   - type: web
-    name: zenzspa-web
+    name: studiozens-web
     env: python
     region: oregon
     plan: starter  # $7/mes
     buildCommand: "./build.sh"
-    startCommand: "gunicorn zenzspa.wsgi:application --bind 0.0.0.0:$PORT --workers 4 --timeout 120"
+    startCommand: "gunicorn studiozens.wsgi:application --bind 0.0.0.0:$PORT --workers 4 --timeout 120"
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: DATABASE_URL
         fromDatabase:
-          name: zenzspa-db
+          name: studiozens-db
           property: connectionString
       - key: REDIS_URL
         fromService:
           type: redis
-          name: zenzspa-redis
+          name: studiozens-redis
           property: connectionString
       - key: SECRET_KEY
         generateValue: true
@@ -259,46 +259,46 @@ services:
 
   # Worker (Celery)
   - type: worker
-    name: zenzspa-worker
+    name: studiozens-worker
     env: python
     region: oregon
     plan: starter
     buildCommand: "./build.sh"
-    startCommand: "celery -A zenzspa worker -l info"
+    startCommand: "celery -A studiozens worker -l info"
     envVars:
       - fromService:
           type: web
-          name: zenzspa-web
+          name: studiozens-web
           envVarKey: DATABASE_URL
       - fromService:
           type: web
-          name: zenzspa-web
+          name: studiozens-web
           envVarKey: REDIS_URL
 
   # Celery Beat (Tareas programadas)
   - type: worker
-    name: zenzspa-beat
+    name: studiozens-beat
     env: python
     region: oregon
     plan: starter
     buildCommand: "./build.sh"
-    startCommand: "celery -A zenzspa beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
+    startCommand: "celery -A studiozens beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
     envVars:
       - fromService:
           type: web
-          name: zenzspa-web
+          name: studiozens-web
           envVarKey: DATABASE_URL
 
 databases:
   # PostgreSQL
-  - name: zenzspa-db
-    databaseName: zenzspa
-    user: zenzspa
+  - name: studiozens-db
+    databaseName: studiozens
+    user: studiozens
     region: oregon
     plan: starter  # $7/mes
 
   # Redis
-  - name: zenzspa-redis
+  - name: studiozens-redis
     region: oregon
     plan: starter  # $7/mes
     maxmemoryPolicy: allkeys-lru
@@ -325,7 +325,7 @@ from users.models import CustomUser
 if not CustomUser.objects.filter(phone_number='+573000000000').exists():
     CustomUser.objects.create_superuser(
         phone_number='+573000000000',
-        email='admin@zenzspa.com',
+        email='admin@studiozens.com',
         first_name='Admin',
         password='CHANGE_THIS_PASSWORD'
     )
@@ -350,12 +350,12 @@ chmod +x build.sh
 
 1. **Crear cuenta en Sentry.io** (GRATIS)
    - Ir a https://sentry.io/signup/
-   - Crear organización "ZenzSpa"
-   - Crear proyecto "zenzspa-backend" (Django)
+   - Crear organización "StudioZens"
+   - Crear proyecto "studiozens-backend" (Django)
 
 2. **Obtener DSN**
    ```
-   Settings → Projects → zenzspa-backend → Client Keys (DSN)
+   Settings → Projects → studiozens-backend → Client Keys (DSN)
    
    Ejemplo: https://abc123@o123456.ingest.sentry.io/123456
    ```
@@ -376,7 +376,7 @@ chmod +x build.sh
 2. **Crear API Key**
    ```
    Settings → API Keys → Create API Key
-   Nombre: zenzspa-production
+   Nombre: studiozens-production
    Permisos: Full Access (o Mail Send)
    ```
 
@@ -394,7 +394,7 @@ chmod +x build.sh
    EMAIL_USE_TLS=1
    EMAIL_HOST_USER=apikey
    EMAIL_HOST_PASSWORD=SG.tu_api_key_aqui
-   DEFAULT_FROM_EMAIL=ZenzSpa <no-reply@tudominio.com>
+   DEFAULT_FROM_EMAIL=StudioZens <no-reply@tudominio.com>
    ```
 
 ### **Paso 2.3: Twilio (Ya lo tienes configurado)** ✅
@@ -434,16 +434,16 @@ BOT_GEMINI_TIMEOUT=20
 
 1. Ir a https://render.com/
 2. Registrarse con GitHub
-3. Conectar repositorio de zenzspa_project
+3. Conectar repositorio de studiozens_project
 
 ### **Paso 3.2: Crear PostgreSQL Database** ⏱️ 10 min
 
 1. Dashboard → New → PostgreSQL
 2. Configuración:
    ```
-   Name: zenzspa-db
-   Database: zenzspa
-   User: zenzspa
+   Name: studiozens-db
+   Database: studiozens
+   User: studiozens
    Region: Oregon (o el más cercano)
    Plan: Starter ($7/mes)
    ```
@@ -454,7 +454,7 @@ BOT_GEMINI_TIMEOUT=20
 1. Dashboard → New → Redis
 2. Configuración:
    ```
-   Name: zenzspa-redis
+   Name: studiozens-redis
    Region: Oregon
    Plan: Starter ($7/mes)
    Maxmemory Policy: allkeys-lru
@@ -467,13 +467,13 @@ BOT_GEMINI_TIMEOUT=20
 2. Conectar repositorio GitHub
 3. Configuración:
    ```
-   Name: zenzspa-web
+   Name: studiozens-web
    Region: Oregon
    Branch: main
    Root Directory: (dejar vacío)
    Runtime: Python 3
    Build Command: ./build.sh
-   Start Command: gunicorn zenzspa.wsgi:application --bind 0.0.0.0:$PORT --workers 4 --timeout 120
+   Start Command: gunicorn studiozens.wsgi:application --bind 0.0.0.0:$PORT --workers 4 --timeout 120
    Plan: Starter ($7/mes)
    ```
 
@@ -482,8 +482,8 @@ BOT_GEMINI_TIMEOUT=20
    # Django
    SECRET_KEY=<generar con: python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())">
    DEBUG=0
-   ALLOWED_HOSTS=zenzspa-web.onrender.com tudominio.com
-   CSRF_TRUSTED_ORIGINS=https://zenzspa-web.onrender.com https://tudominio.com
+   ALLOWED_HOSTS=studiozens-web.onrender.com tudominio.com
+   CSRF_TRUSTED_ORIGINS=https://studiozens-web.onrender.com https://tudominio.com
    CORS_ALLOWED_ORIGINS=https://tudominio.com
    
    # Base de datos (copiar de PostgreSQL)
@@ -522,7 +522,7 @@ BOT_GEMINI_TIMEOUT=20
    EMAIL_USE_TLS=1
    EMAIL_HOST_USER=apikey
    EMAIL_HOST_PASSWORD=SG....
-   DEFAULT_FROM_EMAIL=ZenzSpa <no-reply@tudominio.com>
+   DEFAULT_FROM_EMAIL=StudioZens <no-reply@tudominio.com>
    
    # Seguridad
    SECURE_SSL_REDIRECT=1
@@ -542,10 +542,10 @@ BOT_GEMINI_TIMEOUT=20
 1. Dashboard → New → Background Worker
 2. Configuración:
    ```
-   Name: zenzspa-worker
+   Name: studiozens-worker
    Region: Oregon
    Build Command: ./build.sh
-   Start Command: celery -A zenzspa worker -l info --concurrency=2
+   Start Command: celery -A studiozens worker -l info --concurrency=2
    Plan: Starter ($7/mes)
    ```
 3. Copiar **todas** las environment variables del Web Service
@@ -555,10 +555,10 @@ BOT_GEMINI_TIMEOUT=20
 1. Dashboard → New → Background Worker
 2. Configuración:
    ```
-   Name: zenzspa-beat
+   Name: studiozens-beat
    Region: Oregon
    Build Command: ./build.sh
-   Start Command: celery -A zenzspa beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+   Start Command: celery -A studiozens beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
    Plan: Starter ($7/mes)
    ```
 3. Copiar **todas** las environment variables del Web Service
@@ -583,7 +583,7 @@ BOT_GEMINI_TIMEOUT=20
 
 3. **Monitorear logs**:
    ```
-   Dashboard → zenzspa-web → Logs
+   Dashboard → studiozens-web → Logs
    
    Buscar:
    ✅ "Build completado!"
@@ -597,10 +597,10 @@ BOT_GEMINI_TIMEOUT=20
 
 ```bash
 # 1. Verificar que el servidor responde
-curl https://zenzspa-web.onrender.com/admin/
+curl https://studiozens-web.onrender.com/admin/
 
 # 2. Verificar API
-curl https://zenzspa-web.onrender.com/api/v1/
+curl https://studiozens-web.onrender.com/api/v1/
 
 # 3. Verificar que Redis funciona
 # (Desde Render Shell)
@@ -622,7 +622,7 @@ python manage.py createsuperuser
 #### C. Verificar Celery
 
 ```bash
-# Logs de zenzspa-worker
+# Logs de studiozens-worker
 # Debe mostrar:
 # [tasks]
 #   . spa.tasks.check_and_queue_reminders
@@ -634,7 +634,7 @@ python manage.py createsuperuser
 
 1. **En Render**:
    ```
-   zenzspa-web → Settings → Custom Domain
+   studiozens-web → Settings → Custom Domain
    Agregar: api.tudominio.com
    ```
 
@@ -642,7 +642,7 @@ python manage.py createsuperuser
    ```
    Tipo: CNAME
    Nombre: api
-   Valor: zenzspa-web.onrender.com
+   Valor: studiozens-web.onrender.com
    TTL: 3600
    ```
 
@@ -746,18 +746,18 @@ Habilitar:
 
 #!/bin/bash
 DATE=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR="$HOME/zenzspa_backups"
+BACKUP_DIR="$HOME/studiozens_backups"
 mkdir -p $BACKUP_DIR
 
 # Obtener DATABASE_URL de Render
 DATABASE_URL="postgresql://..."
 
-pg_dump $DATABASE_URL | gzip > $BACKUP_DIR/zenzspa_$DATE.sql.gz
+pg_dump $DATABASE_URL | gzip > $BACKUP_DIR/studiozens_$DATE.sql.gz
 
 # Mantener solo últimos 30 días
-find $BACKUP_DIR -name "zenzspa_*.sql.gz" -mtime +30 -delete
+find $BACKUP_DIR -name "studiozens_*.sql.gz" -mtime +30 -delete
 
-echo "✅ Backup completado: zenzspa_$DATE.sql.gz"
+echo "✅ Backup completado: studiozens_$DATE.sql.gz"
 ```
 
 ```bash
@@ -827,7 +827,7 @@ python manage.py migrate --fake-initial
 # 3. No hay errores en logs
 
 # Reiniciar worker:
-Render → zenzspa-worker → Manual Deploy → Deploy latest commit
+Render → studiozens-worker → Manual Deploy → Deploy latest commit
 ```
 
 ### **Problema: Webhooks de Wompi no llegan**
@@ -853,7 +853,7 @@ curl -X POST https://api.tudominio.com/api/v1/payments/wompi-webhook/ \
 # 4. Verificar que DEBUG=0
 
 # Logs en tiempo real:
-Render → zenzspa-web → Logs → Live
+Render → studiozens-web → Logs → Live
 ```
 
 ---

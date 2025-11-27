@@ -1,7 +1,7 @@
 import os
 import django
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'zenzspa.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'studiozens.settings')
 django.setup()
 
 from django.urls import resolve

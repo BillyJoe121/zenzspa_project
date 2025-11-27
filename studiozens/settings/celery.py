@@ -11,7 +11,7 @@ CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://127.0.0.1:6379/0")
 CELERY_RESULT_BACKEND = os.getenv(
     "CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/0")
 
-# ZENZSPA-OPS-REDIS-TLS: Validar Celery broker TLS en producción
+# STUDIOZENS-OPS-REDIS-TLS: Validar Celery broker TLS en producción
 if not DEBUG:
     if not CELERY_BROKER_URL.startswith("rediss://"):
         raise RuntimeError(
@@ -24,13 +24,13 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 
-# ZENZSPA-CELERYBEAT-ARTIFACTS: Mover schedule fuera del repo
+# STUDIOZENS-CELERYBEAT-ARTIFACTS: Mover schedule fuera del repo
 CELERY_BEAT_SCHEDULE_FILENAME = os.getenv(
     "CELERY_BEAT_SCHEDULE_FILENAME",
-    "/var/run/zenzspa/celerybeat-schedule" if not DEBUG else str(BASE_DIR / "celerybeat-schedule"),
+    "/var/run/studiozens/celerybeat-schedule" if not DEBUG else str(BASE_DIR / "celerybeat-schedule"),
 )
 
-# ZENZSPA-OPS-CELERY-HARDENING: Configuración robusta de Celery
+# STUDIOZENS-OPS-CELERY-HARDENING: Configuración robusta de Celery
 CELERY_TASK_ACKS_LATE = True
 CELERY_TASK_TIME_LIMIT = int(os.getenv("CELERY_TASK_TIME_LIMIT", "120"))  # 2 minutos
 CELERY_TASK_SOFT_TIME_LIMIT = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT", "100"))  # 100 segundos

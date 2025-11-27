@@ -39,7 +39,7 @@ class TOTPServiceTests(TestCase):
         user = CustomUser(email="test@example.com", phone_number="+1234567890")
         secret = "JBSWY3DPEHPK3PXP"
         uri = TOTPService.get_provisioning_uri(user, secret)
-        self.assertIn("otpauth://totp/ZenzSpa:test@example.com", uri)
+        self.assertIn("otpauth://totp/StudioZens:test@example.com", uri)
         self.assertIn("secret=JBSWY3DPEHPK3PXP", uri)
 
 

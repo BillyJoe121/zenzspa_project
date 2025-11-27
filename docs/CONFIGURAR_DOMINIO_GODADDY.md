@@ -1,23 +1,23 @@
 # 🌐 GUÍA: CONECTAR DOMINIO DE GODADDY CON RENDER
 
 **Fecha**: 2025-11-23  
-**Objetivo**: Configurar dominio personalizado para zenzspa en Render
+**Objetivo**: Configurar dominio personalizado para studiozens en Render
 
 ---
 
 ## 📋 INFORMACIÓN QUE NECESITAS
 
 Antes de empezar, ten a mano:
-- ✅ Tu dominio de GoDaddy (ejemplo: `zenzspa.com`)
+- ✅ Tu dominio de GoDaddy (ejemplo: `studiozens.com`)
 - ✅ Acceso a tu cuenta de GoDaddy
 - ✅ Acceso a tu cuenta de Render
-- ✅ URL de tu servicio en Render (ejemplo: `zenzspa-web.onrender.com`)
+- ✅ URL de tu servicio en Render (ejemplo: `studiozens-web.onrender.com`)
 
 ---
 
 ## 🎯 ARQUITECTURA RECOMENDADA
 
-Para un proyecto como zenzspa, te recomiendo esta estructura:
+Para un proyecto como studiozens, te recomiendo esta estructura:
 
 ```
 tudominio.com                    → Frontend (si tienes)
@@ -36,7 +36,7 @@ admin.tudominio.com              → Django Admin (mismo backend)
 
 1. **Ir a tu Web Service en Render**:
    ```
-   Dashboard → zenzspa-web → Settings
+   Dashboard → studiozens-web → Settings
    ```
 
 2. **Scroll hasta "Custom Domains"**:
@@ -57,7 +57,7 @@ admin.tudominio.com              → Django Admin (mismo backend)
    
    Type: CNAME
    Name: api
-   Value: zenzspa-web.onrender.com
+   Value: studiozens-web.onrender.com
    
    ⚠️ IMPORTANTE: Copia exactamente estos valores
    ```
@@ -88,7 +88,7 @@ admin.tudominio.com              → Django Admin (mismo backend)
    ```
    Type: CNAME
    Name: api
-   Value: zenzspa-web.onrender.com
+   Value: studiozens-web.onrender.com
    TTL: 1 Hour (o 3600 segundos)
    ```
 
@@ -102,7 +102,7 @@ Si quieres que `tudominio.com` también apunte a tu backend:
    ```
    Type: A
    Name: @ (representa el dominio raíz)
-   Value: [IP de Render - la obtienes haciendo ping a zenzspa-web.onrender.com]
+   Value: [IP de Render - la obtienes haciendo ping a studiozens-web.onrender.com]
    TTL: 1 Hour
    ```
 
@@ -128,7 +128,7 @@ Si quieres que `tudominio.com` también apunte a tu backend:
 nslookup api.tudominio.com
 
 # Deberías ver algo como:
-# Name:    zenzspa-web.onrender.com
+# Name:    studiozens-web.onrender.com
 # Address: [IP de Render]
 ```
 
@@ -143,7 +143,7 @@ Tipo: CNAME
 
 1. **Volver a Render**:
    ```
-   Dashboard → zenzspa-web → Settings → Custom Domains
+   Dashboard → studiozens-web → Settings → Custom Domains
    ```
 
 2. **Verificar estado**:
@@ -174,15 +174,15 @@ curl https://api.tudominio.com/admin/
 ### 4.1 Actualizar ALLOWED_HOSTS
 
 ```
-Dashboard → zenzspa-web → Environment → Edit
+Dashboard → studiozens-web → Environment → Edit
 
-ALLOWED_HOSTS=zenzspa-web.onrender.com,api.tudominio.com,tudominio.com
+ALLOWED_HOSTS=studiozens-web.onrender.com,api.tudominio.com,tudominio.com
 ```
 
 ### 4.2 Actualizar CSRF_TRUSTED_ORIGINS
 
 ```
-CSRF_TRUSTED_ORIGINS=https://zenzspa-web.onrender.com,https://api.tudominio.com,https://tudominio.com
+CSRF_TRUSTED_ORIGINS=https://studiozens-web.onrender.com,https://api.tudominio.com,https://tudominio.com
 ```
 
 ### 4.3 Actualizar CORS_ALLOWED_ORIGINS
@@ -265,7 +265,7 @@ Si quieres un subdominio separado para el admin:
    ```
    Type: CNAME
    Name: admin
-   Value: zenzspa-web.onrender.com
+   Value: studiozens-web.onrender.com
    TTL: 1 Hour
    ```
 
@@ -376,23 +376,23 @@ ipconfig /flushdns
 Type    Name    Value                           TTL
 A       @       [IP de Render]                  1 Hour
 CNAME   www     tudominio.com                   1 Hour
-CNAME   api     zenzspa-web.onrender.com        1 Hour
-CNAME   admin   zenzspa-web.onrender.com        1 Hour
+CNAME   api     studiozens-web.onrender.com        1 Hour
+CNAME   admin   studiozens-web.onrender.com        1 Hour
 ```
 
 ### Render Environment Variables
 
 ```bash
 # Hosts y CORS
-ALLOWED_HOSTS=zenzspa-web.onrender.com,api.tudominio.com,admin.tudominio.com,tudominio.com,www.tudominio.com
-CSRF_TRUSTED_ORIGINS=https://zenzspa-web.onrender.com,https://api.tudominio.com,https://admin.tudominio.com,https://tudominio.com,https://www.tudominio.com
+ALLOWED_HOSTS=studiozens-web.onrender.com,api.tudominio.com,admin.tudominio.com,tudominio.com,www.tudominio.com
+CSRF_TRUSTED_ORIGINS=https://studiozens-web.onrender.com,https://api.tudominio.com,https://admin.tudominio.com,https://tudominio.com,https://www.tudominio.com
 CORS_ALLOWED_ORIGINS=https://tudominio.com,https://www.tudominio.com,https://api.tudominio.com
 
 # Wompi
 WOMPI_REDIRECT_URL=https://tudominio.com/payment-result
 
 # Email
-DEFAULT_FROM_EMAIL=ZenzSpa <no-reply@tudominio.com>
+DEFAULT_FROM_EMAIL=StudioZens <no-reply@tudominio.com>
 ```
 
 ---

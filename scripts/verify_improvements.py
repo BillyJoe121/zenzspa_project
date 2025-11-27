@@ -14,17 +14,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 def main():
     print("\n" + "="*70)
-    print("VERIFICACION DE MEJORAS IMPLEMENTADAS - ZENZSPA".center(70))
+    print("VERIFICACION DE MEJORAS IMPLEMENTADAS - STUDIOZENS".center(70))
     print("="*70 + "\n")
     
     # Verificar archivos modificados
     print("1. Archivos Modificados:")
     files_to_check = {
-        "zenzspa/settings/base.py": "Configuración principal",
-        "zenzspa/settings/security.py": "Seguridad y CSP",
-        "zenzspa/settings/celery.py": "Configuración de Celery",
-        "zenzspa/settings/logging.py": "Logging y monitoreo",
-        "zenzspa/health.py": "Health check mejorado",
+        "studiozens/settings/base.py": "Configuración principal",
+        "studiozens/settings/security.py": "Seguridad y CSP",
+        "studiozens/settings/celery.py": "Configuración de Celery",
+        "studiozens/settings/logging.py": "Logging y monitoreo",
+        "studiozens/health.py": "Health check mejorado",
     }
     
     for file_path, description in files_to_check.items():
@@ -53,10 +53,10 @@ def main():
     # Verificar mejoras en settings.py
     print("\n3. Mejoras en settings:")
     settings_files = [
-        BASE_DIR / "zenzspa" / "settings" / "base.py",
-        BASE_DIR / "zenzspa" / "settings" / "security.py",
-        BASE_DIR / "zenzspa" / "settings" / "celery.py",
-        BASE_DIR / "zenzspa" / "settings" / "logging.py",
+        BASE_DIR / "studiozens" / "settings" / "base.py",
+        BASE_DIR / "studiozens" / "settings" / "security.py",
+        BASE_DIR / "studiozens" / "settings" / "celery.py",
+        BASE_DIR / "studiozens" / "settings" / "logging.py",
     ]
 
     existing_files = [path for path in settings_files if path.exists()]
@@ -65,15 +65,15 @@ def main():
         content = "\n".join(path.read_text() for path in existing_files)
         
         improvements = [
-            "ZENZSPA-SEC-ALLOWED-HOSTS",
-            "ZENZSPA-OPS-SITE-URL",
-            "ZENZSPA-SEC-PROXY-SSL",
-            "ZENZSPA-OPS-REDIS-TLS",
-            "ZENZSPA-OPS-CELERY-HARDENING",
-            "ZENZSPA-SEC-COOKIE-SAMESITE",
-            "ZENZSPA-CSP-CONNECT",
-            "ZENZSPA-API-VERSIONING",
-            "ZENZSPA-SENTRY-CELERY",
+            "STUDIOZENS-SEC-ALLOWED-HOSTS",
+            "STUDIOZENS-OPS-SITE-URL",
+            "STUDIOZENS-SEC-PROXY-SSL",
+            "STUDIOZENS-OPS-REDIS-TLS",
+            "STUDIOZENS-OPS-CELERY-HARDENING",
+            "STUDIOZENS-SEC-COOKIE-SAMESITE",
+            "STUDIOZENS-CSP-CONNECT",
+            "STUDIOZENS-API-VERSIONING",
+            "STUDIOZENS-SENTRY-CELERY",
         ]
         
         implemented = 0
@@ -86,15 +86,15 @@ def main():
         
         print(f"\n  Implementadas: {implemented}/{len(improvements)}")
     else:
-        print("  [ERROR] No se encontraron archivos de configuración en zenzspa/settings/")
+        print("  [ERROR] No se encontraron archivos de configuración en studiozens/settings/")
     
     # Verificar health check
     print("\n4. Health Check:")
-    health_file = BASE_DIR / "zenzspa" / "health.py"
+    health_file = BASE_DIR / "studiozens" / "health.py"
     
     if health_file.exists():
         content = health_file.read_text()
-        if "ZENZSPA-OPS-HEALTHCHECK" in content:
+        if "STUDIOZENS-OPS-HEALTHCHECK" in content:
             print("  [OK] Health check actualizado")
             if "connections" in content and "get_redis_connection" in content:
                 print("  [OK] Verifica DB y Redis")

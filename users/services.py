@@ -1,4 +1,4 @@
-# Reemplaza todo el contenido de zenzspa_project/users/services.py
+# Reemplaza todo el contenido de studiozens_project/users/services.py
 import logging
 import time
 from typing import Optional
@@ -279,7 +279,7 @@ class TOTPService:
         return False
 
     @staticmethod
-    def get_provisioning_uri(user, secret, issuer_name="ZenzSpa"):
+    def get_provisioning_uri(user, secret, issuer_name="StudioZens"):
         return f"otpauth://totp/{issuer_name}:{user.email or user.phone_number}?secret={secret}&issuer={issuer_name}"
 
 

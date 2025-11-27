@@ -35,7 +35,7 @@ LOGGING = {
         },
         "file": {
             "class": "logging.handlers.RotatingFileHandler",
-            "filename": BASE_DIR / "logs" / "zenzspa.log",
+            "filename": BASE_DIR / "logs" / "studiozens.log",
             "maxBytes": 10 * 1024 * 1024,  # 10 MB
             "backupCount": 10,
             "formatter": "verbose",
@@ -81,7 +81,7 @@ if SENTRY_DSN:
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.celery import CeleryIntegration
 
-    # ZENZSPA-SENTRY-CELERY: Agregar integraciones completas
+    # STUDIOZENS-SENTRY-CELERY: Agregar integraciones completas
     sentry_sdk.init(
         dsn=SENTRY_DSN,
         integrations=[
@@ -99,7 +99,7 @@ if SENTRY_DSN:
 # --------------------------------------------------------------------------------------
 # APM (New Relic / Debug Toolbar)
 # --------------------------------------------------------------------------------------
-# ZENZSPA-NEWRELIC-CONFIG: Configuración mejorada de New Relic
+# STUDIOZENS-NEWRELIC-CONFIG: Configuración mejorada de New Relic
 NEW_RELIC_LICENSE_KEY = os.getenv("NEW_RELIC_LICENSE_KEY", "")
 NEW_RELIC_CONFIG_FILE = os.getenv("NEW_RELIC_CONFIG_FILE", str(BASE_DIR / "newrelic.ini"))
 if NEW_RELIC_LICENSE_KEY and not DEBUG:
@@ -127,7 +127,7 @@ if DEBUG:
 
         INSTALLED_APPS += ["debug_toolbar"]
         MIDDLEWARE.insert(0, "debug_toolbar.middleware.DebugToolbarMiddleware")
-        # ZENZSPA-DEBUG-TOOLBAR: Soporte para IPv6 y Docker
+        # STUDIOZENS-DEBUG-TOOLBAR: Soporte para IPv6 y Docker
         INTERNAL_IPS = _split_env("DEBUG_TOOLBAR_IPS", "127.0.0.1 ::1")
 
         DEBUG_TOOLBAR_CONFIG = {

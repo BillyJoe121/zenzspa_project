@@ -81,7 +81,7 @@ def _dispatch_channel(log):
         if not recipient:
             raise ValueError("El usuario no tiene email.")
         send_mail(
-            subject or f"[ZenzSpa] {log.event_code.replace('_', ' ').title()}",
+            subject or f"[StudioZens] {log.event_code.replace('_', ' ').title()}",
             body,
             None,
             [recipient],

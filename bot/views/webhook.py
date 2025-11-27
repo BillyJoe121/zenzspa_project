@@ -674,7 +674,7 @@ class BotHealthCheckView(APIView):
         """
         try:
             from celery.app.control import Inspect
-            from zenzspa.celery import app as celery_app
+            from studiozens.celery import app as celery_app
             
             inspector = Inspect(app=celery_app)
             # Timeout de 2 segundos para no bloquear el health check

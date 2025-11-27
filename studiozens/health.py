@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 def health_check_view(request):
     """
-    ZENZSPA-OPS-HEALTHCHECK: Health check robusto que verifica dependencias.
+    STUDIOZENS-OPS-HEALTHCHECK: Health check robusto que verifica dependencias.
     
     Verifica:
     - Base de datos PostgreSQL
@@ -48,7 +48,7 @@ def health_check_view(request):
     if request.GET.get("check_celery") == "1":
         try:
             from celery.app.control import Inspect
-            from zenzspa.celery import app as celery_app
+            from studiozens.celery import app as celery_app
             
             inspector = Inspect(app=celery_app)
             # Timeout de 2 segundos para no bloquear el health check
@@ -71,7 +71,7 @@ def health_check_view(request):
         return JsonResponse(
             {
                 "status": "ok",
-                "app": "zenzspa",
+                "app": "studiozens",
                 "checks": checks,
             },
             status=200
@@ -80,7 +80,7 @@ def health_check_view(request):
         return JsonResponse(
             {
                 "status": "error",
-                "app": "zenzspa",
+                "app": "studiozens",
                 "checks": checks,
                 "errors": errors,
             },

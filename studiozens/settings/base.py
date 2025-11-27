@@ -177,7 +177,7 @@ MIDDLEWARE = [
 # --------------------------------------------------------------------------------------
 SLOW_REQUEST_THRESHOLD = float(os.getenv("SLOW_REQUEST_THRESHOLD", "1.0"))  # segundos
 
-ROOT_URLCONF = "zenzspa.urls"
+ROOT_URLCONF = "studiozens.urls"
 
 TEMPLATES = [
     {
@@ -194,7 +194,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "zenzspa.wsgi.application"
+WSGI_APPLICATION = "studiozens.wsgi.application"
 
 # --------------------------------------------------------------------------------------
 # Base de datos
@@ -202,7 +202,7 @@ WSGI_APPLICATION = "zenzspa.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME", "zenzspa"),
+        "NAME": os.getenv("DB_NAME", "studiozens"),
         "USER": os.getenv("DB_USER", "postgres"),
         "PASSWORD": os.getenv("DB_PASSWORD", ""),
         "HOST": os.getenv("DB_HOST", "127.0.0.1"),
@@ -235,7 +235,7 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": int(os.getenv("API_PAGE_SIZE", "20")),
-    # ZENZSPA-API-VERSIONING: Versionado de API
+    # STUDIOZENS-API-VERSIONING: Versionado de API
     "DEFAULT_VERSIONING_CLASS": "rest_framework.versioning.NamespaceVersioning",
     "DEFAULT_VERSION": "v1",
     "ALLOWED_VERSIONS": ["v1"],
@@ -294,7 +294,7 @@ SIMPLE_JWT = {
 # --------------------------------------------------------------------------------------
 # Caché (Redis)
 # --------------------------------------------------------------------------------------
-# ZENZSPA-OPS-REDIS-TLS: Validar Redis TLS en producción
+# STUDIOZENS-OPS-REDIS-TLS: Validar Redis TLS en producción
 REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/1")
 if not DEBUG:
     if not REDIS_URL.startswith("rediss://"):
@@ -309,7 +309,7 @@ CACHES = {
         "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            # ZENZSPA-REDIS-WATCHDOG: No ignorar excepciones de Redis
+            # STUDIOZENS-REDIS-WATCHDOG: No ignorar excepciones de Redis
             "IGNORE_EXCEPTIONS": False,
         },
         "TIMEOUT": int(os.getenv("CACHE_TIMEOUT", "300")),
@@ -412,7 +412,7 @@ WOMPI_PAYOUT_PRIVATE_KEY = os.getenv("WOMPI_PAYOUT_PRIVATE_KEY", "")
 WOMPI_PAYOUT_BASE_URL = os.getenv("WOMPI_PAYOUT_BASE_URL", "")
 WOMPI_DEVELOPER_DESTINATION = os.getenv("WOMPI_DEVELOPER_DESTINATION", "")
 
-# ZENZSPA-WOMPI-REDIRECT: Validar HTTPS en producción
+# STUDIOZENS-WOMPI-REDIRECT: Validar HTTPS en producción
 if not DEBUG:
     if not WOMPI_REDIRECT_URL.startswith("https://"):
         raise RuntimeError(
@@ -440,12 +440,12 @@ else:
     EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 
 DEFAULT_FROM_EMAIL = os.getenv(
-    "DEFAULT_FROM_EMAIL", "ZenzSpa <no-reply@zenzspa.com>")
+    "DEFAULT_FROM_EMAIL", "StudioZens <no-reply@studiozens.com>")
 
 # Site URL for email notifications
 SITE_URL = os.getenv("SITE_URL", "http://localhost:8000")
 
-# ZENZSPA-OPS-SITE-URL: Validar SITE_URL y DEFAULT_FROM_EMAIL en producción
+# STUDIOZENS-OPS-SITE-URL: Validar SITE_URL y DEFAULT_FROM_EMAIL en producción
 if not DEBUG:
     if not os.getenv("SITE_URL"):
         raise RuntimeError("SITE_URL debe estar configurado en producción.")

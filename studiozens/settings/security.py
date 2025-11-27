@@ -46,7 +46,7 @@ CORS_ALLOW_CREDENTIALS = os.getenv(
 CSRF_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_SECURE = not DEBUG
 
-# ZENZSPA-SEC-COOKIE-SAMESITE: Configuración de cookies para SPA
+# STUDIOZENS-SEC-COOKIE-SAMESITE: Configuración de cookies para SPA
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
 CSRF_COOKIE_HTTPONLY = False  # Debe ser False para que JavaScript pueda leerla
@@ -60,7 +60,7 @@ SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
 
-# ZENZSPA-SEC-PROXY-SSL: Configuración para balanceadores/proxies
+# STUDIOZENS-SEC-PROXY-SSL: Configuración para balanceadores/proxies
 TRUST_PROXY = os.getenv("TRUST_PROXY", "0") in ("1", "true", "True")
 if TRUST_PROXY:
     USE_X_FORWARDED_HOST = True
@@ -75,7 +75,7 @@ if not DEBUG:
 # --------------------------------------------------------------------------------------
 # CSP (django-csp) V4.0+
 # --------------------------------------------------------------------------------------
-# ZENZSPA-CSP-CONNECT: Mejorar CSP con servicios externos
+# STUDIOZENS-CSP-CONNECT: Mejorar CSP con servicios externos
 CONTENT_SECURITY_POLICY = {
     "DIRECTIVES": {
         "default-src": ["'self'"],

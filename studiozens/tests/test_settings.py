@@ -509,7 +509,7 @@ class UtilityFunctionsTests(TestCase):
     
     def test_split_env_function(self):
         """Función _split_env debe funcionar correctamente"""
-        from zenzspa.settings import _split_env
+        from studiozens.settings import _split_env
         
         # Test con comas
         result = _split_env('TEST', 'value1,value2,value3')
@@ -525,7 +525,7 @@ class UtilityFunctionsTests(TestCase):
     
     def test_parse_action_scores_function(self):
         """Función _parse_action_scores debe funcionar correctamente"""
-        from zenzspa.settings import _parse_action_scores
+        from studiozens.settings import _parse_action_scores
         
         # Test válido
         result = _parse_action_scores('otp:0.7,verify:0.3')

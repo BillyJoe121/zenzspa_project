@@ -31,7 +31,7 @@ Admin → Users → Usuarios
 
 **Opción B: En settings.py** (alternativo)
 ```python
-# En zenzspa/settings.py
+# En studiozens/settings.py
 ADMINS = [
     ('Admin Name', 'admin@example.com'),
     ('Another Admin', 'admin2@example.com'),
@@ -44,7 +44,7 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'your-email@gmail.com'
 EMAIL_HOST_PASSWORD = 'your-app-password'
-DEFAULT_FROM_EMAIL = 'noreply@zenzspa.com'
+DEFAULT_FROM_EMAIL = 'noreply@studiozens.com'
 ```
 
 ### Ejemplo de Email de Alerta
@@ -70,7 +70,7 @@ https://tudominio.com/admin/bot/suspiciousactivity/123/change/
 Considera bloquear esta IP si el patrón de abuso continúa.
 
 ---
-Este es un mensaje automático del sistema de seguridad de Zenzspa Bot.
+Este es un mensaje automático del sistema de seguridad de Studiozens Bot.
 ```
 
 ---
@@ -158,7 +158,7 @@ https://tudominio.com/admin/bot/suspiciousactivity/?ip_address=192.168.1.100
 Si consideras que el bloqueo es incorrecto, puedes desactivarlo desde el panel de administración.
 
 ---
-Este es un mensaje automático del sistema de seguridad de Zenzspa Bot.
+Este es un mensaje automático del sistema de seguridad de Studiozens Bot.
 ```
 
 ### Gestionar Bloqueos Automáticos
@@ -206,7 +206,7 @@ python manage.py send_security_report
 **Programar con Cron (Linux/Mac):**
 ```cron
 # Enviar reporte diario a las 8:00 AM
-0 8 * * * cd /path/to/zenzspa_project && ./venv/bin/python manage.py send_security_report
+0 8 * * * cd /path/to/studiozens_project && ./venv/bin/python manage.py send_security_report
 ```
 
 **Programar con Task Scheduler (Windows):**
@@ -215,14 +215,14 @@ python manage.py send_security_report
 3. Acción: "Iniciar un programa"
 4. Programa: `C:\path\to\venv\Scripts\python.exe`
 5. Argumentos: `manage.py send_security_report`
-6. Directorio: `C:\path\to\zenzspa_project`
+6. Directorio: `C:\path\to\studiozens_project`
 7. Trigger: Diario a las 8:00 AM
 
 **Ejemplo de Reporte Diario:**
 ```
 Subject: [Reporte Diario] Seguridad del Bot - 2025-01-24
 
-📊 REPORTE DIARIO DE SEGURIDAD - ZENZSPA BOT 📊
+📊 REPORTE DIARIO DE SEGURIDAD - STUDIOZENS BOT 📊
 Período: 2025-01-23 08:00 - 2025-01-24 08:00
 
 ═══════════════════════════════════════════════════
@@ -300,7 +300,7 @@ Encontradas 5 IPs con actividades críticas
 
 **Programar con Cron (ejemplo: cada 6 horas):**
 ```cron
-0 */6 * * * cd /path/to/zenzspa_project && ./venv/bin/python manage.py check_suspicious_ips
+0 */6 * * * cd /path/to/studiozens_project && ./venv/bin/python manage.py check_suspicious_ips
 ```
 
 ---

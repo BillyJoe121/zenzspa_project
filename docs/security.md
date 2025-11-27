@@ -1,4 +1,4 @@
-# 🔐 Guía de Seguridad - ZenzSpa
+# 🔐 Guía de Seguridad - StudioZens
 
 ## Índice
 1. [Django Axes - Protección contra Fuerza Bruta](#django-axes)
@@ -146,17 +146,17 @@ python manage.py axes_reset
 
 Los eventos de Axes se registran en:
 ```
-logs/zenzspa.log
+logs/studiozens.log
 logs/errors.log
 ```
 
 Buscar eventos:
 ```bash
 # Ver bloqueos
-grep "locked out" logs/zenzspa.log
+grep "locked out" logs/studiozens.log
 
 # Ver intentos fallidos
-grep "AXES" logs/zenzspa.log
+grep "AXES" logs/studiozens.log
 ```
 
 ---
@@ -165,7 +165,7 @@ grep "AXES" logs/zenzspa.log
 
 ### Configuración Actual
 
-ZenzSpa usa el sistema de throttling de Django REST Framework con scopes específicos:
+StudioZens usa el sistema de throttling de Django REST Framework con scopes específicos:
 
 | Scope | Límite Default | Uso |
 |-------|----------------|-----|
@@ -215,7 +215,7 @@ class PaymentView(APIView):
 
 ### Variables Validadas al Inicio
 
-ZenzSpa valida automáticamente variables críticas en `settings.py`:
+StudioZens valida automáticamente variables críticas en `settings.py`:
 
 **Siempre requeridas:**
 - `SECRET_KEY`
@@ -387,7 +387,7 @@ SLOW_REQUEST_THRESHOLD=1.0  # segundos
 
 Buscar en logs:
 ```bash
-grep "Slow request" logs/zenzspa.log
+grep "Slow request" logs/studiozens.log
 ```
 
 ---
@@ -414,8 +414,8 @@ grep "Slow request" logs/zenzspa.log
 
 ## Referencias
 
-- **Settings**: `zenzspa/settings.py`
+- **Settings**: `studiozens/settings.py`
 - **Middleware**: `core/middleware.py`
-- **Health Check**: `zenzspa/health.py`
+- **Health Check**: `studiozens/health.py`
 - **Validación**: `scripts/validate_settings.py`
 - **Backups**: `scripts/backup_db.sh`

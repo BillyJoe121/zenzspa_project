@@ -1,4 +1,4 @@
-# 🖥️ Sistema de Kiosko - ZenzSpa
+# 🖥️ Sistema de Kiosko - StudioZens
 
 ## Descripción
 
@@ -161,13 +161,13 @@ print(KioskSession.objects.filter(device_id="TEST-001").exists())  # False
 
 Los logs de kiosko se encuentran en:
 ```
-logs/zenzspa.log
+logs/studiozens.log
 ```
 
 Buscar por:
 ```bash
-grep "kiosk" logs/zenzspa.log
-grep "KioskFlowEnforcementMiddleware" logs/zenzspa.log
+grep "kiosk" logs/studiozens.log
+grep "KioskFlowEnforcementMiddleware" logs/studiozens.log
 ```
 
 ---
@@ -178,7 +178,7 @@ grep "KioskFlowEnforcementMiddleware" logs/zenzspa.log
 
 **Solución**:
 1. Verificar que las variables de entorno están configuradas
-2. Revisar logs: `grep "kiosk" logs/zenzspa.log`
+2. Revisar logs: `grep "kiosk" logs/studiozens.log`
 3. Verificar que el middleware está habilitado en `settings.py`
 
 ### Problema: Rutas Permitidas No Funcionan
@@ -191,9 +191,9 @@ grep "KioskFlowEnforcementMiddleware" logs/zenzspa.log
 ### Problema: Timeout No Funciona
 
 **Solución**:
-1. Verificar que Celery está corriendo: `celery -A zenzspa inspect ping`
-2. Verificar que la tarea está programada: `celery -A zenzspa inspect scheduled`
-3. Revisar logs de Celery: `celery -A zenzspa worker --loglevel=info`
+1. Verificar que Celery está corriendo: `celery -A studiozens inspect ping`
+2. Verificar que la tarea está programada: `celery -A studiozens inspect scheduled`
+3. Revisar logs de Celery: `celery -A studiozens worker --loglevel=info`
 
 ---
 
@@ -211,4 +211,4 @@ grep "KioskFlowEnforcementMiddleware" logs/zenzspa.log
 - Middleware: `profiles/middleware.py` - `KioskFlowEnforcementMiddleware`
 - Modelos: `profiles/models.py` - `KioskSession`
 - Tareas: `profiles/tasks.py` - `cleanup_expired_kiosk_sessions`
-- Configuración: `zenzspa/settings.py` - Variables `KIOSK_*`
+- Configuración: `studiozens/settings.py` - Variables `KIOSK_*`

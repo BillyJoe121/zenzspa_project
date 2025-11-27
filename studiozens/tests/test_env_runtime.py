@@ -60,14 +60,14 @@ def _prod_env(**overrides):
         WOMPI_INTEGRITY_KEY="integrity",
         WOMPI_EVENT_SECRET="event-secret",
         GEMINI_API_KEY="gemini-123",
-        CORS_ALLOWED_ORIGINS="https://app.zenzspa.com",
-        CSRF_TRUSTED_ORIGINS="https://app.zenzspa.com",
-        ALLOWED_HOSTS="app.zenzspa.com",
+        CORS_ALLOWED_ORIGINS="https://app.studiozens.com",
+        CSRF_TRUSTED_ORIGINS="https://app.studiozens.com",
+        ALLOWED_HOSTS="app.studiozens.com",
         REDIS_URL="rediss://127.0.0.1:6379/1",
         CELERY_BROKER_URL="rediss://127.0.0.1:6379/0",
-        SITE_URL="https://app.zenzspa.com",
-        DEFAULT_FROM_EMAIL="noreply@zenzspa.com",
-        WOMPI_REDIRECT_URL="https://app.zenzspa.com/payment-result",
+        SITE_URL="https://app.studiozens.com",
+        DEFAULT_FROM_EMAIL="noreply@studiozens.com",
+        WOMPI_REDIRECT_URL="https://app.studiozens.com/payment-result",
     )
     env.update(overrides)
     return env
@@ -92,7 +92,7 @@ def _set_env(monkeypatch, env):
 
 @pytest.mark.django_db(False)
 def test_validate_required_env_vars_detects_missing_secret(monkeypatch):
-    from zenzspa import settings
+    from studiozens import settings
 
     _set_env(monkeypatch, {"DEBUG": "1", "DB_PASSWORD": "pwd"})
     monkeypatch.delenv("SECRET_KEY", raising=False)
@@ -104,7 +104,7 @@ def test_validate_required_env_vars_detects_missing_secret(monkeypatch):
 
 @pytest.mark.django_db(False)
 def test_validate_required_env_vars_requires_twilio_on_prod(monkeypatch):
-    from zenzspa import settings
+    from studiozens import settings
 
     env = _prod_env()
     env.pop("TWILIO_ACCOUNT_SID")
@@ -117,7 +117,7 @@ def test_validate_required_env_vars_requires_twilio_on_prod(monkeypatch):
 
 @pytest.mark.django_db(False)
 def test_validate_required_env_vars_passes_with_all_required(monkeypatch):
-    from zenzspa import settings
+    from studiozens import settings
 
     env = _prod_env()
     _set_env(monkeypatch, env)
@@ -137,7 +137,7 @@ def test_settings_production_requires_cors_origins(monkeypatch):
 
 def test_settings_production_rejects_localhost(monkeypatch):
     """Test que localhost es rechazado en CORS_ALLOWED_ORIGINS en producción"""
-    env = _prod_env(CORS_ALLOWED_ORIGINS="https://app.zenzspa.com http://localhost:3000")
+    env = _prod_env(CORS_ALLOWED_ORIGINS="https://app.studiozens.com http://localhost:3000")
 
     with pytest.raises(RuntimeError) as exc:
         _run_settings(monkeypatch, env)
@@ -146,7 +146,7 @@ def test_settings_production_rejects_localhost(monkeypatch):
 
 def test_settings_production_rejects_localhost_in_allowed_hosts(monkeypatch):
     """Test que localhost es rechazado en ALLOWED_HOSTS en producción"""
-    env = _prod_env(ALLOWED_HOSTS="app.zenzspa.com localhost")
+    env = _prod_env(ALLOWED_HOSTS="app.studiozens.com localhost")
 
     with pytest.raises(RuntimeError) as exc:
         _run_settings(monkeypatch, env)

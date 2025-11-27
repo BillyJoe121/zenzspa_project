@@ -2,7 +2,7 @@
 
 ## Descripción General
 
-El módulo `core` es la columna vertebral del sistema ZenzSpa, proporcionando modelos base, utilidades compartidas, decoradores, middleware, permisos y configuraciones globales utilizadas por todos los demás módulos.
+El módulo `core` es la columna vertebral del sistema StudioZens, proporcionando modelos base, utilidades compartidas, decoradores, middleware, permisos y configuraciones globales utilizadas por todos los demás módulos.
 
 ---
 

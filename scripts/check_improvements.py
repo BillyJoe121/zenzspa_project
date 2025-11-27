@@ -146,12 +146,12 @@ def check_health_endpoint():
     """Verificar que el health endpoint esté actualizado"""
     print_header("4. Verificación de Health Check")
     
-    health_file = BASE_DIR / "zenzspa" / "health.py"
+    health_file = BASE_DIR / "studiozens" / "health.py"
     
     if health_file.exists():
         content = health_file.read_text()
         
-        if "ZENZSPA-OPS-HEALTHCHECK" in content:
+        if "STUDIOZENS-OPS-HEALTHCHECK" in content:
             print_success("Health check actualizado con verificación de dependencias")
             
             if "connections[\"default\"]" in content:
@@ -165,7 +165,7 @@ def check_health_endpoint():
             
             return True
         else:
-            print_warning("Health check no actualizado - considera actualizar zenzspa/health.py")
+            print_warning("Health check no actualizado - considera actualizar studiozens/health.py")
             return False
     else:
         print_error("Archivo health.py no encontrado")
@@ -199,7 +199,7 @@ def check_settings_improvements():
     """Verificar mejoras en settings.py"""
     print_header("6. Verificación de Mejoras en settings.py")
     
-    settings_file = BASE_DIR / "zenzspa" / "settings.py"
+    settings_file = BASE_DIR / "studiozens" / "settings.py"
     
     if not settings_file.exists():
         print_error("Archivo settings.py no encontrado")
@@ -208,20 +208,20 @@ def check_settings_improvements():
     content = settings_file.read_text()
     
     improvements = {
-        "ZENZSPA-SEC-ALLOWED-HOSTS": "Validación de ALLOWED_HOSTS",
-        "ZENZSPA-OPS-SITE-URL": "Validación de SITE_URL",
-        "ZENZSPA-SEC-PROXY-SSL": "Configuración de proxy SSL",
-        "ZENZSPA-OPS-REDIS-TLS": "Validación de Redis TLS",
-        "ZENZSPA-OPS-CELERY-HARDENING": "Hardening de Celery",
-        "ZENZSPA-SEC-COOKIE-SAMESITE": "Configuración de cookies SameSite",
-        "ZENZSPA-CSP-CONNECT": "CSP mejorado",
-        "ZENZSPA-API-VERSIONING": "Versionado de API",
-        "ZENZSPA-SENTRY-CELERY": "Integración Sentry-Celery",
-        "ZENZSPA-REDIS-WATCHDOG": "Redis watchdog",
-        "ZENZSPA-WOMPI-REDIRECT": "Validación Wompi redirect",
-        "ZENZSPA-CELERYBEAT-ARTIFACTS": "Celery Beat artifacts",
-        "ZENZSPA-NEWRELIC-CONFIG": "Configuración New Relic",
-        "ZENZSPA-DEBUG-TOOLBAR": "Debug toolbar mejorado",
+        "STUDIOZENS-SEC-ALLOWED-HOSTS": "Validación de ALLOWED_HOSTS",
+        "STUDIOZENS-OPS-SITE-URL": "Validación de SITE_URL",
+        "STUDIOZENS-SEC-PROXY-SSL": "Configuración de proxy SSL",
+        "STUDIOZENS-OPS-REDIS-TLS": "Validación de Redis TLS",
+        "STUDIOZENS-OPS-CELERY-HARDENING": "Hardening de Celery",
+        "STUDIOZENS-SEC-COOKIE-SAMESITE": "Configuración de cookies SameSite",
+        "STUDIOZENS-CSP-CONNECT": "CSP mejorado",
+        "STUDIOZENS-API-VERSIONING": "Versionado de API",
+        "STUDIOZENS-SENTRY-CELERY": "Integración Sentry-Celery",
+        "STUDIOZENS-REDIS-WATCHDOG": "Redis watchdog",
+        "STUDIOZENS-WOMPI-REDIRECT": "Validación Wompi redirect",
+        "STUDIOZENS-CELERYBEAT-ARTIFACTS": "Celery Beat artifacts",
+        "STUDIOZENS-NEWRELIC-CONFIG": "Configuración New Relic",
+        "STUDIOZENS-DEBUG-TOOLBAR": "Debug toolbar mejorado",
     }
     
     implemented = 0
@@ -243,7 +243,7 @@ def main():
     print(f"\n{Colors.BOLD}{Colors.BLUE}")
     print("╔════════════════════════════════════════════════════════════════════╗")
     print("║                                                                    ║")
-    print("║          VERIFICACIÓN DE MEJORAS IMPLEMENTADAS - ZENZSPA          ║")
+    print("║          VERIFICACIÓN DE MEJORAS IMPLEMENTADAS - STUDIOZENS          ║")
     print("║                                                                    ║")
     print("╚════════════════════════════════════════════════════════════════════╝")
     print(f"{Colors.ENDC}\n")

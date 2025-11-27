@@ -142,7 +142,7 @@ redis-cli ping
 
 ### 2. Configurar Celery en Django
 
-Ya está configurado en `zenzspa/celery.py`. Solo necesitas iniciar el worker.
+Ya está configurado en `studiozens/celery.py`. Solo necesitas iniciar el worker.
 
 ### 3. Variables de Entorno
 
@@ -164,16 +164,16 @@ Abrir **2 terminales**:
 ```bash
 # Windows
 .\venv\Scripts\activate
-celery -A zenzspa worker --loglevel=info --pool=solo -Q bot_messages
+celery -A studiozens worker --loglevel=info --pool=solo -Q bot_messages
 
 # Linux/Mac
 source venv/bin/activate
-celery -A zenzspa worker --loglevel=info -Q bot_messages
+celery -A studiozens worker --loglevel=info -Q bot_messages
 ```
 
 **Terminal 2: Worker para tareas de mantenimiento (opcional)**
 ```bash
-celery -A zenzspa worker --loglevel=info -Q celery
+celery -A studiozens worker --loglevel=info -Q celery
 ```
 
 ### 5. Iniciar Celery Beat (Tareas Programadas)
@@ -181,7 +181,7 @@ celery -A zenzspa worker --loglevel=info -Q celery
 Para tareas cron como limpieza de logs, reportes diarios, etc.:
 
 ```bash
-celery -A zenzspa beat --loglevel=info
+celery -A studiozens beat --loglevel=info
 ```
 
 ---
@@ -322,7 +322,7 @@ pip install flower
 
 Iniciar:
 ```bash
-celery -A zenzspa flower --port=5555
+celery -A studiozens flower --port=5555
 ```
 
 Abrir: http://localhost:5555
@@ -381,7 +381,7 @@ log.response_meta = {
 - Redis en mismo servidor
 
 ```bash
-celery -A zenzspa worker --loglevel=info --concurrency=4
+celery -A studiozens worker --loglevel=info --concurrency=4
 ```
 
 ### Escenario 2: Tráfico Medio (10-50 usuarios concurrentes)
@@ -393,12 +393,12 @@ celery -A zenzspa worker --loglevel=info --concurrency=4
 
 **Worker 1: Alta prioridad (usuarios registrados)**
 ```bash
-celery -A zenzspa worker -Q bot_messages -n worker1@%h --concurrency=8
+celery -A studiozens worker -Q bot_messages -n worker1@%h --concurrency=8
 ```
 
 **Worker 2: Baja prioridad (anónimos)**
 ```bash
-celery -A zenzspa worker -Q bot_messages_low -n worker2@%h --concurrency=4
+celery -A studiozens worker -Q bot_messages_low -n worker2@%h --concurrency=4
 ```
 
 ### Escenario 3: Tráfico Alto (50+ usuarios concurrentes)
@@ -411,10 +411,10 @@ celery -A zenzspa worker -Q bot_messages_low -n worker2@%h --concurrency=4
 
 ```bash
 # Servidor 1
-celery -A zenzspa worker -Q bot_messages --concurrency=16 -n worker1@server1
+celery -A studiozens worker -Q bot_messages --concurrency=16 -n worker1@server1
 
 # Servidor 2
-celery -A zenzspa worker -Q bot_messages --concurrency=16 -n worker2@server2
+celery -A studiozens worker -Q bot_messages --concurrency=16 -n worker2@server2
 ```
 
 ### Ajustar Concurrency
@@ -423,7 +423,7 @@ Por defecto, Celery usa `concurrency = CPU_CORES`. Para tareas IO-bound (como ll
 
 ```bash
 # Si tienes 4 cores, puedes usar 16 workers concurrentes
-celery -A zenzspa worker --concurrency=16
+celery -A studiozens worker --concurrency=16
 ```
 
 ### Límite de Throughput
@@ -462,10 +462,10 @@ task = process_bot_message_async.apply_async(
 Iniciar workers dedicados:
 ```bash
 # Worker para usuarios premium (más workers)
-celery -A zenzspa worker -Q bot_messages_high --concurrency=10
+celery -A studiozens worker -Q bot_messages_high --concurrency=10
 
 # Worker para anónimos (menos workers)
-celery -A zenzspa worker -Q bot_messages_low --concurrency=4
+celery -A studiozens worker -Q bot_messages_low --concurrency=4
 ```
 
 ---
@@ -474,24 +474,24 @@ celery -A zenzspa worker -Q bot_messages_low --concurrency=4
 
 ### Ver Estado de Workers
 ```bash
-celery -A zenzspa inspect active
-celery -A zenzspa inspect stats
+celery -A studiozens inspect active
+celery -A studiozens inspect stats
 ```
 
 ### Purgar Cola
 ```bash
-celery -A zenzspa purge
+celery -A studiozens purge
 ```
 
 ### Reiniciar Workers Sin Perder Tareas
 ```bash
-celery -A zenzspa control shutdown  # Graceful shutdown
+celery -A studiozens control shutdown  # Graceful shutdown
 # Luego reiniciar con el comando worker
 ```
 
 ### Ver Tareas Registradas
 ```bash
-celery -A zenzspa inspect registered
+celery -A studiozens inspect registered
 ```
 
 ---
@@ -502,7 +502,7 @@ celery -A zenzspa inspect registered
 
 **Verificar:**
 1. Redis está corriendo: `redis-cli ping`
-2. Worker está activo: `celery -A zenzspa inspect active`
+2. Worker está activo: `celery -A studiozens inspect active`
 3. Las colas coinciden: Tarea usa `queue='bot_messages'` y worker está escuchando esa cola
 
 ### Rate Limit No Se Respeta

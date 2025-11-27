@@ -11,7 +11,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 # Configurar Django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'zenzspa.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'studiozens.settings')
 
 def test_env_validation():
     """Test 1: Validación de variables de entorno"""
@@ -30,8 +30,8 @@ def test_env_validation():
         try:
             # Recargar settings
             import importlib
-            import zenzspa.settings
-            importlib.reload(zenzspa.settings)
+            import studiozens.settings
+            importlib.reload(studiozens.settings)
             print("   ❌ FALLO: Debería haber lanzado RuntimeError por SECRET_KEY faltante")
             return False
         except RuntimeError as e:
@@ -262,7 +262,7 @@ def test_celery_beat_schedule():
 def main():
     """Ejecutar todos los tests"""
     print("=" * 70)
-    print("🚀 VALIDACIÓN DE CAMBIOS EN ZENZSPA/SETTINGS.PY")
+    print("🚀 VALIDACIÓN DE CAMBIOS EN STUDIOZENS/SETTINGS.PY")
     print("=" * 70)
     
     results = []

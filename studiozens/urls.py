@@ -1,4 +1,4 @@
-# zenzspa_project/zenzspa/urls.py
+# studiozens_project/studiozens/urls.py
 from django.contrib import admin
 from django.urls import include, path
 

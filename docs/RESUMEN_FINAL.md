@@ -163,7 +163,7 @@ Raíz del proyecto:
 
 ## 🚀 CONFIGURACIÓN PENDIENTE
 
-### 1. **Configurar Celery Beat** en `zenzspa/settings.py`:
+### 1. **Configurar Celery Beat** en `studiozens/settings.py`:
 
 ```python
 from celery.schedules import crontab
@@ -176,7 +176,7 @@ CELERY_BEAT_SCHEDULE = {
 }
 ```
 
-### 2. **Configurar Throttling** en `zenzspa/settings.py`:
+### 2. **Configurar Throttling** en `studiozens/settings.py`:
 
 ```python
 REST_FRAMEWORK = {
@@ -190,7 +190,7 @@ REST_FRAMEWORK = {
 }
 ```
 
-### 3. **Configurar Performance Logging** en `zenzspa/settings.py`:
+### 3. **Configurar Performance Logging** en `studiozens/settings.py`:
 
 ```python
 # Threshold para requests lentos (en segundos)
@@ -350,7 +350,7 @@ El módulo `core` ahora está **100% listo para producción** con:
 ✅ **Excepciones de negocio**  
 ✅ **Performance monitoring**
 
-El módulo core ahora proporciona una base sólida y completa para todo el sistema ZenzSpa.
+El módulo core ahora proporciona una base sólida y completa para todo el sistema StudioZens.
 
 ---
 

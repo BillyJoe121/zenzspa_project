@@ -13,7 +13,7 @@
 
 ## Visión General
 
-Este sistema proporciona **protección completa** contra abuso, fraude y comportamiento malicioso en el bot de Zenzspa. Incluye:
+Este sistema proporciona **protección completa** contra abuso, fraude y comportamiento malicioso en el bot de Studiozens. Incluye:
 
 ### ✅ Características Principales
 
@@ -128,7 +128,7 @@ python manage.py check_suspicious_ips [--days=7] [--dry-run]
 
 ### Paso 1: Configurar Emails (Requerido para Alertas)
 
-En `zenzspa/settings.py`:
+En `studiozens/settings.py`:
 
 ```python
 # Configuración de Email (ejemplo con Gmail)
@@ -138,7 +138,7 @@ EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'your-email@gmail.com'
 EMAIL_HOST_PASSWORD = 'your-app-password'
-DEFAULT_FROM_EMAIL = 'noreply@zenzspa.com'
+DEFAULT_FROM_EMAIL = 'noreply@studiozens.com'
 SITE_URL = 'https://tudominio.com'  # Para links en emails
 
 # Admins que recibirán alertas (alternativo)
@@ -301,10 +301,10 @@ Alertas: ✅ Habilitadas
 
 ```cron
 # Reporte diario a las 8:00 AM
-0 8 * * * cd /path/to/zenzspa_project && ./venv/bin/python manage.py send_security_report
+0 8 * * * cd /path/to/studiozens_project && ./venv/bin/python manage.py send_security_report
 
 # Revisar IPs cada 6 horas
-0 */6 * * * cd /path/to/zenzspa_project && ./venv/bin/python manage.py check_suspicious_ips
+0 */6 * * * cd /path/to/studiozens_project && ./venv/bin/python manage.py check_suspicious_ips
 ```
 
 #### Windows (Task Scheduler)
@@ -312,13 +312,13 @@ Alertas: ✅ Habilitadas
 **Reporte Diario:**
 - Programa: `C:\path\to\venv\Scripts\python.exe`
 - Argumentos: `manage.py send_security_report`
-- Directorio: `C:\path\to\zenzspa_project`
+- Directorio: `C:\path\to\studiozens_project`
 - Trigger: Diario a las 8:00 AM
 
 **Revisar IPs:**
 - Programa: `C:\path\to\venv\Scripts\python.exe`
 - Argumentos: `manage.py check_suspicious_ips`
-- Directorio: `C:\path\to\zenzspa_project`
+- Directorio: `C:\path\to\studiozens_project`
 - Trigger: Cada 6 horas
 
 ---
@@ -456,7 +456,7 @@ Posibles mejoras a considerar:
 
 **Contacto:**
 - Email: tu-email@example.com
-- Slack: #zenzspa-bot-security
+- Slack: #studiozens-bot-security
 
 ---
 
@@ -480,7 +480,7 @@ Antes de ir a producción, verifica:
 
 ## 🎉 Conclusión
 
-Este sistema proporciona una **capa completa de seguridad** para el bot de Zenzspa, con:
+Este sistema proporciona una **capa completa de seguridad** para el bot de Studiozens, con:
 
 - ✅ Detección automática de amenazas
 - ✅ Alertas en tiempo real
