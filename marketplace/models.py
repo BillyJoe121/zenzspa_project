@@ -93,6 +93,9 @@ class ProductVariant(BaseModel):
     def clean(self):
         if self.vip_price and self.vip_price >= self.price:
             raise ValidationError("El precio VIP debe ser menor que el precio regular")
+        
+        if self.max_order_quantity and self.min_order_quantity > self.max_order_quantity:
+            raise ValidationError("La cantidad mínima no puede ser mayor que la cantidad máxima.")
 
 
 class InventoryMovement(BaseModel):

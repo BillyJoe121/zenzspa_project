@@ -6,7 +6,7 @@ from .health import health_check_view
 
 api_patterns = [
     path('catalog/', include('spa.urls_catalog')),
-    path('', include('marketplace.urls')),
+    path('marketplace/', include('marketplace.urls')),
     path('', include('spa.urls')),
     path('', include('profiles.urls')),
     path('notifications/', include('notifications.urls')),

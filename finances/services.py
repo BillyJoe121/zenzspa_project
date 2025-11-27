@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
 import requests
 from django.conf import settings
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Sum, Q, F
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from core.models import GlobalSettings
+from core.models import GlobalSettings, AuditLog
+from core.utils import safe_audit_log
 from .models import CommissionLedger
 
 logger = logging.getLogger(__name__)
@@ -36,6 +39,9 @@ class WompiDisbursementClient:
         - WOMPI_DEVELOPER_DESTINATION
     """
 
+    REQUEST_TIMEOUT = 10
+    _CIRCUIT_CACHE_KEY = "wompi:disbursement:circuit"
+
     def __init__(self):
         self.private_key = (
             getattr(settings, "WOMPI_PAYOUT_PRIVATE_KEY", None)
@@ -52,17 +58,42 @@ class WompiDisbursementClient:
             or os.getenv("WOMPI_DEVELOPER_DESTINATION", "")
         )
 
+    @classmethod
+    def _circuit_allows(cls):
+        state = cache.get(cls._CIRCUIT_CACHE_KEY, {"failures": 0, "open_until": None})
+        open_until = state.get("open_until")
+        if open_until and open_until > timezone.now():
+            return False
+        return True
+
+    @classmethod
+    def _record_failure(cls, max_failures=5, cooldown_seconds=60):
+        state = cache.get(cls._CIRCUIT_CACHE_KEY, {"failures": 0, "open_until": None})
+        failures = state.get("failures", 0) + 1
+        open_until = state.get("open_until")
+        if failures >= max_failures:
+            open_until = timezone.now() + timedelta(seconds=cooldown_seconds)
+            failures = 0
+        cache.set(cls._CIRCUIT_CACHE_KEY, {"failures": failures, "open_until": open_until}, timeout=cooldown_seconds)
+
+    @classmethod
+    def _record_success(cls):
+        cache.set(cls._CIRCUIT_CACHE_KEY, {"failures": 0, "open_until": None}, timeout=60)
+
     def _headers(self):
         if not self.private_key:
             raise WompiPayoutError("Falta WOMPI_PAYOUT_PRIVATE_KEY para intentar la dispersión.")
         return {"Authorization": f"Bearer {self.private_key}"}
 
     def get_available_balance(self) -> Decimal:
+        if not self._circuit_allows():
+            logger.warning("Circuito de Wompi (dispersión) abierto; se omite consulta de balance.")
+            return Decimal("0")
         if not self.balance_endpoint or not self.private_key:
             logger.warning("Balance Wompi no disponible: configura WOMPI_PAYOUT_BASE_URL y WOMPI_PAYOUT_PRIVATE_KEY.")
             return Decimal("0")
         try:
-            response = requests.get(self.balance_endpoint, headers=self._headers(), timeout=10)
+            response = requests.get(self.balance_endpoint, headers=self._headers(), timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
             data = response.json() or {}
             accounts = data.get("data") or []
@@ -73,14 +104,22 @@ class WompiDisbursementClient:
             account = accounts[0]
             cents = account.get("balanceInCents") or account.get("balance_in_cents") or 0
             amount = _to_decimal(cents) / Decimal("100")
+            self._record_success()
             return amount.quantize(Decimal("0.01"))
+        except requests.Timeout as exc:
+            self._record_failure()
+            logger.exception("Timeout consultando balance en Wompi: %s", exc)
+            raise WompiPayoutError("Timeout consultando balance en Wompi") from exc
         except (requests.RequestException, ValueError) as exc:
+            self._record_failure()
             logger.exception("No se pudo obtener el balance en Wompi: %s", exc)
             return Decimal("0")
 
     def create_payout(self, amount: Decimal) -> str:
         if not self.payout_endpoint or not self.destination:
             raise WompiPayoutError("Configura WOMPI_PAYOUT_BASE_URL y WOMPI_DEVELOPER_DESTINATION para dispersar fondos.")
+        if amount is None or _to_decimal(amount) <= Decimal("0"):
+            raise WompiPayoutError("El monto a dispersar debe ser mayor a cero.")
         payload = {
             "amount_in_cents": int(amount * Decimal("100")),
             "currency": getattr(settings, "WOMPI_CURRENCY", "COP"),
@@ -88,11 +127,16 @@ class WompiDisbursementClient:
             "purpose": "developer_commission",
         }
         try:
-            response = requests.post(self.payout_endpoint, json=payload, headers=self._headers(), timeout=10)
+            response = requests.post(self.payout_endpoint, json=payload, headers=self._headers(), timeout=self.REQUEST_TIMEOUT)
             response.raise_for_status()
             data = response.json() or {}
+            self._record_success()
             return data.get("data", {}).get("id") or data.get("id") or ""
+        except requests.Timeout as exc:
+            self._record_failure()
+            raise WompiPayoutError("Timeout al crear la dispersión en Wompi") from exc
         except requests.RequestException as exc:
+            self._record_failure()
             raise WompiPayoutError(f"No se pudo crear el payout: {exc}") from exc
 
 
@@ -197,7 +241,7 @@ class DeveloperCommissionService:
 
     @classmethod
     @transaction.atomic
-    def _apply_payout_to_ledger(cls, amount_to_pay: Decimal, transfer_id: str):
+    def _apply_payout_to_ledger(cls, amount_to_pay: Decimal, transfer_id: str, performed_by=None):
         remaining = amount_to_pay
         entries = (
             CommissionLedger.objects.select_for_update()
@@ -205,6 +249,7 @@ class DeveloperCommissionService:
             .order_by("created_at")
         )
         now = timezone.now()
+        paid_entries = []
         for entry in entries:
             if remaining <= Decimal("0"):
                 break
@@ -212,6 +257,7 @@ class DeveloperCommissionService:
             if due <= Decimal("0"):
                 continue
             chunk = min(due, remaining)
+            previous_status = entry.status
             entry.paid_amount = (entry.paid_amount or Decimal("0")) + chunk
             entry.wompi_transfer_id = transfer_id
             if entry.paid_amount >= entry.amount:
@@ -226,7 +272,34 @@ class DeveloperCommissionService:
                     "updated_at",
                 ]
             )
+            paid_entries.append(entry)
+            safe_audit_log(
+                action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+                admin_user=performed_by,
+                details={
+                    "action": "commission_payout_applied",
+                    "ledger_id": str(entry.id),
+                    "payment_id": str(entry.source_payment_id),
+                    "amount_paid": str(chunk),
+                    "previous_status": previous_status,
+                    "new_status": entry.status,
+                    "wompi_transfer_id": transfer_id,
+                    "total_paid": str(entry.paid_amount),
+                    "total_amount": str(entry.amount),
+                },
+            )
             remaining -= chunk
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            admin_user=performed_by,
+            details={
+                "action": "developer_payout_completed",
+                "total_amount": str(amount_to_pay),
+                "wompi_transfer_id": transfer_id,
+                "entries_paid": len(paid_entries),
+                "timestamp": now.isoformat(),
+            },
+        )
 
     @staticmethod
     def _enter_default(settings_obj):
@@ -234,6 +307,13 @@ class DeveloperCommissionService:
             settings_obj.developer_in_default = True
             settings_obj.developer_default_since = timezone.now()
             settings_obj.save(update_fields=["developer_in_default", "developer_default_since", "updated_at"])
+            safe_audit_log(
+                action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+                details={
+                    "action": "developer_default_entered",
+                    "timestamp": timezone.now().isoformat(),
+                },
+            )
 
     @staticmethod
     def _exit_default(settings_obj):
@@ -241,6 +321,13 @@ class DeveloperCommissionService:
             settings_obj.developer_in_default = False
             settings_obj.developer_default_since = None
             settings_obj.save(update_fields=["developer_in_default", "developer_default_since", "updated_at"])
+            safe_audit_log(
+                action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+                details={
+                    "action": "developer_default_exited",
+                    "timestamp": timezone.now().isoformat(),
+                },
+            )
 
     @classmethod
     @transaction.atomic

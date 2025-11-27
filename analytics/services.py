@@ -137,37 +137,40 @@ class KpiService:
 
     def _get_ltv_by_role(self):
         """
-        LTV por Rol = suma(total gastado por rol) ÷ cantidad de usuarios por rol.
+        Calcula LTV (Lifetime Value) promedio por rol.
+        Retorna un dict: {role: {'total_amount': X, 'user_count': Y, 'ltv': Z}}
         """
-        user_totals = defaultdict(Decimal)
-        payments = self._payment_queryset().values(
-            "user_id").annotate(amount=Sum("amount"))
-        for row in payments:
-            if row["user_id"]:
-                user_totals[row["user_id"]] += row["amount"] or Decimal("0")
-        if not user_totals:
-            return {}
+        filters = Q(
+            payments__created_at__date__gte=self.start_date,
+            payments__created_at__date__lte=self.end_date,
+            payments__status__in=[
+                Payment.PaymentStatus.APPROVED,
+                Payment.PaymentStatus.PAID_WITH_CREDIT,
+            ]
+        ) & ~Q(payments__payment_type__in=self._excluded_payment_types())
 
-        users = CustomUser.objects.filter(
-            id__in=user_totals.keys()).values("id", "role")
-        role_totals = defaultdict(Decimal)
-        role_counts = defaultdict(int)
-        for user in users:
-            role = user["role"] or CustomUser.Role.CLIENT
-            total_spent = user_totals.get(user["id"], Decimal("0"))
-            if total_spent > 0:
-                role_totals[role] += total_spent
-                role_counts[role] += 1
+        data = (
+            CustomUser.objects
+            .values('role')
+            .annotate(
+                total_amount=Coalesce(Sum('payments__amount', filter=filters), Decimal("0")),
+                user_count=Count('id', filter=filters, distinct=True)
+            )
+            .filter(total_amount__gt=0)
+        )
 
-        results = {}
-        for role, amount in role_totals.items():
-            count = role_counts.get(role) or 1
-            results[role] = {
-                "ltv": float(amount / count),
-                "total_spent": float(amount),
-                "user_count": count,
-            }
-        return results
+        result = {}
+        for entry in data:
+            role = entry['role']
+            total = entry['total_amount']
+            count = entry['user_count']
+            if count > 0:
+                result[role] = {
+                    'total_spent': float(total),
+                    'user_count': count,
+                    'ltv': float(total / count)
+                }
+        return result
 
     def _get_utilization_rate(self):
         """
@@ -194,27 +197,44 @@ class KpiService:
 
     def _calculate_available_minutes(self):
         """
-        Minutos disponibles = suma de (fin - inicio) para cada disponibilidad entre start_date y end_date.
+        Minutos disponibles = suma de (fin - inicio) para cada disponibilidad.
+        OPTIMIZADO: Usar agregación de DB.
         """
         availabilities = StaffAvailability.objects.all()
         if self.staff_id:
-            availabilities = availabilities.filter(
-                staff_member_id=self.staff_id)
-        total_minutes = 0
-        mapping = defaultdict(list)
-        for availability in availabilities:
-            mapping[availability.day_of_week].append(availability)
+            availabilities = availabilities.filter(staff_member_id=self.staff_id)
 
+        # NUEVO - Usar agregación con ExpressionWrapper
+        from django.db.models import ExpressionWrapper, F, DurationField, IntegerField
+
+        # Calcular minutos por disponibilidad
+        # Nota: Asumimos que start_time y end_time son TimeField.
+        # La resta de TimeFields no es directa en todos los backends, pero en Postgres suele funcionar si se castean o se extraen partes.
+        # Una forma segura es calcular la diferencia en minutos: (hour*60 + minute)
+        availabilities_with_duration = availabilities.annotate(
+            duration_minutes=ExpressionWrapper(
+                (
+                    F('end_time__hour') * 60 + F('end_time__minute') -
+                    (F('start_time__hour') * 60 + F('start_time__minute'))
+                ),
+                output_field=IntegerField()
+            )
+        )
+
+        # Contar ocurrencias de cada día de semana en el rango
+        day_counts = defaultdict(int)
         current = self.start_date
         while current <= self.end_date:
-            for availability in mapping.get(current.isoweekday(), []):
-                delta = (
-                    datetime.combine(current, availability.end_time)
-                    - datetime.combine(current, availability.start_time)
-                ).total_seconds() / 60
-                if delta > 0:
-                    total_minutes += delta
+            day_counts[current.isoweekday()] += 1
             current += timedelta(days=1)
+
+        # Calcular total
+        total_minutes = 0
+        # Esto trae todos los availabilities a memoria, pero son pocos (staff * dias semana)
+        for availability in availabilities_with_duration:
+            occurrences = day_counts.get(availability.day_of_week, 0)
+            total_minutes += (availability.duration_minutes or 0) * occurrences
+
         return total_minutes
 
     def _get_average_order_value(self):

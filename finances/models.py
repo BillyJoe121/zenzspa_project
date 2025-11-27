@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from django.db import models
+from django.core.exceptions import ValidationError
 
 from core.models import BaseModel
 
@@ -59,3 +60,19 @@ class CommissionLedger(BaseModel):
     @property
     def pending_amount(self) -> Decimal:
         return max(self.amount - (self.paid_amount or Decimal("0.00")), Decimal("0.00"))
+
+    def clean(self):
+        super().clean()
+        if self.amount is not None and self.amount < Decimal("0"):
+            raise ValidationError({"amount": "El monto de la comisión no puede ser negativo."})
+        if self.paid_amount is not None and self.paid_amount < Decimal("0"):
+            raise ValidationError({"paid_amount": "El monto pagado no puede ser negativo."})
+
+    def save(self, *args, **kwargs):
+        # Normalizar a 2 decimales
+        if self.amount is not None:
+            self.amount = self.amount.quantize(Decimal("0.01"))
+        if self.paid_amount is not None:
+            self.paid_amount = self.paid_amount.quantize(Decimal("0.01"))
+        self.full_clean()
+        return super().save(*args, **kwargs)

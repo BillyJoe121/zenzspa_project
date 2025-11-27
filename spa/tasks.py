@@ -19,38 +19,44 @@ logger = logging.getLogger(__name__)
 @shared_task
 def _send_reminder_for_appointment(appointment_id):
     """
-    Tarea auxiliar que envía el correo para una cita específica.
+    Tarea auxiliar que envía recordatorio de cita por WhatsApp y Email.
+    Migrado al sistema centralizado de NotificationService.
     """
     try:
         appointment = Appointment.objects.get(id=appointment_id)
-        if not appointment.user.email:
-            logger.warning(
-                "Recordatorio no enviado para cita %s: sin email.", appointment_id)
+        user = appointment.user
+
+        if not user:
+            logger.warning("Cita %s no tiene usuario asignado", appointment_id)
             return
 
-        subject = "Recordatorio de tu cita en ZenzSpa - Mañana"
-        start_time_local = appointment.start_time.astimezone(
-            timezone.get_current_timezone())
+        # Preparar información de la cita
+        start_time_local = appointment.start_time.astimezone(timezone.get_current_timezone())
         services = appointment.get_service_names()
-        message = (
-            f"Hola {appointment.user.first_name},\n\n"
-            f"Este es un recordatorio de tu cita en ZenzSpa para los servicios '{services}'.\n"
-            f"Tu cita es mañana, {start_time_local.strftime('%d de %B')} a las {start_time_local.strftime('%I:%M %p')}.\n\n"
-            f"¡Te esperamos!\n\n"
-            f"El equipo de ZenzSpa"
+
+        # Preparar contexto para NotificationService
+        context = {
+            "user_name": user.get_full_name() or user.first_name or "Cliente",
+            "start_date": start_time_local.strftime("%d de %B %Y"),
+            "start_time": start_time_local.strftime("%I:%M %p"),
+            "services": services,
+            "total": f"{appointment.total:,.0f}" if hasattr(appointment, 'total') and appointment.total else "0",
+        }
+
+        # Enviar notificación usando el sistema centralizado
+        NotificationService.send_notification(
+            user=user,
+            event_code="APPOINTMENT_REMINDER_24H",
+            context=context,
+            priority="high"
         )
 
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=None,
-            recipient_list=[appointment.user.email],
-            fail_silently=False,
-        )
-        logger.info("Recordatorio enviado para la cita %s", appointment_id)
+        logger.info("Recordatorio de cita %s enviado a %s", appointment_id, user.email or user.phone_number)
+
     except Appointment.DoesNotExist:
-        logger.error(
-            "No se encontró la cita %s para enviar recordatorio.", appointment_id)
+        logger.error("No se encontró la cita %s para enviar recordatorio.", appointment_id)
+    except Exception as e:
+        logger.error("Error enviando recordatorio de cita %s: %s", appointment_id, e)
 
 
 @shared_task
@@ -79,32 +85,41 @@ def send_appointment_reminder():
 def notify_waitlist_availability(waitlist_entry_id):
     """
     Notifica al usuario de la lista de espera cuando se libera un horario.
+    Migrado al sistema centralizado de NotificationService.
     """
     try:
-        entry = WaitlistEntry.objects.select_related(
-            'user').get(id=waitlist_entry_id)
+        entry = WaitlistEntry.objects.select_related('user').get(id=waitlist_entry_id)
     except WaitlistEntry.DoesNotExist:
-        logger.error("La entrada de lista de espera %s no existe.",
-                     waitlist_entry_id)
+        logger.error("La entrada de lista de espera %s no existe.", waitlist_entry_id)
         return
 
     user = entry.user
-    message = (
-        f"Hola {user.first_name},\n\n"
-        "Se ha liberado un horario que coincide con tu solicitud en la lista de espera.\n"
-        "Ingresa a la app para confirmarlo antes de que expire.\n\n"
-        "Equipo ZenzSpa"
-    )
-    if user.email:
-        send_mail(
-            subject="Disponibilidad en la lista de espera",
-            message=message,
-            from_email=None,
-            recipient_list=[user.email],
-            fail_silently=True,
+
+    if not user:
+        logger.warning("Entrada de waitlist %s no tiene usuario asignado", waitlist_entry_id)
+        return
+
+    # Preparar contexto para NotificationService
+    # Nota: Es posible que entry tenga campos como date, time, service
+    # Ajustar según el modelo real de WaitlistEntry
+    context = {
+        "user_name": user.get_full_name() or user.first_name or "Cliente",
+        "date": entry.preferred_date.strftime("%d de %B %Y") if hasattr(entry, 'preferred_date') and entry.preferred_date else "próximamente",
+        "time": entry.preferred_time.strftime("%I:%M %p") if hasattr(entry, 'preferred_time') and entry.preferred_time else "por confirmar",
+        "service": entry.service.name if hasattr(entry, 'service') and entry.service else "el servicio solicitado",
+    }
+
+    try:
+        # Enviar notificación usando el sistema centralizado
+        NotificationService.send_notification(
+            user=user,
+            event_code="APPOINTMENT_WAITLIST_AVAILABLE",
+            context=context,
+            priority="high"
         )
-    logger.info("Notificación de lista de espera enviada a %s",
-                user.email or user.phone_number)
+        logger.info("Notificación de lista de espera enviada a %s", user.email or user.phone_number)
+    except Exception as e:
+        logger.error("Error enviando notificación de waitlist %s: %s", waitlist_entry_id, e)
 
 
 @shared_task
@@ -386,3 +401,23 @@ def notify_expiring_vouchers():
             logger.exception(
                 "No se pudo notificar vencimiento de voucher %s", voucher.code)
     return f"Vouchers notificados: {notified}"
+
+
+@shared_task
+def cleanup_old_appointments(days_to_keep=730):
+    """
+    Archiva o elimina citas completadas/canceladas antiguas para contener el tamaño de la base.
+    """
+    cutoff = timezone.now() - timedelta(days=days_to_keep)
+    old = Appointment.objects.filter(
+        status__in=[
+            Appointment.AppointmentStatus.COMPLETED,
+            Appointment.AppointmentStatus.CANCELLED,
+        ],
+        updated_at__lt=cutoff,
+    )
+    count = old.count()
+    if count:
+        old.delete()
+        logger.info("Limpieza de citas antiguas: %s registros eliminados (>%d días)", count, days_to_keep)
+    return {"deleted": count, "cutoff": cutoff.isoformat()}

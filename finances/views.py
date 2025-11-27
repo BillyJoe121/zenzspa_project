@@ -10,6 +10,7 @@ from core.models import GlobalSettings
 from .services import DeveloperCommissionService, WompiDisbursementClient
 from .models import CommissionLedger
 from .serializers import CommissionLedgerSerializer
+from .gateway import WompiPaymentClient
 
 
 class CommissionLedgerListView(generics.ListAPIView):
@@ -61,3 +62,41 @@ class DeveloperCommissionStatusView(APIView):
             "wompi_available_balance": balance_str,
         }
         return Response(data)
+
+
+class PSEFinancialInstitutionsView(APIView):
+    """
+    Lista las instituciones financieras disponibles para PSE.
+
+    GET /api/finances/pse-banks/
+
+    Response:
+        {
+            "data": [
+                {
+                    "financial_institution_code": "1022",
+                    "financial_institution_name": "BANCO UNION COLOMBIANO"
+                },
+                ...
+            ]
+        }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        client = WompiPaymentClient()
+        try:
+            institutions_data, status_code = client.get_pse_financial_institutions()
+
+            if status_code == 200:
+                return Response(institutions_data, status=200)
+            else:
+                return Response(
+                    {"error": "No se pudieron obtener los bancos PSE"},
+                    status=status_code
+                )
+        except Exception as e:
+            return Response(
+                {"error": f"Error al consultar bancos PSE: {str(e)}"},
+                status=500
+            )

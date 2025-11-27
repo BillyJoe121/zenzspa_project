@@ -17,8 +17,20 @@ class NotificationPreference(BaseModel):
         related_name="notification_preferences",
     )
     email_enabled = models.BooleanField(default=True)
-    sms_enabled = models.BooleanField(default=False)
-    push_enabled = models.BooleanField(default=False)
+    sms_enabled = models.BooleanField(
+        default=False,
+        editable=False,
+        help_text="SMS no disponible - usar WhatsApp"
+    )
+    push_enabled = models.BooleanField(
+        default=False,
+        editable=False,
+        help_text="Push no disponible actualmente"
+    )
+    whatsapp_enabled = models.BooleanField(
+        default=True,
+        help_text="Notificaciones por WhatsApp"
+    )
     quiet_hours_start = models.TimeField(null=True, blank=True)
     quiet_hours_end = models.TimeField(null=True, blank=True)
     timezone = models.CharField(max_length=64, default="America/Bogota")
@@ -73,11 +85,24 @@ class NotificationPreference(BaseModel):
             NotificationTemplate.ChannelChoices.EMAIL: self.email_enabled,
             NotificationTemplate.ChannelChoices.SMS: self.sms_enabled,
             NotificationTemplate.ChannelChoices.PUSH: self.push_enabled,
+            NotificationTemplate.ChannelChoices.WHATSAPP: self.whatsapp_enabled,
         }
         return mapping.get(channel, False)
 
     def clean(self):
         super().clean()
+
+        # Validar timezone
+        if self.timezone:
+            try:
+                ZoneInfo(self.timezone)
+            except Exception:
+                raise ValidationError({
+                    "timezone": f"Timezone inválido: {self.timezone}. "
+                               f"Use valores como 'America/Bogota', 'America/Mexico_City', etc."
+                })
+
+        # Validaciones de quiet hours
         if self.quiet_hours_start and self.quiet_hours_end:
             if self.quiet_hours_start == self.quiet_hours_end:
                 raise ValidationError(
@@ -98,6 +123,7 @@ class NotificationTemplate(BaseModel):
         EMAIL = "EMAIL", "Email"
         SMS = "SMS", "SMS"
         PUSH = "PUSH", "Push"
+        WHATSAPP = "WHATSAPP", "WhatsApp"
 
     event_code = models.SlugField(max_length=64)
     channel = models.CharField(max_length=10, choices=ChannelChoices.choices)
@@ -144,6 +170,12 @@ class NotificationLog(BaseModel):
         verbose_name = "Registro de Notificación"
         verbose_name_plural = "Registros de Notificación"
         ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=['event_code', 'channel']),
+            models.Index(fields=['user', 'created_at']),
+            models.Index(fields=['status', 'sent_at']),
+            models.Index(fields=['status', 'created_at']),
+        ]
 
     def __str__(self):
         return f"{self.event_code} -> {self.channel} ({self.status})"

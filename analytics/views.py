@@ -37,7 +37,27 @@ def _audit_analytics(request, action, extra=None):
 
 class DateFilterMixin:
     MAX_RANGE_DAYS = 31
-    CACHE_TTL = 300
+    CACHE_TTL_SHORT = 300      # 5 minutos - para datos en tiempo real
+    CACHE_TTL_MEDIUM = 1800    # 30 minutos - para KPIs diarios
+    CACHE_TTL_LONG = 7200      # 2 horas - para reportes históricos
+
+    def _get_cache_ttl(self, start_date, end_date):
+        """
+        Determina TTL basado en qué tan antiguo es el rango.
+        """
+        today = timezone.localdate()
+        
+        # Si el rango incluye hoy, usar TTL corto
+        if end_date >= today:
+            return self.CACHE_TTL_SHORT
+        
+        # Si el rango es de la semana pasada, usar TTL medio
+        week_ago = today - timedelta(days=7)
+        if start_date >= week_ago:
+            return self.CACHE_TTL_MEDIUM
+        
+        # Para datos históricos, usar TTL largo
+        return self.CACHE_TTL_LONG
 
     def _parse_dates(self, request):
         today = timezone.localdate()
@@ -48,16 +68,40 @@ class DateFilterMixin:
             if not value:
                 return default
             try:
-                return datetime.strptime(value, "%Y-%m-%d").date()
+                parsed = datetime.strptime(value, "%Y-%m-%d").date()
             except ValueError:
                 raise ValueError(f"Formato inválido para {name}. Usa YYYY-MM-DD.")
+            
+            # NUEVO - Validar que no sea fecha futura
+            if parsed > today:
+                raise ValueError(f"{name} no puede ser una fecha futura.")
+            
+            # NUEVO - Validar que no sea muy antigua (máximo 1 año)
+            one_year_ago = today - timedelta(days=365)
+            if parsed < one_year_ago:
+                raise ValueError(f"{name} no puede ser anterior a {one_year_ago.isoformat()}.")
+            
+            return parsed
 
         start_date = parse_param("start_date", default_start)
         end_date = parse_param("end_date", today)
+        
         if start_date > end_date:
             raise ValueError("start_date debe ser menor o igual a end_date.")
-        if (end_date - start_date).days > self.MAX_RANGE_DAYS:
-            raise ValueError(f"El rango máximo permitido es de {self.MAX_RANGE_DAYS} días.")
+        
+        # NUEVO - Validar rango máximo basado en rol
+        user = getattr(request, 'user', None)
+        max_days = self.MAX_RANGE_DAYS
+        
+        # Admins pueden consultar hasta 90 días
+        if user and getattr(user, 'role', None) == CustomUser.Role.ADMIN:
+            max_days = 90
+        
+        if (end_date - start_date).days > max_days:
+            raise ValueError(
+                f"El rango máximo permitido es de {max_days} días para tu rol."
+            )
+        
         return start_date, end_date
 
     def _parse_filters(self, request):
@@ -122,7 +166,11 @@ class KpiView(DateFilterMixin, APIView):
         data["end_date"] = end_date.isoformat()
         data["staff_id"] = staff_id
         data["service_category_id"] = service_category_id
-        cache.set(cache_key, data, self.CACHE_TTL)
+        
+        # CAMBIAR - Usar TTL dinámico
+        ttl = self._get_cache_ttl(start_date, end_date)
+        cache.set(cache_key, data, ttl)
+
         _audit_analytics(
             request,
             "kpi_view",
@@ -160,7 +208,9 @@ class AnalyticsExportView(DateFilterMixin, APIView):
                 "debt_metrics": kpis.get("debt_recovery", {}),
                 "debt_rows": service.get_debt_rows(),
             }
-            cache.set(cache_key, dataset, self.CACHE_TTL)
+            # CAMBIAR - Usar TTL dinámico
+            ttl = self._get_cache_ttl(start_date, end_date)
+            cache.set(cache_key, dataset, ttl)
         kpis = dataset["kpis"]
         export_format = request.query_params.get("format", "csv").lower()
         if export_format == "xlsx":
@@ -214,7 +264,7 @@ class AnalyticsExportView(DateFilterMixin, APIView):
 
 class DashboardViewSet(viewsets.ViewSet):
     permission_classes = [IsStaffOrAdmin]
-    CACHE_TTL = 60
+    CACHE_TTL = 300  # Aumentado a 5 minutos
 
     def list(self, request):
         return Response({"detail": "Usa las acciones del dashboard."})
@@ -242,13 +292,28 @@ class DashboardViewSet(viewsets.ViewSet):
         today = self._today()
         cache_key = self._cache_key(request, f"agenda:{today.isoformat()}")
         cached = cache.get(cache_key)
+        
+        # Nota: La paginación complica el caching de la lista completa vs paginada.
+        # Si cacheamos la lista completa, paginamos después.
+        
         if cached is not None:
             _audit_analytics(
                 request,
                 "dashboard_agenda_today",
                 {"date": today.isoformat(), "cache": "hit"},
             )
-            return Response({"results": cached})
+            # Si está cacheado, asumimos que es la lista completa de dicts
+            # Necesitamos re-hidratar o paginar la lista de dicts
+            from rest_framework.pagination import PageNumberPagination
+            class DashboardPagination(PageNumberPagination):
+                page_size = 50
+                max_page_size = 100
+            
+            paginator = DashboardPagination()
+            # Paginator espera un queryset o lista
+            page = paginator.paginate_queryset(cached, request)
+            return paginator.get_paginated_response(page)
+
         appointments = (
             Appointment.objects.select_related("user", "staff_member")
             .filter(start_time__date=today)
@@ -267,13 +332,23 @@ class DashboardViewSet(viewsets.ViewSet):
                     "has_debt": getattr(user, "has_pending_final_payment", lambda: False)(),
                 }
             )
+        
         cache.set(cache_key, data, self.CACHE_TTL)
         _audit_analytics(
             request,
             "dashboard_agenda_today",
             {"date": today.isoformat(), "cache": "miss"},
         )
-        return Response({"results": data})
+        
+        # Paginación
+        from rest_framework.pagination import PageNumberPagination
+        class DashboardPagination(PageNumberPagination):
+            page_size = 50
+            max_page_size = 100
+            
+        paginator = DashboardPagination()
+        page = paginator.paginate_queryset(data, request)
+        return paginator.get_paginated_response(page)
 
     @action(detail=False, methods=["get"], url_path="pending-payments")
     def pending_payments(self, request):

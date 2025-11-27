@@ -87,13 +87,79 @@ def _dispatch_channel(log):
             [recipient],
             fail_silently=False,
         )
+
+    elif channel == NotificationTemplate.ChannelChoices.WHATSAPP:
+        from notifications.whatsapp_service import WhatsAppService
+        from notifications.twilio_templates import get_template_config, is_template_configured
+
+        phone = getattr(user, "phone_number", None)
+        if not phone:
+            raise ValueError("El usuario no tiene número de teléfono.")
+
+        if not WhatsAppService.validate_phone(phone):
+            raise ValueError(f"Número de teléfono inválido: {phone}")
+
+        # Verificar si hay template aprobado configurado (no HX00000...)
+        if is_template_configured(log.event_code):
+            # Usar template aprobado por Meta
+            template_config = get_template_config(log.event_code)
+            content_sid = template_config["content_sid"]
+            variable_names = template_config.get("variables", [])
+
+            # Obtener contexto del metadata
+            metadata = log.metadata or {}
+            context = metadata.get("context", {})
+
+            # Mapear variables del contexto a formato Twilio {{1}}, {{2}}, etc.
+            content_variables = {}
+            for idx, var_name in enumerate(variable_names, start=1):
+                value = context.get(var_name, "")
+                content_variables[str(idx)] = str(value)
+
+            # Obtener media_url si está disponible
+            media_url = context.get("media_url")  # Opcional
+
+            logger.info(
+                "Enviando WhatsApp template %s a %s",
+                log.event_code,
+                WhatsAppService._mask_phone(phone)
+            )
+
+            result = WhatsAppService.send_template_message(
+                to_phone=phone,
+                content_sid=content_sid,
+                content_variables=content_variables,
+                media_url=media_url
+            )
+        else:
+            # Fallback: mensaje dinámico (solo funciona en ventana 24h)
+            logger.warning(
+                "Template %s no configurado (SID=%s), usando mensaje dinámico",
+                log.event_code,
+                get_template_config(log.event_code).get("content_sid") if get_template_config(log.event_code) else "N/A"
+            )
+            whatsapp_body = body
+            if subject:
+                whatsapp_body = f"*{subject}*\n\n{body}"
+
+            result = WhatsAppService.send_message(phone, whatsapp_body)
+
+        if not result["success"]:
+            raise Exception(result["error"])
+
     elif channel == NotificationTemplate.ChannelChoices.SMS:
+        # SMS deshabilitado - solo logging
         phone = getattr(user, "phone_number", None)
         if not phone:
             raise ValueError("El usuario no tiene teléfono.")
-        logger.info("SMS a %s: %s", mask_contact(phone), body)
+        logger.warning("Canal SMS no implementado - use WhatsApp en su lugar")
+        raise ValueError("Canal SMS no disponible - usar WhatsApp")
+
     elif channel == NotificationTemplate.ChannelChoices.PUSH:
-        logger.info("Push para %s: %s", user_id_display(user), body)
+        # PUSH deshabilitado - solo logging
+        logger.warning("Canal PUSH no implementado")
+        raise ValueError("Canal PUSH no disponible")
+
     else:
         raise ValueError(f"Canal desconocido {channel}")
 
@@ -149,3 +215,45 @@ def check_upcoming_appointments_2h():
         )
         count += 1
     return f"{count} recordatorios generados"
+
+
+@shared_task
+def cleanup_old_notification_logs():
+    """
+    Elimina logs de notificaciones enviadas hace más de 90 días.
+    Mantiene logs fallidos por 180 días para análisis.
+    Ejecutar diariamente vía Celery Beat.
+    """
+    from notifications.models import NotificationLog
+
+    # Eliminar logs enviados exitosamente > 90 días
+    sent_cutoff = timezone.now() - timedelta(days=90)
+    sent_deleted, _ = NotificationLog.objects.filter(
+        status=NotificationLog.Status.SENT,
+        sent_at__lt=sent_cutoff
+    ).delete()
+
+    # Eliminar logs fallidos > 180 días
+    failed_cutoff = timezone.now() - timedelta(days=180)
+    failed_deleted, _ = NotificationLog.objects.filter(
+        status=NotificationLog.Status.FAILED,
+        created_at__lt=failed_cutoff
+    ).delete()
+
+    # Eliminar logs silenciados muy antiguos
+    silenced_deleted, _ = NotificationLog.objects.filter(
+        status=NotificationLog.Status.SILENCED,
+        created_at__lt=failed_cutoff
+    ).delete()
+
+    logger.info(
+        "Limpieza de NotificationLog: %d enviados, %d fallidos, %d silenciados eliminados",
+        sent_deleted, failed_deleted, silenced_deleted
+    )
+
+    return {
+        "sent_deleted": sent_deleted,
+        "failed_deleted": failed_deleted,
+        "silenced_deleted": silenced_deleted,
+        "total_deleted": sent_deleted + failed_deleted + silenced_deleted
+    }

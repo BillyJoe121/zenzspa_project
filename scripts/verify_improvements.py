@@ -20,7 +20,10 @@ def main():
     # Verificar archivos modificados
     print("1. Archivos Modificados:")
     files_to_check = {
-        "zenzspa/settings.py": "Configuración principal",
+        "zenzspa/settings/base.py": "Configuración principal",
+        "zenzspa/settings/security.py": "Seguridad y CSP",
+        "zenzspa/settings/celery.py": "Configuración de Celery",
+        "zenzspa/settings/logging.py": "Logging y monitoreo",
         "zenzspa/health.py": "Health check mejorado",
     }
     
@@ -48,11 +51,18 @@ def main():
             print(f"  [WARN] {doc_path} - NO ENCONTRADO")
     
     # Verificar mejoras en settings.py
-    print("\n3. Mejoras en settings.py:")
-    settings_file = BASE_DIR / "zenzspa" / "settings.py"
-    
-    if settings_file.exists():
-        content = settings_file.read_text()
+    print("\n3. Mejoras en settings:")
+    settings_files = [
+        BASE_DIR / "zenzspa" / "settings" / "base.py",
+        BASE_DIR / "zenzspa" / "settings" / "security.py",
+        BASE_DIR / "zenzspa" / "settings" / "celery.py",
+        BASE_DIR / "zenzspa" / "settings" / "logging.py",
+    ]
+
+    existing_files = [path for path in settings_files if path.exists()]
+
+    if existing_files:
+        content = "\n".join(path.read_text() for path in existing_files)
         
         improvements = [
             "ZENZSPA-SEC-ALLOWED-HOSTS",
@@ -76,7 +86,7 @@ def main():
         
         print(f"\n  Implementadas: {implemented}/{len(improvements)}")
     else:
-        print("  [ERROR] settings.py no encontrado")
+        print("  [ERROR] No se encontraron archivos de configuración en zenzspa/settings/")
     
     # Verificar health check
     print("\n4. Health Check:")

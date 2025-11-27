@@ -220,7 +220,7 @@ console.log(data.reply); // "¡Hola! ¿En qué puedo ayudarte?"
 Cambiar `BotWebhookView.post()` para encolar en lugar de procesar sincrónicamente:
 
 ```python
-# En bot/views.py - BotWebhookView.post()
+# En bot/views/webhook.py - BotWebhookView.post()
 
 # Después de validaciones...
 

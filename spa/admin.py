@@ -104,6 +104,11 @@ class AppointmentAdmin(admin.ModelAdmin):
 
 # --- INICIO DE LA MODIFICACIÓN: Usar Inlines para el PackageAdmin ---
 
+
+
+
+# --- INICIO DE LA MODIFICACIÓN: Usar Inlines para el PackageAdmin ---
+
 class PackageServiceInline(admin.TabularInline):
     """
     Permite editar la cantidad de cada servicio directamente
@@ -113,15 +118,26 @@ class PackageServiceInline(admin.TabularInline):
     extra = 1  # Muestra 1 campo extra para añadir un nuevo servicio por defecto
     autocomplete_fields = ['service'] # Facilita la búsqueda de servicios
 
+try:
+    admin.site.unregister(Package)
+except admin.sites.NotRegistered:
+    pass
+
+
 @admin.register(Package)
 class PackageAdmin(admin.ModelAdmin):
     list_display = ('name', 'price', 'is_active', 'grants_vip_months')
     list_filter = ('is_active',)
     search_fields = ('name',)
-    # Se elimina filter_horizontal y se reemplaza con inlines
     inlines = [PackageServiceInline]
 
 # --- FIN DE LA MODIFICACIÓN ---
+
+
+try:
+    admin.site.unregister(Payment)
+except admin.sites.NotRegistered:
+    pass
 
 
 @admin.register(Payment)
@@ -136,23 +152,27 @@ class PaymentAdmin(admin.ModelAdmin):
 
 # --- INICIO DE LA MODIFICACIÓN: Registrar nuevos modelos ---
 
+for model_cls in (UserPackage, Voucher):
+    try:
+        admin.site.unregister(model_cls)
+    except admin.sites.NotRegistered:
+        pass
+
+
 @admin.register(UserPackage)
 class UserPackageAdmin(admin.ModelAdmin):
-    list_display = ('user', 'package', 'purchase_date', 'expires_at')
+    list_display = ('user', 'package', 'purchase_date')
     search_fields = ('user__first_name', 'user__last_name', 'package__name')
-    list_select_related = ('user', 'package', 'payment')
-    raw_id_fields = ('user', 'package', 'payment')
+    list_select_related = ('user', 'package')
+    raw_id_fields = ('user', 'package')
+
 
 @admin.register(Voucher)
 class VoucherAdmin(admin.ModelAdmin):
-    list_display = ('code', 'user', 'service', 'status', 'get_expires_at')
+    list_display = ('code', 'user', 'service', 'status', 'expires_at')
     list_filter = ('status', 'service')
     search_fields = ('code', 'user__first_name', 'user__last_name')
-    raw_id_fields = ('user', 'service', 'user_package', 'redeemed_appointment')
-
-    @admin.display(description='Expiration Date', ordering='user_package__expires_at')
-    def get_expires_at(self, obj):
-        return obj.user_package.expires_at
+    raw_id_fields = ('user', 'service', 'user_package')
 
 # --- FIN DE LA MODIFICACIÓN ---
 

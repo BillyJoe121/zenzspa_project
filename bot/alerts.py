@@ -1,15 +1,17 @@
 """
 Servicio de alertas y notificaciones para actividades sospechosas.
-Envía emails a los administradores cuando se detectan amenazas críticas.
+Envía notificaciones a los administradores cuando se detectan amenazas críticas.
+Migrado al sistema centralizado de NotificationService.
 """
 import logging
 from datetime import timedelta
-from django.core.mail import send_mail
 from django.conf import settings
 from django.utils import timezone
+from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.db import models
+from notifications.services import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +46,14 @@ class SuspiciousActivityAlertService:
     @staticmethod
     def send_critical_activity_alert(suspicious_activity):
         """
-        Envía una alerta por email cuando se detecta una actividad crítica.
+        Envía una alerta por WhatsApp y Email cuando se detecta una actividad crítica.
+        Migrado al sistema centralizado de NotificationService.
 
         Args:
             suspicious_activity: Instancia de SuspiciousActivity
         """
         from .models import BotConfiguration
+        from users.models import CustomUser
 
         try:
             # Verificar si las alertas están habilitadas
@@ -58,73 +62,79 @@ class SuspiciousActivityAlertService:
                 logger.info("Alertas críticas deshabilitadas en configuración")
                 return
 
-            # Obtener emails de administradores
-            admin_emails = SuspiciousActivityAlertService.get_admin_emails()
+            # Obtener configuración del admin
+            admin_phone = config.admin_phone if config else None
 
-            if not admin_emails:
-                logger.warning("No hay emails de administradores configurados para alertas")
+            if not admin_phone:
+                logger.warning("No hay teléfono de admin configurado para alertas de seguridad")
                 return
 
-            # Preparar contexto para el email
+            # Buscar usuario admin con ese teléfono
+            admin_user = CustomUser.objects.filter(
+                phone_number=admin_phone,
+                is_staff=True,
+                is_active=True
+            ).first()
+
+            if not admin_user:
+                # Fallback: buscar cualquier admin activo
+                admin_user = CustomUser.objects.filter(
+                    models.Q(is_superuser=True) | models.Q(role=CustomUser.Role.ADMIN),
+                    is_active=True
+                ).first()
+
+            if not admin_user:
+                logger.warning("No se encontró usuario admin para enviar alerta de seguridad")
+                return
+
+            # Preparar contexto
             context = {
-                'activity': suspicious_activity,
-                'participant': suspicious_activity.participant_identifier,
-                'ip_address': suspicious_activity.ip_address,
-                'activity_type': suspicious_activity.get_activity_type_display(),
-                'severity': suspicious_activity.get_severity_display(),
-                'description': suspicious_activity.description,
-                'created_at': suspicious_activity.created_at,
-                'admin_url': f"{settings.SITE_URL}/admin/bot/suspiciousactivity/{suspicious_activity.id}/change/",
+                "alert_type": suspicious_activity.get_activity_type_display(),
+                "user_identifier": suspicious_activity.participant_identifier or suspicious_activity.ip_address,
+                "alert_detail": suspicious_activity.description,
+                "timestamp": suspicious_activity.created_at.strftime("%d/%m/%Y %H:%M:%S") if suspicious_activity.created_at else timezone.now().strftime("%d/%m/%Y %H:%M:%S"),
             }
 
-            # Asunto del email
-            subject = f"[ALERTA CRÍTICA] {context['activity_type']} - {context['ip_address']}"
-
-            # Cuerpo del email (texto plano)
-            message = f"""
-⚠️ ALERTA DE SEGURIDAD - ACTIVIDAD CRÍTICA DETECTADA ⚠️
-
-Tipo: {context['activity_type']}
-Severidad: {context['severity']}
-Usuario/IP: {context['participant']}
-IP: {context['ip_address']}
-Fecha: {context['created_at'].strftime('%Y-%m-%d %H:%M:%S')}
-
-DESCRIPCIÓN:
-{context['description']}
-
-ACCIÓN REQUERIDA:
-Por favor, revisa esta actividad inmediatamente en el panel de administración:
-{context['admin_url']}
-
-Considera bloquear esta IP si el patrón de abuso continúa.
-
----
-Este es un mensaje automático del sistema de seguridad de Zenzspa Bot.
-            """.strip()
-
-            # Enviar email
-            send_mail(
-                subject=subject,
-                message=message,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=admin_emails,
-                fail_silently=False,
+            # Enviar notificación usando el sistema centralizado
+            NotificationService.send_notification(
+                user=admin_user,
+                event_code="BOT_SECURITY_ALERT",
+                context=context,
+                priority="critical"  # Critical para ignorar quiet hours
             )
 
+            # Enviar email a administradores (mantener compatibilidad con pruebas)
+            admin_emails = SuspiciousActivityAlertService.get_admin_emails()
+            if admin_emails:
+                subject = f"[ALERTA] Actividad crítica detectada - {suspicious_activity.ip_address}"
+                body = (
+                    f"Se detectó una actividad crítica del tipo: {context['alert_type']}\n"
+                    f"Usuario/IP: {context['user_identifier']}\n"
+                    f"Detalle: {context['alert_detail']}\n"
+                    f"Fecha: {context['timestamp']}\n"
+                )
+                send_mail(
+                    subject=subject,
+                    message=body,
+                    from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+                    recipient_list=admin_emails,
+                    fail_silently=True,
+                )
+
             logger.info(
-                "Alerta crítica enviada a %d administrador(es) para actividad %d (IP: %s)",
-                len(admin_emails), suspicious_activity.id, suspicious_activity.ip_address
+                "Alerta de seguridad enviada para actividad %d (IP: %s)",
+                suspicious_activity.id, suspicious_activity.ip_address
             )
 
         except Exception as e:
-            # No fallar el proceso principal si el email falla
-            logger.error("Error enviando alerta crítica por email: %s", e, exc_info=True)
+            # No fallar el proceso principal si la notificación falla
+            logger.error("Error enviando alerta de seguridad: %s", e, exc_info=True)
 
     @staticmethod
     def send_auto_block_notification(ip_address, reason, critical_count, block_id):
         """
         Envía notificación cuando una IP es bloqueada automáticamente.
+        Migrado al sistema centralizado de NotificationService.
 
         Args:
             ip_address: IP bloqueada
@@ -132,49 +142,55 @@ Este es un mensaje automático del sistema de seguridad de Zenzspa Bot.
             critical_count: Número de actividades críticas
             block_id: ID del registro de bloqueo
         """
-        try:
-            admin_emails = SuspiciousActivityAlertService.get_admin_emails()
+        from .models import BotConfiguration
+        from users.models import CustomUser
 
-            if not admin_emails:
-                logger.warning("No hay emails de administradores para notificar auto-bloqueo")
+        try:
+            # Obtener configuración del admin
+            config = BotConfiguration.objects.filter(is_active=True).first()
+            admin_phone = config.admin_phone if config else None
+
+            if not admin_phone:
+                logger.warning("No hay teléfono de admin configurado para notificar auto-bloqueo")
                 return
 
-            subject = f"[AUTO-BLOQUEO] IP {ip_address} bloqueada automáticamente"
+            # Buscar usuario admin con ese teléfono
+            admin_user = CustomUser.objects.filter(
+                phone_number=admin_phone,
+                is_staff=True,
+                is_active=True
+            ).first()
 
-            message = f"""
-🚫 BLOQUEO AUTOMÁTICO DE IP 🚫
+            if not admin_user:
+                # Fallback: buscar cualquier admin activo
+                admin_user = CustomUser.objects.filter(
+                    models.Q(is_superuser=True) | models.Q(role=CustomUser.Role.ADMIN),
+                    is_active=True
+                ).first()
 
-La IP {ip_address} ha sido bloqueada automáticamente por el sistema de seguridad.
+            if not admin_user:
+                logger.warning("No se encontró usuario admin para notificar auto-bloqueo")
+                return
 
-Razón: {reason}
-Actividades críticas detectadas: {critical_count}
-Fecha: {timezone.now().strftime('%Y-%m-%d %H:%M:%S')}
+            # Preparar contexto
+            context = {
+                "user_identifier": ip_address,
+                "block_reason": reason,
+                "timestamp": timezone.now().strftime("%d/%m/%Y %H:%M:%S"),
+                "admin_url": f"{settings.SITE_URL}/admin/bot/ipblocklist/{block_id}/change/",
+            }
 
-Esta IP ha alcanzado el umbral de actividades críticas y ha sido bloqueada preventivamente.
-
-Ver detalles del bloqueo:
-{settings.SITE_URL}/admin/bot/ipblocklist/{block_id}/change/
-
-Ver actividades de esta IP:
-{settings.SITE_URL}/admin/bot/suspiciousactivity/?ip_address={ip_address}
-
-Si consideras que el bloqueo es incorrecto, puedes desactivarlo desde el panel de administración.
-
----
-Este es un mensaje automático del sistema de seguridad de Zenzspa Bot.
-            """.strip()
-
-            send_mail(
-                subject=subject,
-                message=message,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=admin_emails,
-                fail_silently=False,
+            # Enviar notificación usando el sistema centralizado
+            NotificationService.send_notification(
+                user=admin_user,
+                event_code="BOT_AUTO_BLOCK",
+                context=context,
+                priority="critical"  # Critical para ignorar quiet hours
             )
 
             logger.info(
-                "Notificación de auto-bloqueo enviada a %d administrador(es) para IP %s",
-                len(admin_emails), ip_address
+                "Notificación de auto-bloqueo enviada para IP %s",
+                ip_address
             )
 
         except Exception as e:

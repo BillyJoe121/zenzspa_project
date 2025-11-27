@@ -4,7 +4,6 @@ from decimal import Decimal
 from datetime import timedelta
 
 from django.conf import settings
-from django.core.mail import send_mail
 from django.db import transaction
 from django.utils import timezone
 
@@ -13,99 +12,140 @@ from core.models import AuditLog, GlobalSettings
 from spa.models import ClientCredit
 from .models import Order, OrderItem, ProductVariant, InventoryMovement
 from marketplace.tasks import notify_order_status_change
+from notifications.services import NotificationService
 
 logger = logging.getLogger(__name__)
 
 class MarketplaceNotificationService:
-    @staticmethod
-    def _send_whatsapp(to_number, body):
-        try:
-            from twilio.rest import Client
-            account_sid = settings.TWILIO_ACCOUNT_SID
-            auth_token = settings.TWILIO_AUTH_TOKEN
-            from_number = getattr(settings, 'TWILIO_WHATSAPP_NUMBER', 'whatsapp:+14155238886')
-            
-            if not account_sid or not auth_token:
-                logger.warning("Twilio no configurado, saltando WhatsApp")
-                return
-
-            client = Client(account_sid, auth_token)
-            if not to_number.startswith('whatsapp:'):
-                to_number = f"whatsapp:{to_number}"
-            
-            message = client.messages.create(
-                from_=from_number,
-                body=body,
-                to=to_number
-            )
-            logger.info("WhatsApp enviado a %s: %s", to_number, message.sid)
-        except Exception as e:
-            logger.error("Error enviando WhatsApp: %s", e)
+    """
+    Servicio de notificaciones para el módulo Marketplace.
+    Migrado al sistema centralizado de NotificationService.
+    """
 
     @classmethod
     def send_order_status_update(cls, order, new_status):
+        """
+        Envía notificación de actualización de estado de orden.
+        Usa el sistema centralizado de notificaciones con templates aprobados.
+        """
         user = order.user
-        if not user.phone_number:
+        if not user:
+            logger.warning("Orden %s no tiene usuario asociado", order.id)
             return
 
-        status_display = dict(Order.OrderStatus.choices).get(new_status, new_status)
-        
-        # Emojis y mensajes personalizados
-        emoji = "📦"
-        msg_detail = f"Tu orden ha cambiado a: *{status_display}*"
-        
+        # Determinar qué event_code usar según el estado
+        event_code = None
+        context = {
+            "user_name": user.get_full_name() or user.first_name or "Cliente",
+            "order_id": str(order.id),
+        }
+
         if new_status == Order.OrderStatus.SHIPPED:
-            emoji = "🚚"
-            tracking = order.tracking_number or "Pendiente"
-            msg_detail = f"Tu orden ha sido enviada. Guía: {tracking}"
+            event_code = "ORDER_SHIPPED"
+            context.update({
+                "tracking_number": order.tracking_number or "Pendiente",
+                "estimated_delivery": order.estimated_delivery_date.strftime("%d de %B") if order.estimated_delivery_date else "Por confirmar",
+            })
         elif new_status == Order.OrderStatus.DELIVERED:
-            emoji = "🎉"
-            msg_detail = "Tu orden ha sido entregada. ¡Gracias por tu compra!"
-        elif new_status == getattr(Order.OrderStatus, "READY_FOR_PICKUP", "READY_FOR_PICKUP"):
-            emoji = "🏪"
-            msg_detail = "Tu orden está lista para recoger en tienda."
+            event_code = "ORDER_DELIVERED"
+            context.update({
+                "delivery_date": order.delivered_at.strftime("%d de %B") if order.delivered_at else timezone.now().strftime("%d de %B"),
+            })
+        elif new_status == getattr(Order.OrderStatus, "READY_FOR_PICKUP", None):
+            event_code = "ORDER_READY_FOR_PICKUP"
+            context.update({
+                "store_address": getattr(settings, 'STORE_ADDRESS', 'Nuestro local'),
+                "store_hours": getattr(settings, 'STORE_HOURS', 'Lunes a Sábado 9AM - 6PM'),
+                "pickup_code": str(order.id)[-6:],  # Últimos 6 dígitos como código
+            })
 
-        body = f"""{emoji} *ACTUALIZACIÓN DE ORDEN #{order.id}*
-Hola {user.first_name},
-
-{msg_detail}
-
-Total: ${order.total_amount}
-"""
-        cls._send_whatsapp(user.phone_number, body)
+        if event_code:
+            try:
+                NotificationService.send_notification(
+                    user=user,
+                    event_code=event_code,
+                    context=context,
+                    priority="high"
+                )
+                logger.info("Notificación de orden enviada: order_id=%s, event=%s", order.id, event_code)
+            except Exception as e:
+                logger.error("Error enviando notificación de orden %s: %s", order.id, e)
 
     @classmethod
     def send_low_stock_alert(cls, variants):
+        """
+        Envía alerta de stock bajo a los administradores.
+        Usa el sistema centralizado de notificaciones con templates aprobados.
+        """
         from bot.models import BotConfiguration
+        from users.models import CustomUser
+
         bot_config = BotConfiguration.objects.filter(is_active=True).first()
         admin_phone = bot_config.admin_phone if bot_config else None
-        
+
         if not admin_phone:
+            logger.warning("No hay número de admin configurado para alertas de stock")
             return
 
-        items_list = "\n".join([f"- {v.product.name} ({v.name}): {v.stock} unid." for v in variants])
-        body = f"""⚠️ *ALERTA DE STOCK BAJO*
-Los siguientes productos tienen pocas unidades:
+        # Buscar usuario admin con ese teléfono
+        admin_user = CustomUser.objects.filter(
+            phone_number=admin_phone,
+            is_staff=True
+        ).first()
 
-{items_list}
+        if not admin_user:
+            # Fallback: buscar cualquier admin
+            admin_user = CustomUser.objects.filter(is_staff=True, is_active=True).first()
 
-Por favor reabastecer."""
-        
-        cls._send_whatsapp(admin_phone, body)
+        if not admin_user:
+            logger.warning("No se encontró usuario admin para enviar alerta de stock")
+            return
+
+        # Formatear lista de productos
+        items_list = "\n".join([
+            f"- {v.product.name} ({v.name}): {v.stock} unid."
+            for v in variants
+        ])
+
+        try:
+            NotificationService.send_notification(
+                user=admin_user,
+                event_code="STOCK_LOW_ALERT",
+                context={
+                    "items_list": items_list,
+                },
+                priority="high"
+            )
+            logger.info("Alerta de stock bajo enviada: %d productos", len(variants))
+        except Exception as e:
+            logger.error("Error enviando alerta de stock bajo: %s", e)
 
     @classmethod
     def send_return_processed(cls, order, amount):
+        """
+        Envía notificación de devolución procesada.
+        Usa el sistema centralizado de notificaciones con templates aprobados.
+        """
         user = order.user
-        if not user.phone_number:
+        if not user:
+            logger.warning("Orden %s no tiene usuario para notificar devolución", order.id)
             return
-            
-        body = f"""💸 *DEVOLUCIÓN PROCESADA*
-Orden #{order.id}
 
-Se han abonado ${amount} créditos a tu cuenta.
-Puedes usarlos en tu próxima compra.
-"""
-        cls._send_whatsapp(user.phone_number, body)
+        try:
+            NotificationService.send_notification(
+                user=user,
+                event_code="ORDER_CREDIT_ISSUED",
+                context={
+                    "user_name": user.get_full_name() or user.first_name or "Cliente",
+                    "credit_amount": f"{amount:,.0f}",
+                    "reason": "Devolución de productos",
+                    "order_id": str(order.id),
+                },
+                priority="high"
+            )
+            logger.info("Notificación de devolución enviada: order_id=%s, amount=%s", order.id, amount)
+        except Exception as e:
+            logger.error("Error enviando notificación de devolución %s: %s", order.id, e)
 
 class InventoryService:
     @staticmethod
@@ -356,6 +396,12 @@ class OrderService:
             order: Orden a confirmar
             paid_amount: Monto pagado según gateway (opcional pero recomendado)
         """
+        if order.status == Order.OrderStatus.PAID:
+            raise BusinessLogicError(detail="La orden ya ha sido pagada.")
+            
+        if order.status == Order.OrderStatus.CANCELLED:
+            raise BusinessLogicError(detail="La orden está cancelada y no se puede pagar.")
+
         cls._validate_pricing(order)
         
         # Validar monto pagado si se proporciona
@@ -447,6 +493,9 @@ class ReturnService:
                 detail="La orden no se puede devolver en su estado actual.",
                 internal_code="MKT-RETURN-STATE",
             )
+        
+        if not order.delivered_at:
+            raise BusinessLogicError(detail="La orden no ha sido entregada aún.")
         if not items:
             raise BusinessLogicError(detail="Debes seleccionar ítems a devolver.")
 
@@ -478,7 +527,7 @@ class ReturnService:
         order.return_request_data = payload
         order.save(update_fields=['status', 'return_reason', 'return_requested_at', 'return_request_data', 'updated_at'])
         try:
-            notify_order_status_change.delay(str(order.id))
+            notify_order_status_change.delay(str(order.id), Order.OrderStatus.RETURN_REQUESTED)
         except Exception:
             logger.exception("No se pudo notificar la solicitud de devolución para la orden %s", order.id)
         return order

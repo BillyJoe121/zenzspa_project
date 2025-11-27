@@ -239,7 +239,7 @@ Estructura JSON requerida:
 {client_context}
 """
 
-    def build_full_prompt(self, user, user_message: str, user_id_for_memory=None) -> tuple[str, bool]:
+    def build_full_prompt(self, user, user_message: str, user_id_for_memory=None, extra_context: dict = None) -> tuple[str, bool]:
         config = self._get_configuration()
         if not config:
             return "", False
@@ -252,11 +252,11 @@ Estructura JSON requerida:
             for msg in raw_history:
                 role = "USER" if msg['role'] == 'user' else "ASSISTANT"
                 conversation_history.append(f"{role}: {msg['content']}")
-        
+
         history_text = "\n".join(conversation_history)
 
         ctx = DataContextService()
-        
+
         # Construir el prompt final
         system_instructions = self.MASTER_SYSTEM_PROMPT.format(
             site_name=config.site_name,
@@ -266,10 +266,27 @@ Estructura JSON requerida:
             client_context=ctx.get_client_context(user)
         )
 
-        # El prompt final combina instrucciones + historial + mensaje actual
+        # Construir contexto adicional si existe (notificaciones previas, etc.)
+        extra_context_text = ""
+        if extra_context:
+            last_notification = extra_context.get("last_notification")
+            if last_notification:
+                extra_context_text = f"""
+--- CONTEXTO ADICIONAL ---
+Última notificación enviada al usuario:
+  - Tipo: {last_notification.get('event_code', 'N/A')}
+  - Asunto: {last_notification.get('subject', 'N/A')}
+  - Contenido: {last_notification.get('body', 'N/A')[:200]}...
+  - Enviado: {last_notification.get('sent_at', 'N/A')}
+  - Canal: {last_notification.get('channel', 'N/A')}
+
+El usuario puede estar respondiendo a esta notificación o haciendo una consulta relacionada.
+"""
+
+        # El prompt final combina instrucciones + contexto extra + historial + mensaje actual
         full_prompt = f"""
 {system_instructions}
-
+{extra_context_text}
 --- HISTORIAL DE CONVERSACIÓN ---
 {history_text}
 

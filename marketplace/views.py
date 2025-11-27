@@ -249,10 +249,12 @@ class CartViewSet(viewsets.GenericViewSet):
             order.save(update_fields=['wompi_transaction_id', 'updated_at'])
 
             amount_in_cents = int(order.total_amount * 100)
-            base_url = getattr(settings, "WOMPI_BASE_URL", PaymentService.WOMPI_DEFAULT_BASE_URL)
-            
+
+            # Usar gateway centralizado de Wompi en lugar de métodos privados de PaymentService
+            from finances.gateway import WompiPaymentClient, build_integrity_signature
+
             try:
-                acceptance_token = PaymentService._resolve_acceptance_token(base_url)
+                acceptance_token = WompiPaymentClient.resolve_acceptance_token()
             except requests.Timeout:
                 logger.error("Timeout al obtener acceptance token de Wompi")
                 # Cancelar orden para no dejarla en limbo si no se puede pagar
@@ -271,7 +273,18 @@ class CartViewSet(viewsets.GenericViewSet):
                     status=status.HTTP_503_SERVICE_UNAVAILABLE
                 )
 
-            signature = PaymentService._build_integrity_signature(
+            # No se pudo obtener acceptance token
+            if not acceptance_token:
+                logger.error("No se pudo obtener acceptance token de Wompi")
+                from .services import OrderService
+                OrderService.transition_to(order, Order.OrderStatus.CANCELLED)
+                return Response(
+                    {"error": "El servicio de pagos no está disponible. Intenta más tarde.", "code": "MKT-PAYMENT-UNAVAILABLE"},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE
+                )
+
+            # Usar función centralizada de firma de integridad
+            signature = build_integrity_signature(
                 reference=reference,
                 amount_in_cents=amount_in_cents,
                 currency=getattr(settings, "WOMPI_CURRENCY", "COP"),

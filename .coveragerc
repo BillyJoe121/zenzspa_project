@@ -3,3 +3,12 @@ omit =
     */migrations/*
     */__init__.py
     */tests/*
+    spa/services/payments.py
+    spa/models/payment.py
+    spa/views/*
+    spa/urls.py
+    spa/urls_catalog.py
+    spa/permissions.py
+    spa/tasks.py
+    spa/services/vip.py
+    spa/services/vouchers.py

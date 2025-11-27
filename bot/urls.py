@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     BotWebhookView, BotHealthCheckView, HumanHandoffRequestViewSet,
     BotAnalyticsView, SuspiciousUsersView, UserActivityTimelineView,
-    BlockIPView, UnblockIPView, BotTaskStatusView
+    BlockIPView, UnblockIPView, BotTaskStatusView, WhatsAppWebhookView
 )
 
 # Router para ViewSets
@@ -13,6 +13,7 @@ router.register(r'handoffs', HumanHandoffRequestViewSet, basename='handoff')
 
 urlpatterns = [
     path('webhook/', BotWebhookView.as_view(), name='bot-webhook'),
+    path('whatsapp/', WhatsAppWebhookView.as_view(), name='whatsapp-webhook'),
     path('health/', BotHealthCheckView.as_view(), name='bot-health'),
     path('analytics/', BotAnalyticsView.as_view(), name='bot-analytics'),
 

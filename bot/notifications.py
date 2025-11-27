@@ -1,12 +1,11 @@
 """
 Sistema de notificaciones para escalamiento humano.
 Envía notificaciones por email a staff y admin cuando se crea un handoff request.
+Migrado al sistema centralizado de NotificationService.
 """
 import logging
-from django.core.mail import send_mail
 from django.conf import settings
-from django.template.loader import render_to_string
-from django.utils.html import strip_tags
+from notifications.services import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -19,95 +18,75 @@ class HandoffNotificationService:
     @staticmethod
     def send_handoff_notification(handoff_request):
         """
-        Envía notificación por email a staff y admin sobre un nuevo handoff.
+        Envía notificación por WhatsApp y Email a staff/admin sobre un nuevo handoff.
+        Migrado al sistema centralizado de NotificationService.
 
         Args:
             handoff_request: Instancia de HumanHandoffRequest
         """
         from users.models import CustomUser
-
-        # Obtener todos los usuarios staff y admin
-        recipients = CustomUser.objects.filter(
-            role__in=[CustomUser.Role.STAFF, CustomUser.Role.ADMIN],
-            is_active=True
-        ).values_list('email', flat=True)
-
-        if not recipients:
-            logger.warning("No hay recipients para notificación de handoff %d", handoff_request.id)
-            return
-
-        # Preparar contexto para el template
-        context = {
-            'handoff': handoff_request,
-            'client_info': handoff_request.client_contact_info,
-            'score': handoff_request.client_score,
-            'reason': handoff_request.get_escalation_reason_display(),
-            'interests': handoff_request.client_interests,
-            'conversation_context': handoff_request.conversation_context,
-            'admin_url': f"{settings.SITE_URL}/admin/bot/humanhandoffrequest/{handoff_request.id}/change/",
-        }
-
-        # Crear subject y body
-        subject = f"🚨 Nueva Solicitud de Atención Humana - Score: {handoff_request.client_score}/100"
-
-        # HTML message
-        html_message = HandoffNotificationService._build_html_message(context)
-
-        # Plain text fallback
-        plain_message = HandoffNotificationService._build_plain_message(context)
-
-        # Enviar email
-        try:
-            send_mail(
-                subject=subject,
-                message=plain_message,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=list(recipients),
-                html_message=html_message,
-                fail_silently=False,
-            )
-
-            logger.info(
-                "Notificación de handoff %d enviada a %d destinatarios",
-                handoff_request.id, len(recipients)
-            )
-
-        except Exception as e:
-            logger.error(
-                "Error enviando notificación de handoff %d: %s",
-                handoff_request.id, e
-            )
-
-        # --- WHATSAPP (NUEVO) ---
         from bot.models import BotConfiguration
+
+        # Obtener configuración del bot para el teléfono del admin
         bot_config = BotConfiguration.objects.filter(is_active=True).first()
         admin_phone = bot_config.admin_phone if bot_config else None
 
-        if admin_phone and len(admin_phone) > 5:
-            # Emoji según score
-            score_emoji = "🟢"
-            if handoff_request.client_score >= 70:
-                score_emoji = "🔴" # Alta prioridad
-            elif handoff_request.client_score >= 40:
-                score_emoji = "🟡" # Media prioridad
+        if not admin_phone:
+            logger.warning("No hay teléfono de admin configurado para handoff %d", handoff_request.id)
+            return
 
-            # Alerta de toxicidad
-            sexual_score = handoff_request.conversation_context.get('sexual_score', 0)
-            warning_text = ""
-            if sexual_score > 0:
-                warning_text = "\n⚠️ *ALERTA:* Cliente ha hecho comentarios inapropiados."
+        # Buscar usuario admin con ese teléfono
+        admin_user = CustomUser.objects.filter(
+            phone_number=admin_phone,
+            is_staff=True,
+            is_active=True
+        ).first()
 
-            whatsapp_body = f"""🚨 *NUEVA SOLICITUD HUMANA* 🚨
-{score_emoji} Score: {handoff_request.client_score}/100
-👤 *Cliente:* {handoff_request.client_contact_info.get('name', 'Anónimo')}
-📞 *Tel:* {handoff_request.client_contact_info.get('phone', 'N/A')}
-{warning_text}
+        if not admin_user:
+            # Fallback: buscar cualquier admin activo
+            admin_user = CustomUser.objects.filter(
+                role=CustomUser.Role.ADMIN,
+                is_active=True
+            ).first()
 
-💬 *Dijo:* "{handoff_request.conversation_context.get('escalation_message')}"
+        if not admin_user:
+            logger.warning("No se encontró usuario admin para enviar notificación de handoff %d", handoff_request.id)
+            return
 
-_Responde al cliente desde el panel admin._"""
+        # Determinar emoji según score
+        score_emoji = "🟢"
+        if handoff_request.client_score >= 70:
+            score_emoji = "🔴"  # Alta prioridad
+        elif handoff_request.client_score >= 40:
+            score_emoji = "🟡"  # Media prioridad
 
-            HandoffNotificationService._send_whatsapp_message(admin_phone, whatsapp_body)
+        # Alerta de toxicidad
+        sexual_score = handoff_request.conversation_context.get('sexual_score', 0)
+        warning_text = ""
+        if sexual_score > 0:
+            warning_text = "⚠️ ALERTA: Cliente ha hecho comentarios inapropiados."
+
+        # Preparar contexto para NotificationService
+        context = {
+            "score_emoji": score_emoji,
+            "client_score": str(handoff_request.client_score),
+            "client_name": handoff_request.client_contact_info.get('name', 'Anónimo'),
+            "client_phone": handoff_request.client_contact_info.get('phone', 'N/A'),
+            "warning_text": warning_text,
+            "escalation_message": handoff_request.conversation_context.get('escalation_message', 'No disponible'),
+            "admin_url": f"{settings.SITE_URL}/admin/bot/humanhandoffrequest/{handoff_request.id}/change/",
+        }
+
+        try:
+            NotificationService.send_notification(
+                user=admin_user,
+                event_code="BOT_HANDOFF_CREATED",
+                context=context,
+                priority="high"
+            )
+            logger.info("Notificación de handoff %d enviada al admin", handoff_request.id)
+        except Exception as e:
+            logger.error("Error enviando notificación de handoff %d: %s", handoff_request.id, e)
 
     @staticmethod
     def _build_html_message(context):
@@ -266,95 +245,54 @@ Por favor, responde al cliente lo antes posible.
     def send_expired_handoff_notification(handoff_request):
         """
         Envía notificación de que un handoff expiró sin respuesta.
-        Se envía por Email y WhatsApp al admin.
+        Migrado al sistema centralizado de NotificationService.
         """
         from users.models import CustomUser
         from bot.models import BotConfiguration
 
-        # 1. Obtener configuración para el teléfono del admin
+        # Obtener configuración del bot para el teléfono del admin
         bot_config = BotConfiguration.objects.filter(is_active=True).first()
         admin_phone = bot_config.admin_phone if bot_config else None
 
-        # 2. Obtener admins para email
-        recipients = CustomUser.objects.filter(
-            role=CustomUser.Role.ADMIN,
+        if not admin_phone:
+            logger.warning("No hay teléfono de admin para notificar expiración de handoff %d", handoff_request.id)
+            return
+
+        # Buscar usuario admin con ese teléfono
+        admin_user = CustomUser.objects.filter(
+            phone_number=admin_phone,
+            is_staff=True,
             is_active=True
-        ).values_list('email', flat=True)
+        ).first()
+
+        if not admin_user:
+            # Fallback: buscar cualquier admin activo
+            admin_user = CustomUser.objects.filter(
+                role=CustomUser.Role.ADMIN,
+                is_active=True
+            ).first()
+
+        if not admin_user:
+            logger.warning("No se encontró usuario admin para notificar expiración de handoff %d", handoff_request.id)
+            return
 
         client_info = handoff_request.client_contact_info
-        
-        # --- EMAIL ---
-        if recipients:
-            subject = f"⚠️ ALERTA: Cliente sin atención - Solicitud #{handoff_request.id}"
-            
-            message = f"""
-⚠️ CLIENTE NO ATENDIDO A TIEMPO
 
-El usuario solicitó hablar con un humano y nadie respondió en 5 minutos.
-El sistema ha cerrado el chat automáticamente.
+        # Preparar contexto
+        context = {
+            "handoff_id": str(handoff_request.id),
+            "client_name": client_info.get('name', 'No proporcionado'),
+            "created_at": handoff_request.created_at.strftime("%d/%m/%Y %H:%M:%S") if handoff_request.created_at else "Desconocido",
+            "admin_url": f"{settings.SITE_URL}/admin/bot/humanhandoffrequest/{handoff_request.id}/change/",
+        }
 
---- DATOS DEL CLIENTE ---
-Nombre: {client_info.get('name', 'No proporcionado')}
-Teléfono: {client_info.get('phone', 'No proporcionado')}
-Email: {client_info.get('email', 'No proporcionado')}
-
---- MENSAJE ORIGINAL ---
-"{handoff_request.conversation_context.get('escalation_message', 'No disponible')}"
-
---- ACCIÓN REQUERIDA ---
-Por favor contacta al cliente manualmente lo antes posible.
-"""
-            try:
-                send_mail(
-                    subject=subject,
-                    message=message,
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=list(recipients),
-                    fail_silently=False,
-                )
-                logger.info("Notificación de expiración enviada por email a %d admins", len(recipients))
-            except Exception as e:
-                logger.error("Error enviando email de expiración: %s", e)
-
-        # --- WHATSAPP ---
-        if admin_phone and len(admin_phone) > 5: # Validación básica
-            whatsapp_body = f"""⚠️ *CLIENTE SIN ATENCIÓN* ⚠️
-El cliente *{client_info.get('name')}* no recibió respuesta en 5 min.
-
-📞 *Tel:* {client_info.get('phone')}
-💬 *Dijo:* "{handoff_request.conversation_context.get('escalation_message')}"
-
-_Por favor contáctalo manualmente._"""
-            
-            HandoffNotificationService._send_whatsapp_message(admin_phone, whatsapp_body)
-
-    @staticmethod
-    def _send_whatsapp_message(to_number, body):
-        """Envía mensaje de WhatsApp usando Twilio"""
         try:
-            from twilio.rest import Client
-            
-            account_sid = settings.TWILIO_ACCOUNT_SID
-            auth_token = settings.TWILIO_AUTH_TOKEN
-            # Número de origen de Twilio (Sandbox o verificado)
-            from_number = getattr(settings, 'TWILIO_WHATSAPP_NUMBER', 'whatsapp:+14155238886') 
-            
-            if not account_sid or not auth_token:
-                logger.warning("Twilio no configurado, saltando WhatsApp")
-                return
-
-            client = Client(account_sid, auth_token)
-            
-            # Asegurar formato whatsapp:+numero
-            if not to_number.startswith('whatsapp:'):
-                to_number = f"whatsapp:{to_number}"
-            
-            message = client.messages.create(
-                from_=from_number,
-                body=body,
-                to=to_number
+            NotificationService.send_notification(
+                user=admin_user,
+                event_code="BOT_HANDOFF_EXPIRED",
+                context=context,
+                priority="critical"  # Critical para ignorar quiet hours
             )
-            logger.info("WhatsApp enviado a %s: %s", to_number, message.sid)
-            
+            logger.info("Notificación de expiración enviada para handoff %d", handoff_request.id)
         except Exception as e:
-            logger.error("Error enviando WhatsApp: %s", e)
+            logger.error("Error enviando notificación de expiración de handoff %d: %s", handoff_request.id, e)

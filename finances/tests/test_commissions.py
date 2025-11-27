@@ -2,6 +2,7 @@ from decimal import Decimal
 from unittest import mock
 
 from django.test import TestCase
+from django.core.exceptions import ValidationError
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from core.models import GlobalSettings
@@ -11,6 +12,7 @@ from finances.views import DeveloperCommissionStatusView
 from spa.models import Payment
 from users.models import CustomUser
 from finances.tasks import run_developer_payout
+from finances.gateway import build_integrity_signature
 
 
 class DeveloperCommissionStatusViewTests(TestCase):
@@ -63,6 +65,21 @@ class CommissionLedgerServiceTests(TestCase):
         DeveloperCommissionService._mark_failed_nsf()
         ledger.refresh_from_db()
         self.assertEqual(ledger.status, CommissionLedger.Status.FAILED_NSF)
+
+    def test_negative_amount_is_invalid(self):
+        with self.assertRaises(ValidationError):
+            ledger = CommissionLedger(
+                amount=Decimal("-1.00"),
+                source_payment=self.payment,
+            )
+            ledger.full_clean()
+
+    @mock.patch("django.conf.settings.WOMPI_INTEGRITY_KEY", "test_key")
+    def test_build_integrity_signature(self):
+        sig = build_integrity_signature("REF123", 5000, "COP")
+        self.assertIsNotNone(sig)
+        expected = build_integrity_signature("REF123", 5000, "COP")
+        self.assertEqual(sig, expected)
 
 
 class DeveloperPayoutTaskTests(TestCase):
