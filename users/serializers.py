@@ -10,7 +10,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from django.core.cache import cache
 
-from .models import CustomUser, UserSession, BlockedPhoneNumber
+from .models import CustomUser, UserSession, BlockedPhoneNumber, BlockedDevice
 from .tasks import send_non_grata_alert_to_admins
 # --- INICIO DE LA MODIFICACIÓN ---
 from profiles.models import ClinicalProfile # Se actualiza la importación
@@ -36,7 +36,17 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         request = self.context.get("request")
         phone_number = attrs.get("phone_number")
+        phone_number = attrs.get("phone_number")
         ip = getattr(request, "META", {}).get("REMOTE_ADDR") if request else None
+        user_agent = getattr(request, "META", {}).get("HTTP_USER_AGENT", "")
+
+        # Check BlockedDevice
+        # Simple fingerprint based on IP + UserAgent for now (can be improved)
+        device_fingerprint = f"{ip}|{user_agent}"
+        if BlockedDevice.objects.filter(device_fingerprint=device_fingerprint, is_blocked=True).exists():
+             raise serializers.ValidationError(
+                 {"detail": "Tu dispositivo ha sido bloqueado por actividad sospechosa."}
+             )
 
         cache_key = f"login_attempts:{phone_number}"
         attempts = cache.get(cache_key, 0)
@@ -56,6 +66,18 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise serializers.ValidationError({
                 "detail": "El número de teléfono no ha sido verificado. Por favor, completa la verificación por SMS."
             })
+            
+        # Structured Audit Log
+        logger.info(
+            "Login successful", 
+            extra={
+                "user_id": self.user.id,
+                "phone": self.user.phone_number,
+                "ip": ip,
+                "event": "auth.login_success"
+            }
+        )
+        
         data['role'] = self.user.role
         refresh_token = data.get('refresh')
         if refresh_token:
@@ -119,6 +141,11 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     password = serializers.CharField(
         write_only=True, style={'input_type': 'password'})
     email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
+
+    def validate_email(self, value):
+        if value and CustomUser.objects.filter(email=value).exists():
+            raise serializers.ValidationError("Este correo electrónico ya está registrado.")
+        return value
 
     class Meta:
         model = CustomUser

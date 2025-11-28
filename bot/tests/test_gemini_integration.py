@@ -28,7 +28,7 @@ class TestGeminiSDKIntegration(TestCase):
 
         # Crear usuario de prueba
         self.user = User.objects.create_user(
-            phone_number="+573001234567",
+            phone_number="+573157589548",
             email="test@example.com",
             first_name="Test",
             last_name="User",

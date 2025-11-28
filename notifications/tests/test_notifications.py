@@ -21,7 +21,7 @@ class TestNotificationPreference:
         """for_user debe crear preferencias si no existen"""
         user = CustomUser.objects.create_user(
             email="test@example.com",
-            phone_number="+573001234567",
+            phone_number="+573157589548",
             password="testpass123"
         )
         pref = NotificationPreference.for_user(user)

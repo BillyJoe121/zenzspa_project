@@ -1,45 +1,50 @@
-from __future__ import annotations
-from dataclasses import dataclass
-from decimal import Decimal
+import logging
 from typing import Optional, Dict, Any
 
 from django.db import transaction
 
 from .models import GlobalSettings, AuditLog
 
-GLOBAL_SETTINGS_CACHE_KEY = "global_settings"
-
-@dataclass(frozen=True)
-class SettingsDTO:
-    low_supervision_capacity: int
-    advance_payment_percentage: int
-    appointment_buffer_time: int
-    vip_monthly_price: Decimal
-
-def get_global_settings() -> SettingsDTO:
-    obj = GlobalSettings.load()
-    return SettingsDTO(
-        low_supervision_capacity=obj.low_supervision_capacity,
-        advance_payment_percentage=obj.advance_payment_percentage,
-        appointment_buffer_time=obj.appointment_buffer_time,
-        vip_monthly_price=obj.vip_monthly_price,
-    )
+logger = logging.getLogger(__name__)
 
 def get_setting(key: str, default=None):
     """
-    Obtiene un setting específico sin cargar todo el objeto.
-    Útil para optimizar queries.
+    Obtiene un atributo puntual del singleton de settings.
+
+    Args:
+        key: nombre del campo en GlobalSettings.
+        default: valor devuelto si no existe o falla la carga.
     """
+    if not key:
+        raise ValueError("key es obligatorio para obtener un setting.")
+
     try:
         settings = GlobalSettings.load()
-        return getattr(settings, key, default)
-    except Exception:
+    except Exception as exc:
+        logger.exception("No se pudo cargar GlobalSettings al obtener '%s'", key)
         return default
+
+    if not hasattr(settings, key):
+        logger.warning("GlobalSettings no tiene el atributo '%s'. Se usa default.", key)
+        return default
+
+    try:
+        value = getattr(settings, key)
+    except Exception as exc:
+        logger.exception("Error al acceder al atributo '%s' de GlobalSettings", key)
+        return default
+
+    return value if value is not None else default
 
 @transaction.atomic
 def admin_flag_non_grata(admin_user, target_user, details: Optional[Dict[str, Any]] = None):
     """
-    Registra en auditoría. El bloqueo efectivo del usuario lo hará la app 'users'.
+    Registra en auditoría un flag manual sobre un usuario.
+
+    Nota: el bloqueo efectivo y acciones posteriores las gestiona el módulo users.
+
+    Returns:
+        bool: True si el registro se creó correctamente.
     """
     AuditLog.objects.create(
         action=AuditLog.Action.FLAG_NON_GRATA,

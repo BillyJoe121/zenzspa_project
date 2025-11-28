@@ -7,7 +7,7 @@ from io import StringIO
 from django.core.cache import cache
 from django.core.management import call_command
 
-from core.models import GlobalSettings, GLOBAL_SETTINGS_CACHE_KEY
+from core.models import GlobalSettings
 from core.caching import CacheKeys
 
 
@@ -19,14 +19,14 @@ class TestRebuildCacheCommand:
         """El comando debe limpiar la clave correcta de GlobalSettings"""
         # Arrange: Cargar GlobalSettings para que se cachee
         settings = GlobalSettings.load()
-        assert cache.get(GLOBAL_SETTINGS_CACHE_KEY) is not None
+        assert cache.get(CacheKeys.GLOBAL_SETTINGS) is not None
 
         # Act: Ejecutar rebuild_cache
         out = StringIO()
         call_command('rebuild_cache', stdout=out)
 
         # Assert: La clave correcta debe estar limpia
-        assert cache.get(GLOBAL_SETTINGS_CACHE_KEY) is None
+        assert cache.get(CacheKeys.GLOBAL_SETTINGS) is None
         assert "core:global_settings:v1" in out.getvalue()
 
     def test_rebuild_cache_uses_cachekeys_constants(self):

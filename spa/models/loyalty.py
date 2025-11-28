@@ -13,7 +13,9 @@ class LoyaltyRewardLog(BaseModel):
     voucher = models.ForeignKey(
         'Voucher',
         on_delete=models.CASCADE,
-        related_name='loyalty_rewards'
+        related_name='loyalty_rewards',
+        null=True,
+        blank=True
     )
     rewarded_at = models.DateField()
 

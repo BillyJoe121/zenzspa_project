@@ -300,13 +300,13 @@ class SanitizePIIFilterTests(TestCase):
     
     def test_sanitize_phone_international_format(self):
         """Debe sanitizar teléfono en formato internacional"""
-        record = self._create_log_record("Teléfono: +573001234567")
+        record = self._create_log_record("Teléfono: +573157589548")
         
         result = self.filter.filter(record)
         
         self.assertTrue(result)
         self.assertIn("***PHONE***", record.msg)
-        self.assertNotIn("+573001234567", record.msg)
+        self.assertNotIn("+573157589548", record.msg)
     
     def test_sanitize_phone_with_dashes(self):
         """Debe sanitizar teléfono con guiones"""
@@ -376,7 +376,7 @@ class SanitizePIIFilterTests(TestCase):
     def test_sanitize_multiple_pii_types(self):
         """Debe sanitizar múltiples tipos de PII en el mismo mensaje"""
         record = self._create_log_record(
-            "Usuario: test@example.com, Tel: +573001234567, CC: 1234567890"
+            "Usuario: test@example.com, Tel: +573157589548, CC: 1234567890"
         )
         
         result = self.filter.filter(record)
@@ -424,7 +424,7 @@ class SanitizePIIFilterTests(TestCase):
     
     def test_phone_in_json(self):
         """Debe sanitizar teléfono en JSON"""
-        record = self._create_log_record('{"phone": "+573001234567"}')
+        record = self._create_log_record('{"phone": "+573157589548"}')
         
         result = self.filter.filter(record)
         
@@ -439,7 +439,7 @@ class SanitizePIIFilterTests(TestCase):
             pathname="",
             lineno=0,
             msg="User data: %(email)s %(phone)s",
-            args={"email": "user@example.com", "phone": "+573001234567"},
+            args={"email": "user@example.com", "phone": "+573157589548"},
             exc_info=None,
         )
         
@@ -457,7 +457,7 @@ class SanitizePIIFilterTests(TestCase):
             pathname="",
             lineno=0,
             msg="%s %s",
-            args=("+573001234567", "test@example.com"),
+            args=("+573157589548", "test@example.com"),
             exc_info=None,
         )
         list_record = logging.LogRecord(
@@ -466,7 +466,7 @@ class SanitizePIIFilterTests(TestCase):
             pathname="",
             lineno=0,
             msg="%s",
-            args=["+573001234567"],
+            args=["+573157589548"],
             exc_info=None,
         )
 
@@ -491,7 +491,7 @@ class LoggingFiltersIntegrationTests(TestCase):
             level=logging.INFO,
             pathname="",
             lineno=0,
-            msg="GEMINI_API_KEY=AIzaSyDXXXXXXXXXXXXXXXXXXXXXXXX, Email: test@example.com, Tel: +573001234567",
+            msg="GEMINI_API_KEY=AIzaSyDXXXXXXXXXXXXXXXXXXXXXXXX, Email: test@example.com, Tel: +573157589548",
             args=(),
             exc_info=None
         )
@@ -506,7 +506,7 @@ class LoggingFiltersIntegrationTests(TestCase):
         self.assertIn("***PHONE***", record.msg)
         self.assertNotIn("AIzaSy", record.msg)
         self.assertNotIn("test@example.com", record.msg)
-        self.assertNotIn("+573001234567", record.msg)
+        self.assertNotIn("+573157589548", record.msg)
     
     def test_filters_preserve_log_structure(self):
         """Filtros deben preservar la estructura del log"""

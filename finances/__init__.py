@@ -1,4 +1,5 @@
 # Lazy imports to avoid circular dependencies during Django startup
+default_app_config = "finances.apps.FinancesConfig"
 __all__ = [
     "WompiGateway",
     "WompiPaymentClient",

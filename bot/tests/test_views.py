@@ -270,21 +270,24 @@ class TestBotWebhook:
         assert "formato inválido" in response.data['error'].lower()
 
     def test_normalize_chat_response_breaks_long_lines(self):
-        """_normalize_chat_response debe dividir párrafos largos y limpiar saltos."""
-        view = BotWebhookView()
+        """normalize_chat_response debe dividir párrafos largos y limpiar saltos."""
+        from bot.views.webhook.utils import normalize_chat_response
+
         long_line = "A" * 180
         text = f"Hola\n\n{long_line}"
 
-        normalized = view._normalize_chat_response(text)
+        normalized = normalize_chat_response(text)
 
         assert "\n" in normalized
         assert len(normalized.split("\n")) > 1
 
     def test_get_client_ip_invalid_value(self):
-        """_get_client_ip debe devolver REMOTE_ADDR para IP inválida en X-Forwarded-For."""
+        """get_client_ip debe devolver REMOTE_ADDR para IP inválida en X-Forwarded-For."""
+        from bot.views.webhook.utils import get_client_ip
+
         rf = RequestFactory()
         request = rf.post(self.url, {}, HTTP_X_FORWARDED_FOR="not-an-ip")
-        ip = BotWebhookView()._get_client_ip(request)
+        ip = get_client_ip(request)
 
         assert ip == "127.0.0.1"  # Default REMOTE_ADDR in RequestFactory
 @pytest.mark.django_db

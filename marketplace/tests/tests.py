@@ -27,7 +27,7 @@ from marketplace.tasks import notify_order_status_change, release_expired_order_
 @pytest.fixture
 def user(db):
     return CustomUser.objects.create_user(
-        phone_number="+573001234567",
+        phone_number="+573157589548",
         email="test@example.com", 
         password="password",
         first_name="Test User"

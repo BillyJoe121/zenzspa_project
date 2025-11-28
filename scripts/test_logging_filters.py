@@ -47,7 +47,7 @@ def test_logging_filters():
             level=logging.INFO,
             pathname="",
             lineno=0,
-            msg="Usuario: test@example.com, Teléfono: +573001234567",
+            msg="Usuario: test@example.com, Teléfono: +573157589548",
             args=(),
             exc_info=None
         )

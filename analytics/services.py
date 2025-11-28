@@ -12,7 +12,7 @@ from django.db.models import (
     ExpressionWrapper,
     DurationField,
 )
-from django.db.models.functions import Coalesce
+from django.db.models.functions import Coalesce, TruncDate
 from django.utils import timezone
 
 from spa.models import Appointment, AppointmentItem, StaffAvailability, Payment, ClientCredit
@@ -198,28 +198,11 @@ class KpiService:
     def _calculate_available_minutes(self):
         """
         Minutos disponibles = suma de (fin - inicio) para cada disponibilidad.
-        OPTIMIZADO: Usar agregación de DB.
+        CORREGIDO: Cálculo en Python para evitar problemas con TimeField en DB.
         """
         availabilities = StaffAvailability.objects.all()
         if self.staff_id:
             availabilities = availabilities.filter(staff_member_id=self.staff_id)
-
-        # NUEVO - Usar agregación con ExpressionWrapper
-        from django.db.models import ExpressionWrapper, F, DurationField, IntegerField
-
-        # Calcular minutos por disponibilidad
-        # Nota: Asumimos que start_time y end_time son TimeField.
-        # La resta de TimeFields no es directa en todos los backends, pero en Postgres suele funcionar si se castean o se extraen partes.
-        # Una forma segura es calcular la diferencia en minutos: (hour*60 + minute)
-        availabilities_with_duration = availabilities.annotate(
-            duration_minutes=ExpressionWrapper(
-                (
-                    F('end_time__hour') * 60 + F('end_time__minute') -
-                    (F('start_time__hour') * 60 + F('start_time__minute'))
-                ),
-                output_field=IntegerField()
-            )
-        )
 
         # Contar ocurrencias de cada día de semana en el rango
         day_counts = defaultdict(int)
@@ -228,12 +211,22 @@ class KpiService:
             day_counts[current.isoweekday()] += 1
             current += timedelta(days=1)
 
-        # Calcular total
         total_minutes = 0
-        # Esto trae todos los availabilities a memoria, pero son pocos (staff * dias semana)
-        for availability in availabilities_with_duration:
+        # Iterar en Python para calcular duración segura
+        for availability in availabilities:
             occurrences = day_counts.get(availability.day_of_week, 0)
-            total_minutes += (availability.duration_minutes or 0) * occurrences
+            if occurrences == 0:
+                continue
+            
+            # Calcular duración en minutos
+            start = availability.start_time
+            end = availability.end_time
+            # Convertir a minutos desde medianoche
+            start_minutes = start.hour * 60 + start.minute
+            end_minutes = end.hour * 60 + end.minute
+            
+            duration = max(0, end_minutes - start_minutes)
+            total_minutes += duration * occurrences
 
         return total_minutes
 
@@ -331,6 +324,44 @@ class KpiService:
 
     def _get_total_revenue(self):
         return self._payment_queryset().aggregate(total=Sum("amount"))["total"] or Decimal("0")
+
+    def get_time_series(self, interval="day"):
+        """
+        Retorna datos de series de tiempo para gráficos.
+        Agrupa ingresos y conteo de citas por fecha.
+        """
+        # 1. Ingresos por fecha
+        revenue_qs = (
+            self._payment_queryset()
+            .annotate(date=TruncDate("created_at"))
+            .values("date")
+            .annotate(total=Sum("amount"))
+            .order_by("date")
+        )
+        revenue_map = {entry["date"]: float(entry["total"]) for entry in revenue_qs}
+
+        # 2. Citas por fecha
+        appointments_qs = (
+            self._appointment_queryset()
+            .annotate(date=TruncDate("start_time"))
+            .values("date")
+            .annotate(count=Count("id"))
+            .order_by("date")
+        )
+        appointments_map = {entry["date"]: entry["count"] for entry in appointments_qs}
+
+        # 3. Combinar y rellenar fechas faltantes
+        series = []
+        current = self.start_date
+        while current <= self.end_date:
+            series.append({
+                "date": current.isoformat(),
+                "revenue": revenue_map.get(current, 0.0),
+                "appointments": appointments_map.get(current, 0),
+            })
+            current += timedelta(days=1)
+        
+        return series
 
     # --- Export helpers ------------------------------------------------------
 

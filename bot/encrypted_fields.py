@@ -209,7 +209,7 @@ def sanitize_pii(text):
     )
     
     # Reemplazar teléfonos (formatos comunes)
-    # +57 300 123 4567, 300-123-4567, 3001234567, etc.
+    # +57 300 123 4567, 300-123-4567, 3157589548, etc.
     text = re.sub(
         r'\+?\d{1,3}[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',
         '[PHONE]',

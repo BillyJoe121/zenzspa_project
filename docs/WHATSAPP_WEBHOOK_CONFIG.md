@@ -127,8 +127,8 @@ tail -f /var/log/app.log | grep "WhatsApp"
 
 # O en consola de tu plataforma
 # Buscar mensajes como:
-# "WhatsApp webhook recibido. From: +573001234567, MessageSid: SM..."
-# "WhatsApp respuesta enviada. To: +573001234567"
+# "WhatsApp webhook recibido. From: +573157589548, MessageSid: SM..."
+# "WhatsApp respuesta enviada. To: +573157589548"
 ```
 
 #### Verificar en Twilio Console:
@@ -171,11 +171,11 @@ class BotDailyThrottle(BaseThrottle):
    ↓
 2. Twilio recibe mensaje y llama a tu webhook
    POST https://tu-dominio.com/api/v1/bot/whatsapp/
-   Body: Body="Hola", From="whatsapp:+573001234567"
+   Body: Body="Hola", From="whatsapp:+573157589548"
    ↓
 3. WhatsAppWebhookView procesa:
    a) Valida firma de Twilio (si está activado)
-   b) Normaliza número: "+573001234567"
+   b) Normaliza número: "+573157589548"
    c) Busca usuario por teléfono en BD
    d) Obtiene última notificación enviada al usuario
    ↓
@@ -273,7 +273,7 @@ Si el usuario pide hablar con un humano o el bot no puede resolver:
 # Test manual del endpoint
 curl -X POST https://tu-dominio.com/api/v1/bot/whatsapp/ \
   -d "Body=Test" \
-  -d "From=whatsapp:+573001234567" \
+  -d "From=whatsapp:+573157589548" \
   -d "MessageSid=SMtest123"
 
 # Deberías recibir XML TwiML como respuesta
@@ -311,7 +311,7 @@ VALIDATE_TWILIO_SIGNATURE = False
 from users.models import CustomUser
 from notifications.models import NotificationLog, NotificationTemplate
 
-user = CustomUser.objects.get(phone_number='+573001234567')
+user = CustomUser.objects.get(phone_number='+573157589548')
 
 # Ver últimas notificaciones
 NotificationLog.objects.filter(

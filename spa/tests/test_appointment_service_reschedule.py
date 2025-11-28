@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from model_bakery import baker
 
 from spa.services import AppointmentService
-from spa.models import Appointment, ServiceCategory, Service, StaffAvailability
+from spa.models import Appointment, AppointmentItem, ServiceCategory, Service, StaffAvailability
 from core.exceptions import BusinessLogicError
 
 
@@ -15,7 +15,8 @@ def test_reschedule_updates_fields(mocker):
     service = baker.make(Service, category=category, duration=30)
     staff = baker.make("users.CustomUser", role="STAFF")
     user = baker.make("users.CustomUser", role="CLIENT")
-    now = timezone.now()
+    # Usar fecha futura (más de 24h adelante)
+    now = timezone.now() + timedelta(days=2)
     StaffAvailability.objects.filter(staff_member=staff).delete()
     baker.make(
         StaffAvailability,
@@ -33,8 +34,14 @@ def test_reschedule_updates_fields(mocker):
         start_time=start,
         end_time=start + timedelta(minutes=30),
         status=Appointment.AppointmentStatus.CONFIRMED,
+        reschedule_count=0
     )
-    appt.services.add(service)
+    AppointmentItem.objects.create(
+        appointment=appt,
+        service=service,
+        duration=service.duration,
+        price_at_purchase=service.price
+    )
 
     new_start = start + timedelta(hours=1)
     updated = AppointmentService.reschedule_appointment(appt, new_start, acting_user=user)
@@ -68,7 +75,12 @@ def test_reschedule_conflict_raises(mocker):
         end_time=start + timedelta(minutes=30),
         status=Appointment.AppointmentStatus.CONFIRMED,
     )
-    appt.services.add(service)
+    AppointmentItem.objects.create(
+        appointment=appt,
+        service=service,
+        duration=service.duration,
+        price_at_purchase=service.price
+    )
 
     # Crear otra cita conflictiva
     conflict = baker.make(
@@ -79,7 +91,12 @@ def test_reschedule_conflict_raises(mocker):
         end_time=start + timedelta(hours=1, minutes=30),
         status=Appointment.AppointmentStatus.CONFIRMED,
     )
-    conflict.services.add(service)
+    AppointmentItem.objects.create(
+        appointment=conflict,
+        service=service,
+        duration=service.duration,
+        price_at_purchase=service.price
+    )
 
     with pytest.raises(ValidationError):
         AppointmentService.reschedule_appointment(

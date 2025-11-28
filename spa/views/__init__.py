@@ -7,12 +7,8 @@ from .appointments import (
     StaffAvailabilityViewSet,
 )
 from .packages import (
-    InitiateAppointmentPaymentView,
-    InitiatePackagePurchaseView,
     UserPackageViewSet,
     VoucherViewSet,
-    WompiWebhookView,
-    InitiateVipSubscriptionView,
     CancelVipSubscriptionView,
     FinancialAdjustmentView,
 )
@@ -26,12 +22,8 @@ __all__ = [
     "ServiceCategoryViewSet",
     "ServiceViewSet",
     "StaffAvailabilityViewSet",
-    "InitiateAppointmentPaymentView",
-    "InitiatePackagePurchaseView",
     "UserPackageViewSet",
     "VoucherViewSet",
-    "WompiWebhookView",
-    "InitiateVipSubscriptionView",
     "CancelVipSubscriptionView",
     "FinancialAdjustmentView",
 ]

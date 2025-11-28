@@ -36,11 +36,17 @@ class PackageService(BaseModel):
 
 class VoucherCodeGenerator:
     @staticmethod
-    def generate_code():
-        import uuid
-        return uuid.uuid4().hex[:10].upper()
+    def generate_code(length=10):
+        import secrets
+        import string
+        alphabet = string.ascii_uppercase + string.digits
+        # Exclude ambiguous characters if desired, but for now standard set
+        return ''.join(secrets.choice(alphabet) for _ in range(length))
 
 def generate_voucher_code():
+    # Helper function to generate a unique code
+    # Note: Uniqueness check should ideally happen at creation time with a loop
+    # This just returns a random string
     return VoucherCodeGenerator.generate_code()
 
 class Voucher(BaseModel):
@@ -83,7 +89,16 @@ class Voucher(BaseModel):
 
     def save(self, *args, **kwargs):
         if not self.code:
-            self.code = generate_voucher_code()
+            # Retry loop to ensure uniqueness
+            for _ in range(10):
+                code = generate_voucher_code()
+                if not Voucher.objects.filter(code=code).exists():
+                    self.code = code
+                    break
+            else:
+                # Fallback if collision persists (unlikely)
+                import uuid
+                self.code = uuid.uuid4().hex[:12].upper()
         if self.user_package and not self.expires_at:
             validity_days = self.user_package.package.validity_days if self.user_package.package else 90
             from django.utils import timezone

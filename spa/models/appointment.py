@@ -321,6 +321,17 @@ class AppointmentItem(BaseModel):
         self.apply_defaults()
         super().save(*args, **kwargs)
 
+    def clean(self):
+        super().clean()
+        if self.appointment_id and self.service_id:
+            # Check if service already exists in this appointment (exclude self)
+            exists = AppointmentItem.objects.filter(
+                appointment=self.appointment,
+                service=self.service
+            ).exclude(id=self.id).exists()
+            if exists:
+                raise ValidationError(f"El servicio '{self.service.name}' ya está incluido en esta cita.")
+
 
 class WaitlistEntry(BaseModel):
     class Status(models.TextChoices):
@@ -363,6 +374,17 @@ class WaitlistEntry(BaseModel):
 
     def __str__(self):
         return f"Waitlist {self.user} para {self.desired_date}"
+
+    def clean(self):
+        super().clean()
+        # Validar que existan servicios activos cuando se hayan asignado
+        if self.pk and not self.services.exists():
+            raise ValidationError({"services": "Debes asociar al menos un servicio a la lista de espera."})
+        if self.pk:
+            inactive = self.services.filter(is_active=False)
+            if inactive.exists():
+                names = ", ".join(inactive.values_list("name", flat=True))
+                raise ValidationError({"services": f"Servicios inactivos no permitidos: {names}"})
 
     def mark_offered(self, appointment, ttl_minutes):
         now = timezone.now()

@@ -13,11 +13,12 @@ from rest_framework.test import APIRequestFactory
 from rest_framework.response import Response
 from rest_framework import status
 
-from core.models import GlobalSettings, AuditLog, IdempotencyKey, GLOBAL_SETTINGS_CACHE_KEY
+from core.models import GlobalSettings, AuditLog, IdempotencyKey
 from core.decorators import idempotent_view
 from core.utils import get_client_ip
 from core.permissions import RoleAllowed, IsAdmin, IsStaff
 from core.tasks import cleanup_old_idempotency_keys
+from core.caching import CacheKeys
 
 
 @pytest.mark.django_db
@@ -57,7 +58,7 @@ class TestGlobalSettings:
         settings.save()
         
         # Limpiar instancia local
-        cache.delete(GLOBAL_SETTINGS_CACHE_KEY)
+        cache.delete(CacheKeys.GLOBAL_SETTINGS)
         
         # Debe cargar desde DB con nuevo valor
         fresh = GlobalSettings.load()

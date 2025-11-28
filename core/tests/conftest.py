@@ -12,7 +12,7 @@ def api_rf():
 def admin_user(django_user_model):
     """Usuario con rol ADMIN."""
     return django_user_model.objects.create_user(
-        phone_number="+573001234567",
+        phone_number="+573157589548",
         email="admin@example.com",
         first_name="Admin",
         last_name="User",

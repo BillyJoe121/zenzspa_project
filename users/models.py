@@ -1,12 +1,32 @@
 import re
 
+
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
+from django.conf import settings
+from cryptography.fernet import Fernet
 
 from core.models import BaseModel
+
+
+class CancellationStreak(BaseModel):
+    user = models.ForeignKey(
+        'CustomUser',
+        on_delete=models.CASCADE,
+        related_name='cancellation_streaks'
+    )
+    date = models.DateField(auto_now_add=True)
+    reason = models.CharField(max_length=255, blank=True)
+    
+    class Meta:
+        verbose_name = "Racha de Cancelación"
+        verbose_name_plural = "Rachas de Cancelación"
+        ordering = ['-created_at']
+
+
 
 
 class CustomUserManager(BaseUserManager):
@@ -44,7 +64,7 @@ class CustomUserManager(BaseUserManager):
 
 PHONE_NUMBER_REGEX = RegexValidator(
     regex=r"^\+[1-9]\d{9,14}$",
-    message="El número debe estar en formato internacional (+573001234567).",
+    message="El número debe estar en formato internacional (+573157589548).",
 )
 
 
@@ -88,10 +108,10 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
         help_text="Indica si la suscripción VIP debe intentarse renovar automáticamente.",
     )
     vip_payment_token = models.CharField(
-        max_length=255,
+        max_length=512, # Aumentado para soportar token encriptado
         blank=True,
         null=True,
-        verbose_name="Token de pago recurrente",
+        verbose_name="Token de pago recurrente (Encriptado)",
         help_text="Token seguro para cobrar renovaciones automáticas.",
     )
     vip_failed_payments = models.PositiveIntegerField(
@@ -129,8 +149,8 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
     cancellation_streak = models.JSONField(
         default=list,
         blank=True,
-        verbose_name="Historial de cancelaciones/reagendamientos",
-        help_text="Almacena eventos recientes para aplicar penalizaciones (3 strikes).",
+        verbose_name="Historial de cancelaciones/reagendamientos (DEPRECATED)",
+        help_text="DEPRECATED: Usar modelo CancellationStreak. Almacena eventos recientes para aplicar penalizaciones (3 strikes).",
     )
 
     objects = CustomUserManager()
@@ -158,7 +178,7 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
             digits = self.phone_number.replace("+", "")
             if not digits.isdigit() or len(digits) < 10 or len(digits) > 15:
                 raise ValidationError(
-                    {'phone_number': 'Número de teléfono inválido. Usa formato internacional (+573001234567).'}
+                    {'phone_number': 'Número de teléfono inválido. Usa formato internacional (+573157589548).'}
                 )
 
     def save(self, *args, **kwargs):
@@ -169,20 +189,42 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
     def _normalize_vip_payment_token(value):
         if not value:
             return None
+        # Si ya parece encriptado (largo y caracteres base64), lo dejamos
+        if len(str(value)) > 50 and "=" in str(value):
+             return value
+             
         if isinstance(value, str):
             token = value.strip()
         else:
             token = str(value).strip()
         if not token:
             return None
-        if not token.isdigit():
-            raise ValidationError(
-                {
-                    "vip_payment_token": "El token guardado debe ser el payment_source_id numérico entregado por Wompi.",
-                }
-            )
-        # Normalizamos removiendo ceros a la izquierda para evitar variaciones.
-        return str(int(token))
+            
+        # Si es numérico puro, es un token raw que debemos encriptar
+        if token.isdigit():
+             # Encriptar
+             try:
+                 key = getattr(settings, 'FERNET_KEY', None)
+                 if key:
+                     f = Fernet(key)
+                     return f.encrypt(token.encode()).decode()
+             except Exception:
+                 pass # Fallback si no hay key
+        
+        return token
+
+    def get_decrypted_payment_token(self):
+        if not self.vip_payment_token:
+            return None
+        try:
+            key = getattr(settings, 'FERNET_KEY', None)
+            if not key:
+                return self.vip_payment_token # Return raw if no key configured
+            f = Fernet(key)
+            return f.decrypt(self.vip_payment_token.encode()).decode()
+        except Exception:
+            return self.vip_payment_token # Return raw if decryption fails (legacy data)
+
 
     @property
     def is_vip(self):

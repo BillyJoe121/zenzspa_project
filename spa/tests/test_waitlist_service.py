@@ -4,14 +4,14 @@ from django.utils import timezone
 from model_bakery import baker
 
 from spa.services import WaitlistService
-from spa.models import Appointment, WaitlistEntry, Service, ServiceCategory
+from spa.models import Appointment, AppointmentItem, WaitlistEntry, Service, ServiceCategory
 from core.exceptions import BusinessLogicError
 
 
 @pytest.mark.django_db
 def test_waitlist_offer_slot_sets_offer(mocker):
     # habilitar waitlist
-    settings_mock = mocker.Mock(waitlist_enabled=True)
+    settings_mock = mocker.Mock(waitlist_enabled=True, waitlist_ttl_minutes=60)
     mocker.patch("spa.services.waitlist.GlobalSettings.load", return_value=settings_mock)
     mocker.patch("spa.tasks.notify_waitlist_availability.delay", return_value=None)
 
@@ -22,7 +22,12 @@ def test_waitlist_offer_slot_sets_offer(mocker):
         start_time=timezone.now() + timedelta(days=1),
         end_time=timezone.now() + timedelta(days=1, hours=1),
     )
-    appointment.services.add(service)
+    AppointmentItem.objects.create(
+        appointment=appointment,
+        service=service,
+        duration=service.duration,
+        price_at_purchase=service.price
+    )
 
     entry = baker.make(
         WaitlistEntry,

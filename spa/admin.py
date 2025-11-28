@@ -11,12 +11,12 @@ from .models import (
     Appointment,
     AppointmentItem,
     Package,
-    Payment,
+    # Payment migrado a finances.admin - NO importar aquí
     # --- INICIO DE LA MODIFICACIÓN: Importar nuevos modelos ---
     PackageService,
     UserPackage,
     Voucher,
-    WebhookEvent,
+    # WebhookEvent migrado a finances.admin - NO importar aquí
     LoyaltyRewardLog,
     # --- FIN DE LA MODIFICACIÓN ---
 )
@@ -134,21 +134,8 @@ class PackageAdmin(admin.ModelAdmin):
 # --- FIN DE LA MODIFICACIÓN ---
 
 
-try:
-    admin.site.unregister(Payment)
-except admin.sites.NotRegistered:
-    pass
-
-
-@admin.register(Payment)
-class PaymentAdmin(admin.ModelAdmin):
-    list_display = ('id', 'transaction_id', 'user',
-                    'appointment', 'amount', 'status', 'created_at')
-    list_filter = ('status',)
-    search_fields = ('transaction_id', 'user__phone_number', 'appointment__id')
-    raw_id_fields = ('user', 'appointment')
-    list_select_related = ('user', 'appointment')
-    date_hierarchy = 'created_at'
+# Payment admin migrado a finances/admin.py
+# Ya no se registra aquí
 
 # --- INICIO DE LA MODIFICACIÓN: Registrar nuevos modelos ---
 
@@ -177,11 +164,8 @@ class VoucherAdmin(admin.ModelAdmin):
 # --- FIN DE LA MODIFICACIÓN ---
 
 
-@admin.register(WebhookEvent)
-class WebhookEventAdmin(admin.ModelAdmin):
-    list_display = ('id', 'event_type', 'status', 'created_at')
-    search_fields = ('event_type', 'error_message')
-    list_filter = ('status', 'event_type')
+# WebhookEvent admin migrado a finances/admin.py
+# Ya no se registra aquí
 
 
 @admin.register(LoyaltyRewardLog)

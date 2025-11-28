@@ -31,7 +31,7 @@ class TestSuspiciousActivityDetector:
         self.config = BotConfiguration.objects.create(
             site_name="Test Spa",
             booking_url="https://test.com",
-            admin_phone="+573001234567",
+            admin_phone="+573157589548",
             enable_critical_alerts=False,  # Desactivar para tests
             enable_auto_block=False
         )
@@ -279,7 +279,7 @@ class TestSuspiciousActivityAnalyzer:
         self.config = BotConfiguration.objects.create(
             site_name="Test Spa",
             booking_url="https://test.com",
-            admin_phone="+573001234567"
+            admin_phone="+573157589548"
         )
 
     def test_get_suspicious_users_summary_empty(self):

@@ -3,7 +3,7 @@ from datetime import timedelta
 from django.utils import timezone
 from model_bakery import baker
 
-from spa.models import WaitlistEntry, Appointment, ServiceCategory, Service
+from spa.models import WaitlistEntry, Appointment, AppointmentItem, ServiceCategory, Service
 
 
 @pytest.mark.django_db
@@ -15,7 +15,12 @@ def test_waitlist_mark_and_reset_offer():
         start_time=timezone.now() + timedelta(days=1),
         end_time=timezone.now() + timedelta(days=1, hours=1),
     )
-    appt.services.add(service)
+    AppointmentItem.objects.create(
+        appointment=appt,
+        service=service,
+        duration=service.duration,
+        price_at_purchase=service.price
+    )
     entry = baker.make(WaitlistEntry, status=WaitlistEntry.Status.WAITING)
 
     entry.mark_offered(appt, ttl_minutes=30)

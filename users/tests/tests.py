@@ -53,7 +53,7 @@ class SimpleUserSerializerMaskingTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
         self.target = CustomUser.objects.create_user(
-            phone_number="+573001234567",
+            phone_number="+573157589548",
             email="target@example.com",
             first_name="Objetivo",
             password="Secret123!",
@@ -358,11 +358,11 @@ class TwilioCircuitBreakerTests(TestCase):
         with patch("users.services.twilio_breaker", breaker):
             self.service.client = self._build_dummy_client(side_effect=RuntimeError("boom"))
             with self.assertRaises(BusinessLogicError) as first_error:
-                self.service.send_verification_code("+573001234567")
+                self.service.send_verification_code("+573157589548")
             self.assertEqual(first_error.exception.detail["code"], "USER-TWILIO-UNAVAILABLE")
 
             with self.assertRaises(BusinessLogicError) as second_error:
-                self.service.send_verification_code("+573001234567")
+                self.service.send_verification_code("+573157589548")
         self.assertEqual(second_error.exception.detail["code"], "USER-TWILIO-BLOCKED")
 
 
@@ -806,7 +806,7 @@ class CleanupInactiveSessionsTaskTests(TestCase):
 class CustomUserPhoneValidationTests(TestCase):
     def test_invalid_phone_number_is_rejected(self):
         user = CustomUser(
-            phone_number="3001234567",
+            phone_number="3157589548",
             email="invalid@example.com",
             first_name="Invalid",
         )

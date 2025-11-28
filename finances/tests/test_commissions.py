@@ -6,10 +6,9 @@ from django.core.exceptions import ValidationError
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from core.models import GlobalSettings
-from finances.models import CommissionLedger
+from finances.models import CommissionLedger, Payment
 from finances.services import DeveloperCommissionService
 from finances.views import DeveloperCommissionStatusView
-from spa.models import Payment
 from users.models import CustomUser
 from finances.tasks import run_developer_payout
 from finances.gateway import build_integrity_signature

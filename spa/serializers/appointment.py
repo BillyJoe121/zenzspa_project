@@ -88,6 +88,7 @@ class AppointmentListSerializer(serializers.ModelSerializer):
 
 
 AppointmentReadSerializer = AppointmentListSerializer
+AppointmentSerializer = AppointmentListSerializer
 
 
 class AppointmentCreateSerializer(serializers.Serializer):
@@ -296,4 +297,3 @@ class AppointmentRescheduleSerializer(serializers.Serializer):
 
         data['new_start_time'] = normalized_start
         return data
-

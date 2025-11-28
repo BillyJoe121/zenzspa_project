@@ -1,22 +1,16 @@
 from .appointments import AvailabilityService, AppointmentService
-from .payments import (
-    FinancialAdjustmentService,
-    PaymentService,
-    WompiWebhookService,
-)
 from .waitlist import WaitlistService
-from .vip import VipMembershipService, VipSubscriptionService
-from .vouchers import CreditService, PackagePurchaseService
+from .vouchers import PackagePurchaseService
+
+# VIP services migrados a finances.subscriptions
+# Para compatibilidad temporal, re-exportamos desde finances
+from finances.subscriptions import VipMembershipService, VipSubscriptionService
 
 __all__ = [
     "AvailabilityService",
     "AppointmentService",
-    "PaymentService",
-    "WompiWebhookService",
     "WaitlistService",
     "VipMembershipService",
     "VipSubscriptionService",
     "PackagePurchaseService",
-    "CreditService",
-    "FinancialAdjustmentService",
 ]

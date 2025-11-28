@@ -20,6 +20,12 @@ class LocalizedPainSerializer(serializers.ModelSerializer):
         fields = ['id', 'body_part', 'pain_level', 'periodicity', 'notes']
         read_only_fields = ['id']
 
+    def validate_body_part(self, value):
+        valid_choices = [choice[0] for choice in LocalizedPain.BodyPart.choices]
+        if value not in valid_choices:
+            raise serializers.ValidationError(f"Parte del cuerpo inválida. Opciones válidas: {', '.join(valid_choices)}")
+        return value
+
 
 class ConsentDocumentSerializer(serializers.ModelSerializer):
     template = serializers.PrimaryKeyRelatedField(read_only=True)

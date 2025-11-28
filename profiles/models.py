@@ -14,12 +14,19 @@ from core.models import BaseModel
 
 logger = logging.getLogger(__name__)
 
+
+class Dosha(models.TextChoices):
+    VATA = 'VATA', 'Vata'
+    PITTA = 'PITTA', 'Pitta'
+    KAPHA = 'KAPHA', 'Kapha'
+    UNKNOWN = 'UNKNOWN', 'Desconocido'
+
+
 class ClinicalProfile(BaseModel):
-    class Dosha(models.TextChoices):
-        VATA = 'VATA', 'Vata'
-        PITTA = 'PITTA', 'Pitta'
-        KAPHA = 'KAPHA', 'Kapha'
-        UNKNOWN = 'UNKNOWN', 'Desconocido'
+    """
+    Perfil clínico principal del usuario.
+    """
+
 
     class Element(models.TextChoices):
         EARTH = 'EARTH', 'Tierra'
@@ -48,7 +55,11 @@ class ClinicalProfile(BaseModel):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='profile')
     dosha = models.CharField(
-        max_length=10, choices=Dosha.choices, default=Dosha.UNKNOWN, verbose_name="Dosha Dominante")
+        max_length=7,
+        choices=Dosha.choices,
+        default=Dosha.UNKNOWN,
+        verbose_name="Dosha Dominante",
+    )
     element = models.CharField(
         max_length=10, choices=Element.choices, blank=True, verbose_name="Elemento Dominante")
     diet_type = models.CharField(
@@ -90,16 +101,16 @@ class ClinicalProfile(BaseModel):
         en las respuestas del cliente y actualiza el campo 'dosha'.
         """
         scores = {
-            self.Dosha.VATA: 0,
-            self.Dosha.PITTA: 0,
-            self.Dosha.KAPHA: 0,
+            Dosha.VATA: 0,
+            Dosha.PITTA: 0,
+            Dosha.KAPHA: 0,
         }
 
         answers = self.dosha_answers.select_related('selected_option').all()
 
         if not answers.exists():
             # Si no hay respuestas, el Dosha es desconocido
-            self.dosha = self.Dosha.UNKNOWN
+            self.dosha = Dosha.UNKNOWN
             self.save(update_fields=['dosha'])
             return
 
@@ -146,7 +157,7 @@ class ClinicalProfile(BaseModel):
             self.medical_conditions = ''
             self.allergies = ''
             self.contraindications = ''
-            self.dosha = self.Dosha.UNKNOWN
+            self.dosha = Dosha.UNKNOWN
             self.element = ''
             self.diet_type = ''
             self.sleep_quality = ''
@@ -205,10 +216,26 @@ class LocalizedPain(BaseModel):
         OCCASIONAL = 'OCCASIONAL', 'Ocasional'
         SPECIFIC = 'SPECIFIC', 'En momentos específicos'
 
+    class BodyPart(models.TextChoices):
+        HEAD = 'HEAD', 'Cabeza'
+        NECK = 'NECK', 'Cuello'
+        SHOULDERS = 'SHOULDERS', 'Hombros'
+        UPPER_BACK = 'UPPER_BACK', 'Espalda Alta'
+        LOWER_BACK = 'LOWER_BACK', 'Espalda Baja'
+        CHEST = 'CHEST', 'Pecho'
+        ABDOMEN = 'ABDOMEN', 'Abdomen'
+        HIPS = 'HIPS', 'Caderas'
+        ARMS = 'ARMS', 'Brazos'
+        HANDS = 'HANDS', 'Manos'
+        LEGS = 'LEGS', 'Piernas'
+        KNEES = 'KNEES', 'Rodillas'
+        FEET = 'FEET', 'Pies'
+        OTHER = 'OTHER', 'Otro'
+
     profile = models.ForeignKey(
         ClinicalProfile, on_delete=models.CASCADE, related_name='pains')
     body_part = models.CharField(
-        max_length=100, verbose_name="Parte del Cuerpo")
+        max_length=100, choices=BodyPart.choices, verbose_name="Parte del Cuerpo")
     pain_level = models.CharField(
         max_length=10, choices=PainLevel.choices, verbose_name="Nivel de Dolor")
     periodicity = models.CharField(
@@ -227,11 +254,6 @@ class LocalizedPain(BaseModel):
         verbose_name_plural = "Dolores Localizados"
 
 
-class Dosha(models.TextChoices):
-    VATA = 'VATA', 'Vata'
-    PITTA = 'PITTA', 'Pitta'
-    KAPHA = 'KAPHA', 'Kapha'
-
 class DoshaQuestion(BaseModel):
     text = models.TextField(unique=True, verbose_name="Texto de la Pregunta")
     category = models.CharField(max_length=50, verbose_name="Categoría (ej. Físico, Mental)", default="General")
@@ -249,7 +271,7 @@ class DoshaOption(BaseModel):
         DoshaQuestion, on_delete=models.CASCADE, related_name='options')
     text = models.CharField(max_length=255, verbose_name="Texto de la Opción")
     associated_dosha = models.CharField(
-        max_length=5, choices=Dosha.choices, verbose_name="Dosha Asociado")
+        max_length=7, choices=Dosha.choices, verbose_name="Dosha Asociado")
     weight = models.PositiveIntegerField(default=1, verbose_name="Peso/Puntuación")
 
     def __str__(self):
@@ -312,7 +334,16 @@ class ConsentDocument(BaseModel):
     is_signed = models.BooleanField(default=False)
     signed_at = models.DateTimeField(null=True, blank=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
-    signature_hash = models.CharField(max_length=255, blank=True)
+    signature_hash = models.CharField(max_length=255, blank=True, db_index=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_reason = models.CharField(max_length=255, blank=True, default="")
+    revoked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="revoked_consents",
+    )
 
     class Meta:
         verbose_name = "Consentimiento Clínico"
@@ -324,7 +355,12 @@ class ConsentDocument(BaseModel):
         ]
 
     def __str__(self):
-        status = "Firmado" if self.is_signed else "Pendiente"
+        if not self.is_signed and self.revoked_at:
+            status = "Revocado"
+        elif self.is_signed:
+            status = "Firmado"
+        else:
+            status = "Pendiente"
         return f"Consentimiento {status} para {self.profile.user}"
 
     def save(self, *args, **kwargs):
@@ -378,7 +414,7 @@ class KioskSession(BaseModel):
 
     def save(self, *args, **kwargs):
         if not self.token:
-            self.token = secrets.token_hex(20)
+            self.token = secrets.token_hex(32)
         if self.status == self.Status.ACTIVE:
             self.is_active = True
             self.locked = False

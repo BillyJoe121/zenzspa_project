@@ -252,7 +252,7 @@ Envía una notificación de prueba:
 from notifications.services import NotificationService
 from users.models import CustomUser
 
-user = CustomUser.objects.get(phone_number="+573001234567")
+user = CustomUser.objects.get(phone_number="+573157589548")
 
 NotificationService.send_notification(
     user=user,

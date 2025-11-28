@@ -18,7 +18,7 @@ def api_client():
 @pytest.fixture
 def user():
     """Crea un usuario estándar."""
-    return baker.make('users.CustomUser', phone_number='+573001234567')
+    return baker.make('users.CustomUser', phone_number='+573157589548')
 
 @pytest.fixture
 def bot_config():
@@ -26,7 +26,7 @@ def bot_config():
     return BotConfiguration.objects.create(
         site_name="Spa Test",
         booking_url="https://test.com",
-        admin_phone="+573001234567",
+        admin_phone="+573157589548",
         system_prompt_template=(
             "Eres un bot. Contexto: {{user_message}}. "
             "Servicios: {{services_context}}. "

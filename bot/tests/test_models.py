@@ -30,7 +30,7 @@ class TestBotConfigurationModels:
         assert 'booking_url' in exc.value.message_dict
 
     def test_validation_invalid_phone(self):
-        config = BotConfiguration(admin_phone="3001234567") 
+        config = BotConfiguration(admin_phone="3157589548") 
         with pytest.raises(ValidationError) as exc:
             config.clean()
         assert 'admin_phone' in exc.value.message_dict
@@ -53,7 +53,7 @@ class TestBotConfigurationModels:
         BotConfiguration.objects.create(
             site_name="Test",
             booking_url="https://test.com",
-            admin_phone="+573001234567",
+            admin_phone="+573157589548",
             system_prompt_template="{{user_message}} {{services_context}} {{products_context}} {{booking_url}} {{admin_phone}}"
         )
         assert cache.get('bot_config_version') == 2

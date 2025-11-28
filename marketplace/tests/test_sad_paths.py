@@ -26,7 +26,7 @@ from marketplace.serializers import (
 @pytest.fixture
 def user(db):
     return CustomUser.objects.create_user(
-        phone_number="+573001234567",
+        phone_number="+573157589548",
         email="test_sad@example.com", 
         password="password",
         first_name="Test User"

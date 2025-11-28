@@ -5,20 +5,8 @@ from django.core.cache import cache
 from django.core.management import call_command
 
 from core import services, signals, selectors
-from core.models import AuditLog, GlobalSettings, GLOBAL_SETTINGS_CACHE_KEY
+from core.models import AuditLog, GlobalSettings
 from core.caching import CacheKeys
-
-
-@pytest.mark.django_db
-def test_get_global_settings_returns_dto():
-    cache.clear()
-    settings_obj = GlobalSettings.load()
-    settings_obj.advance_payment_percentage = 35
-    settings_obj.save()
-
-    dto = services.get_global_settings()
-    assert dto.advance_payment_percentage == 35
-    assert dto.low_supervision_capacity == settings_obj.low_supervision_capacity
 
 
 @pytest.mark.django_db
@@ -52,9 +40,9 @@ def test_admin_flag_non_grata_creates_audit_log(admin_user, client_user):
 
 def test_invalidate_global_settings_cache_signal():
     """Test que el signal invalida la clave correcta de GlobalSettings"""
-    cache.set(GLOBAL_SETTINGS_CACHE_KEY, "dummy", timeout=60)
+    cache.set(CacheKeys.GLOBAL_SETTINGS, "dummy", timeout=60)
     signals.invalidate_global_settings_cache(sender=GlobalSettings)
-    assert cache.get(GLOBAL_SETTINGS_CACHE_KEY) is None
+    assert cache.get(CacheKeys.GLOBAL_SETTINGS) is None
 
 
 def test_rebuild_cache_command_clears_known_keys():

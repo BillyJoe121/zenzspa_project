@@ -4,7 +4,7 @@ from django.utils import timezone
 from model_bakery import baker
 
 from spa.services import AppointmentService
-from spa.models import Appointment, Service, ServiceCategory, StaffAvailability, Payment
+from spa.models import Appointment, Service, ServiceCategory, StaffAvailability
 from core.exceptions import BusinessLogicError
 
 
@@ -17,16 +17,8 @@ def test_create_appointment_blocks_conflict(mocker):
     user = baker.make("users.CustomUser", role="CLIENT")
     # Remover disponibilidad por defecto si existe
     StaffAvailability.objects.filter(staff_member=staff).delete()
-    # Evitar solapamiento inicial y permitir agenda
-    baker.make(
-        StaffAvailability,
-        staff_member=staff,
-        day_of_week=timezone.now().isoweekday(),
-        start_time=timezone.now().replace(hour=8, minute=0, second=0, microsecond=0).time(),
-        end_time=timezone.now().replace(hour=20, minute=0, second=0, microsecond=0).time(),
-    )
-    # Disponibilidad del staff
-    now = timezone.now()
+    # Disponibilidad del staff - usar fecha futura
+    now = timezone.now() + timedelta(days=2)
     baker.make(
         StaffAvailability,
         staff_member=staff,

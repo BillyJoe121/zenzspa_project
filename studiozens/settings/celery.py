@@ -48,7 +48,7 @@ CELERY_TASK_ROUTES = {
 
 CELERY_BEAT_SCHEDULE = {
     "check-for-reminders-every-hour": {
-        "task": "spa.tasks.check_and_queue_reminders",
+        "task": "spa.tasks.send_appointment_reminder",
         "schedule": crontab(minute="0", hour="*"),
     },
     "cancel-unpaid-appointments-every-10-minutes": {
@@ -59,10 +59,24 @@ CELERY_BEAT_SCHEDULE = {
         "task": "marketplace.tasks.release_expired_order_reservations",
         "schedule": crontab(minute="*/10"),
     },
+    # Tareas de pagos y finanzas
     "developer-payout-hourly": {
         "task": "finances.tasks.run_developer_payout",
         "schedule": crontab(minute=0, hour="*"),
     },
+    "check-pending-payments-every-15-minutes": {
+        "task": "finances.tasks.check_pending_payments",
+        "schedule": crontab(minute="*/15"),
+    },
+    "process-recurring-vip-subscriptions-daily": {
+        "task": "finances.tasks.process_recurring_subscriptions",
+        "schedule": crontab(minute=0, hour=2),
+    },
+    "downgrade-expired-vips-daily": {
+        "task": "finances.tasks.downgrade_expired_vips",
+        "schedule": crontab(minute=30, hour=2),
+    },
+    # Tareas del bot
     "bot-daily-token-report": {
         "task": "bot.tasks.report_daily_token_usage",
         "schedule": crontab(minute=0, hour=8),

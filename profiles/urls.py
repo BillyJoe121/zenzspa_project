@@ -20,7 +20,9 @@ from .views import (
     KioskStartSessionView,
     AnonymizeProfileView,
     SignConsentView,
+    SignConsentView,
     ExportClinicalDataView,
+    RevokeConsentView,
 )
 # --- FIN DE LA MODIFICACIÓN ---
 
@@ -49,6 +51,7 @@ urlpatterns = [
     path('anonymize/<str:phone_number>/', AnonymizeProfileView.as_view(), name='clinical-profile-anonymize'),
     path('consents/sign/', SignConsentView.as_view(), name='sign-consent'),
     path('export/', ExportClinicalDataView.as_view(), name='export-clinical-data'),
+    path('consents/revoke/<uuid:consent_id>/', RevokeConsentView.as_view(), name='revoke-consent'),
     
     # Se incluye el router al final para que maneje todas las rutas registradas.
     path('', include(router.urls)),

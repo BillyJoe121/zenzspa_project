@@ -23,6 +23,7 @@ class NotificationRenderer:
         ctx = Context(context or {})
         subject = ""
         body = ""
+        missing_vars = None
 
         try:
             if template_obj.subject_template:
@@ -45,7 +46,7 @@ class NotificationRenderer:
                 str(e),
                 list(context.keys()) if context else []
             )
-            # Continuar con el render parcial
+            missing_vars = str(e)
 
         except Exception as e:
             logger.exception(
@@ -53,6 +54,9 @@ class NotificationRenderer:
                 template_obj.event_code
             )
             raise
+
+        if missing_vars:
+            raise ValueError(f"Variable faltante en template {template_obj.event_code}: {missing_vars}")
 
         return subject, body
 
@@ -75,13 +79,19 @@ class NotificationService:
         channel_override=None,
         fallback_channels=None,
     ):
+        context = context or {}
         if user is None:
-            # Allow anonymous if phone_number is in context
-            if not context or not context.get("phone_number"):
+            phone = context.get("phone_number")
+            if not phone:
+                NotificationLog.objects.create(
+                    user=None,
+                    event_code=event_code,
+                    channel=NotificationTemplate.ChannelChoices.WHATSAPP,
+                    status=NotificationLog.Status.FAILED,
+                    error_message="Notificación anónima sin phone_number en context.",
+                    priority=priority,
+                )
                 return None
-            # If user is None, we can't check preferences easily. 
-            # We assume WhatsApp is enabled for anonymous users if phone is provided.
-            # We need a dummy preference or skip preference check.
         
         templates = cls._get_templates(event_code, channel_override)
         if not templates:
@@ -114,18 +124,40 @@ class NotificationService:
                 )
                 return None
         else:
-            # Anonymous user: Assume all channels in templates are available (or just WhatsApp)
-            available = [(chan, tmpl) for chan, tmpl in templates]
-            # We might want to restrict to WhatsApp only for anonymous
-            available = [x for x in available if x[0] == NotificationTemplate.ChannelChoices.WHATSAPP]
-            
+            # Anonymous user: solo WhatsApp permitido
+            available = [
+                (chan, tmpl)
+                for chan, tmpl in templates
+                if chan == NotificationTemplate.ChannelChoices.WHATSAPP
+            ]
+
             if not available:
-                 # Log failure for anonymous?
-                 return None
+                NotificationLog.objects.create(
+                    user=None,
+                    event_code=event_code,
+                    channel=NotificationTemplate.ChannelChoices.WHATSAPP,
+                    status=NotificationLog.Status.FAILED,
+                    error_message="No hay plantilla de WhatsApp activa para usuarios anónimos.",
+                    priority=priority,
+                    metadata={"phone_number": context.get("phone_number")},
+                )
+                return None
 
         fallback = fallback_channels or [chan for chan, _ in available[1:]]
         channel, template = available[0]
-        subject, body = NotificationRenderer.render(template, context or {})
+        try:
+            subject, body = NotificationRenderer.render(template, context)
+        except ValueError as exc:
+            NotificationLog.objects.create(
+                user=user,
+                event_code=event_code,
+                channel=channel,
+                status=NotificationLog.Status.FAILED,
+                error_message=str(exc),
+                priority=priority,
+                metadata={"context": context},
+            )
+            return None
         eta = None
         
         within_quiet = False

@@ -7,7 +7,12 @@ from .appointment import (
     StaffAvailability,
     WaitlistEntry,
 )
-from .payment import (
+from .voucher import Package, PackageService, UserPackage, Voucher, VoucherCodeGenerator, generate_voucher_code
+from .loyalty import LoyaltyRewardLog
+
+# MIGRACIÓN: Modelos de pagos movidos a finances.models
+# Re-exportamos desde finances para compatibilidad temporal
+from finances.models import (
     ClientCredit,
     FinancialAdjustment,
     Payment,
@@ -15,8 +20,6 @@ from .payment import (
     SubscriptionLog,
     WebhookEvent,
 )
-from .voucher import Package, PackageService, UserPackage, Voucher, VoucherCodeGenerator, generate_voucher_code
-from .loyalty import LoyaltyRewardLog
 
 __all__ = [
     "Appointment",

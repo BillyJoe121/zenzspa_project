@@ -164,6 +164,19 @@ class ProductImage(BaseModel):
     def __str__(self):
         return f"Imagen para {self.product.name}"
 
+    def clean(self):
+        super().clean()
+        file = self.image
+        if not file:
+            return
+        max_size_mb = 5
+        if hasattr(file, "size") and file.size > max_size_mb * 1024 * 1024:
+            raise ValidationError({"image": f"El archivo supera el límite de {max_size_mb}MB."})
+        content_type = getattr(file, "content_type", "")
+        allowed_types = {"image/jpeg", "image/png", "image/webp"}
+        if content_type and content_type not in allowed_types:
+            raise ValidationError({"image": "Formato de imagen no permitido. Usa JPEG, PNG o WEBP."})
+
 class Cart(BaseModel):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -173,6 +186,12 @@ class Cart(BaseModel):
     is_active = models.BooleanField(
         default=True,
         verbose_name="Carrito Activo"
+    )
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Expira el",
+        help_text="Fecha límite para considerar el carrito antes de limpiarlo.",
     )
 
     class Meta:
@@ -188,6 +207,12 @@ class Cart(BaseModel):
 
     def __str__(self):
         return f"Carrito de {self.user.email}"
+
+    def save(self, *args, **kwargs):
+        if self.expires_at is None:
+            from django.utils import timezone
+            self.expires_at = timezone.now() + timezone.timedelta(days=7)
+        super().save(*args, **kwargs)
 
 class CartItem(BaseModel):
     cart = models.ForeignKey(
@@ -307,6 +332,12 @@ class Order(BaseModel):
 
     def __str__(self):
         return f"Orden {self.id} - {self.user.email}"
+
+    def clean(self):
+        super().clean()
+        if self.delivery_option == self.DeliveryOptions.DELIVERY:
+            if not self.delivery_address or len(self.delivery_address.strip()) < 10:
+                raise ValidationError({"delivery_address": "La dirección de envío es obligatoria y debe ser detallada."})
 
 class OrderItem(BaseModel):
     order = models.ForeignKey(

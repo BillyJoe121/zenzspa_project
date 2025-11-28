@@ -285,15 +285,38 @@ class TOTPService:
 
 class GeoIPService:
     """
-    Servicio Mock para Geolocalización.
-    En producción, usaría GeoIP2 o un servicio externo.
+    Servicio para Geolocalización usando GeoIP2.
     """
+    _reader = None
+
+    @classmethod
+    def _get_reader(cls):
+        if cls._reader is None:
+            try:
+                import geoip2.database
+                db_path = getattr(settings, 'GEOIP_PATH', None)
+                if db_path and os.path.exists(db_path):
+                    cls._reader = geoip2.database.Reader(db_path)
+            except ImportError:
+                logger.warning("geoip2 library not installed.")
+            except Exception as e:
+                logger.warning(f"Error initializing GeoIP2 reader: {e}")
+        return cls._reader
+
     @staticmethod
     def get_country_from_ip(ip_address):
-        # TODO: Integrar con base de datos MaxMind o API externa
-        # Por ahora, retornamos 'CO' (Colombia) por defecto para permitir tráfico local
+        # Localhost checks
         if ip_address in ['127.0.0.1', '::1']:
             return 'CO'
+        
+        reader = GeoIPService._get_reader()
+        if reader:
+            try:
+                response = reader.country(ip_address)
+                return response.country.iso_code or 'CO'
+            except Exception as e:
+                logger.warning(f"GeoIP lookup failed for {ip_address}: {e}")
+        
         return 'CO'  # Default seguro
 
     @staticmethod

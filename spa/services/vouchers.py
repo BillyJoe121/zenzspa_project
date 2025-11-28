@@ -6,15 +6,14 @@ from django.db import transaction
 from django.utils import timezone
 
 from core.models import AuditLog
+from finances.models import Payment
+from finances.subscriptions import VipMembershipService
 from ..models import (
     Appointment,
-    ClientCredit,
     Package,
-    Payment,
     UserPackage,
     Voucher,
 )
-from .vip import VipMembershipService
 
 logger = logging.getLogger(__name__)
 
@@ -120,56 +119,3 @@ class VoucherRedemptionService:
         return voucher
 
 
-class CreditService:
-    """
-    Helper para generar ClientCredit según las políticas vigentes.
-    """
-
-    @staticmethod
-    @transaction.atomic
-    def create_credit_from_appointment(*, appointment, percentage, created_by, reason):
-        percentage = Decimal(str(percentage))
-        if percentage <= 0:
-            return Decimal('0'), []
-        payments = appointment.payments.select_for_update().filter(
-            payment_type=Payment.PaymentType.ADVANCE,
-            status__in=[
-                Payment.PaymentStatus.APPROVED,
-                Payment.PaymentStatus.PAID_WITH_CREDIT,
-            ],
-        )
-        if not payments.exists():
-            return Decimal('0'), []
-
-        from core.models import GlobalSettings
-
-        settings = GlobalSettings.load()
-        expires_at = timezone.now().date() + timedelta(days=settings.credit_expiration_days)
-        total_created = Decimal('0')
-        created_credits = []
-        for payment in payments:
-            if hasattr(payment, "generated_credit"):
-                continue
-            credit_amount = (payment.amount or Decimal('0')) * percentage
-            if credit_amount <= 0:
-                continue
-            credit = ClientCredit.objects.create(
-                user=appointment.user,
-                originating_payment=payment,
-                initial_amount=credit_amount,
-                remaining_amount=credit_amount,
-                status=ClientCredit.CreditStatus.AVAILABLE,
-                expires_at=expires_at,
-            )
-            total_created += credit_amount
-            created_credits.append(credit)
-
-        if total_created > 0:
-            AuditLog.objects.create(
-                admin_user=created_by,
-                target_user=appointment.user,
-                target_appointment=appointment,
-                action=AuditLog.Action.APPOINTMENT_CANCELLED_BY_ADMIN,
-                details=reason or f"Crédito generado por cita {appointment.id}",
-            )
-        return total_created, created_credits

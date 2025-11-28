@@ -16,7 +16,7 @@ class Migration(migrations.Migration):
                 max_length=15,
                 unique=True,
                 validators=[django.core.validators.RegexValidator(
-                    message='El número debe estar en formato internacional (+573001234567).',
+                    message='El número debe estar en formato internacional (+573157589548).',
                     regex='^\\+[1-9]\\d{9,14}$')],
                 verbose_name='Número de Teléfono',
             ),

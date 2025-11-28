@@ -480,6 +480,12 @@ class ClinicalProfileHistoryViewSet(viewsets.ReadOnlyModelViewSet):
 
     permission_classes = [IsAuthenticated, IsStaffOrAdmin]
     serializer_class = ClinicalProfileHistorySerializer
+    from rest_framework.pagination import PageNumberPagination
+    class StandardResultsSetPagination(PageNumberPagination):
+        page_size = 10
+        page_size_query_param = 'page_size'
+        max_page_size = 100
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
         queryset = ClinicalProfile.history.select_related('history_user')
@@ -557,6 +563,9 @@ class SignConsentView(generics.GenericAPIView):
             is_signed=True,
             signed_at=timezone.now(),
             ip_address=client_ip,
+            revoked_at=None,
+            revoked_reason="",
+            revoked_by=None,
         )
 
         # Auditar firma
@@ -581,6 +590,57 @@ class SignConsentView(generics.GenericAPIView):
                 "signature_hash": consent.signature_hash
             },
             status=status.HTTP_201_CREATED
+        )
+
+
+class RevokeConsentView(generics.GenericAPIView):
+    """
+    Permite revocar un consentimiento firmado.
+    Usuarios pueden revocar los suyos y el staff/admin puede revocar cualquiera.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, consent_id, *args, **kwargs):
+        consent = get_object_or_404(
+            ConsentDocument.objects.select_related("profile__user"),
+            id=consent_id,
+        )
+        consent_owner = consent.profile.user
+        user = request.user
+        is_staff = user.role in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]
+        if consent_owner != user and not is_staff:
+            raise PermissionDenied("No tienes permiso para revocar este consentimiento.")
+        if not consent.is_signed:
+            return Response(
+                {"detail": "El consentimiento ya está revocado o pendiente."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        reason = request.data.get("reason", "")
+        consent.is_signed = False
+        consent.revoked_at = timezone.now()
+        consent.revoked_reason = reason[:255] if reason else ""
+        consent.revoked_by = user
+        consent.save(update_fields=["is_signed", "revoked_at", "revoked_reason", "revoked_by", "updated_at"])
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            admin_user=user if is_staff else None,
+            target_user=consent_owner,
+            details={
+                "action": "revoke_consent",
+                "consent_id": str(consent.id),
+                "reason": consent.revoked_reason,
+                "performed_by": str(user.id),
+            },
+        )
+        return Response(
+            {
+                "detail": "Consentimiento revocado correctamente.",
+                "consent_id": str(consent.id),
+                "revoked_at": consent.revoked_at.isoformat(),
+                "reason": consent.revoked_reason,
+            },
+            status=status.HTTP_200_OK,
         )
 
 

@@ -3,6 +3,7 @@ Servicio centralizado para envío de WhatsApp vía Twilio.
 Usado por NotificationService como un canal más.
 Soporta templates aprobados por Meta y mensajes dinámicos.
 """
+import json
 import logging
 from django.conf import settings
 from typing import Dict, Optional
@@ -29,7 +30,7 @@ class WhatsAppService:
         Envía mensaje usando template aprobado por Meta.
 
         Args:
-            to_phone: Número destino en formato E.164 (+573001234567)
+            to_phone: Número destino en formato E.164 (+573157589548)
             content_sid: Content SID del template aprobado (HXxxxx...)
             content_variables: Dict con variables del template {"1": "value", "2": "value"}
             media_url: URL de imagen (opcional, sobrescribe la del template)
@@ -55,11 +56,13 @@ class WhatsAppService:
             to_whatsapp = f"whatsapp:{to_phone}" if not to_phone.startswith("whatsapp:") else to_phone
 
             # Construir parámetros del mensaje
+            content_variables_json = json.dumps(content_variables)
+
             message_params = {
                 "from_": from_whatsapp,
                 "to": to_whatsapp,
                 "content_sid": content_sid,
-                "content_variables": content_variables,
+                "content_variables": content_variables_json,
             }
 
             # Agregar media_url si se proporciona (sobrescribe la del template)
@@ -106,7 +109,7 @@ class WhatsAppService:
         SOLO funciona dentro de ventana de 24h después que el usuario escriba.
 
         Args:
-            to_phone: Número destino en formato E.164 (+573001234567)
+            to_phone: Número destino en formato E.164 (+573157589548)
             body: Cuerpo del mensaje (máx 1600 caracteres)
 
         Returns:
@@ -198,7 +201,7 @@ class WhatsAppService:
     def validate_phone(phone: str) -> bool:
         """
         Valida formato de teléfono para WhatsApp.
-        Debe estar en formato E.164: +573001234567
+        Debe estar en formato E.164: +573157589548
         """
         if not phone:
             return False

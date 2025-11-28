@@ -1,18 +1,15 @@
 # marketplace/views.py
-import uuid
-
 from django.conf import settings
 from rest_framework import permissions, status, viewsets
 from rest_framework.response import Response
 from rest_framework.decorators import action
 
-from spa.models import Appointment, Payment
-from spa.services import PaymentService
+from spa.models import Appointment
+from finances.payments import PaymentService
 from users.models import CustomUser
 from users.permissions import IsAdminUser as DomainIsAdminUser
 from core.decorators import idempotent_view
 from django.db import transaction
-import requests
 import logging
 
 logger = logging.getLogger(__name__)
@@ -235,71 +232,17 @@ class CartViewSet(viewsets.GenericViewSet):
             )
             order = order_service.create_order()
 
-            # Crear registro de pago asociado a la orden
-            reference = f"ORDER-{order.id}-{uuid.uuid4().hex[:8]}"
-            payment = Payment.objects.create(
-                user=request.user,
-                amount=order.total_amount,
-                status=Payment.PaymentStatus.PENDING,
-                payment_type=Payment.PaymentType.ORDER,
-                transaction_id=reference,
-                order=order,
-            )
-            order.wompi_transaction_id = reference
-            order.save(update_fields=['wompi_transaction_id', 'updated_at'])
-
-            amount_in_cents = int(order.total_amount * 100)
-
-            # Usar gateway centralizado de Wompi en lugar de métodos privados de PaymentService
-            from finances.gateway import WompiPaymentClient, build_integrity_signature
-
+            # Crear registro de pago y obtener payload para Wompi usando servicio centralizado
             try:
-                acceptance_token = WompiPaymentClient.resolve_acceptance_token()
-            except requests.Timeout:
-                logger.error("Timeout al obtener acceptance token de Wompi")
-                # Cancelar orden para no dejarla en limbo si no se puede pagar
+                payment, payment_payload = PaymentService.create_order_payment(request.user, order)
+            except ValueError as e:
+                logger.error("Error al iniciar pago de orden %s: %s", order.id, e)
                 from .services import OrderService
                 OrderService.transition_to(order, Order.OrderStatus.CANCELLED)
                 return Response(
-                    {"error": "El servicio de pagos no está disponible. Intenta más tarde.", "code": "MKT-PAYMENT-UNAVAILABLE"},
+                    {"error": str(e), "code": "MKT-PAYMENT-ERROR"},
                     status=status.HTTP_503_SERVICE_UNAVAILABLE
                 )
-            except requests.RequestException as e:
-                logger.exception("Error al comunicarse con Wompi: %s", e)
-                from .services import OrderService
-                OrderService.transition_to(order, Order.OrderStatus.CANCELLED)
-                return Response(
-                    {"error": "Error al procesar el pago. Intenta más tarde.", "code": "MKT-PAYMENT-ERROR"},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE
-                )
-
-            # No se pudo obtener acceptance token
-            if not acceptance_token:
-                logger.error("No se pudo obtener acceptance token de Wompi")
-                from .services import OrderService
-                OrderService.transition_to(order, Order.OrderStatus.CANCELLED)
-                return Response(
-                    {"error": "El servicio de pagos no está disponible. Intenta más tarde.", "code": "MKT-PAYMENT-UNAVAILABLE"},
-                    status=status.HTTP_503_SERVICE_UNAVAILABLE
-                )
-
-            # Usar función centralizada de firma de integridad
-            signature = build_integrity_signature(
-                reference=reference,
-                amount_in_cents=amount_in_cents,
-                currency=getattr(settings, "WOMPI_CURRENCY", "COP"),
-            )
-
-            payment_payload = {
-                'publicKey': settings.WOMPI_PUBLIC_KEY,
-                'currency': getattr(settings, "WOMPI_CURRENCY", "COP"),
-                'amountInCents': amount_in_cents,
-                'reference': reference,
-                'signature:integrity': signature,
-                'redirectUrl': settings.WOMPI_REDIRECT_URL,
-                'acceptanceToken': acceptance_token,
-                'paymentId': str(payment.id),
-            }
 
             order_serializer = OrderSerializer(order)
             response_data = {
@@ -365,4 +308,3 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(OrderSerializer(updated_order).data, status=status.HTTP_200_OK)
-

@@ -36,6 +36,32 @@ services:
       - db
       - redis
 
+  celery_worker:
+    build: .
+    container_name: studiozens_celery_worker
+    command: celery -A studiozens worker -l info
+    volumes:
+      - .:/app
+    env_file:
+      - .env.docker
+    depends_on:
+      - db
+      - redis
+    restart: always
+
+  celery_beat:
+    build: .
+    container_name: studiozens_celery_beat
+    command: celery -A studiozens beat -l info
+    volumes:
+      - .:/app
+    env_file:
+      - .env.docker
+    depends_on:
+      - db
+      - redis
+    restart: always
+
 volumes:
   postgres_data:
   redis_data:

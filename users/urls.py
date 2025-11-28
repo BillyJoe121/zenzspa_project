@@ -14,13 +14,13 @@ from .views import (
     UserSessionListView,
     UserSessionDeleteView,
     LogoutView,
-    LogoutView,
     LogoutAllView,
     TOTPSetupView,
     TOTPVerifyView,
     UserExportView,
     TwilioWebhookView,
     EmailVerificationView,
+    UserDeleteView,
 )
 
 
@@ -65,5 +65,6 @@ urlpatterns = [
     path('admin/export/', UserExportView.as_view(), name='user-export'),
     path('twilio/webhook/', TwilioWebhookView.as_view(), name='twilio-webhook'),
     path('email/verify/', EmailVerificationView.as_view(), name='email-verify'),
+    path('me/delete/', UserDeleteView.as_view(), name='user-delete'),
 ]
 

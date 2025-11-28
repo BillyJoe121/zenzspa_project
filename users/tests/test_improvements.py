@@ -47,7 +47,7 @@ class TOTPViewsTests(TestCase):
     def setUp(self):
         self.factory = APIRequestFactory()
         self.user = CustomUser.objects.create_user(
-            phone_number="+573001234567",
+            phone_number="+573157589548",
             password="password123",
             first_name="Test"
         )

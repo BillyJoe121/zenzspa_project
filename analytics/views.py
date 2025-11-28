@@ -22,6 +22,7 @@ from core.models import AuditLog
 from core.utils import safe_audit_log
 from .services import KpiService
 from .utils import build_analytics_workbook
+from .permissions import CanViewAnalytics
 
 
 def _audit_analytics(request, action, extra=None):
@@ -137,7 +138,7 @@ class KpiView(DateFilterMixin, APIView):
     Endpoint que entrega los KPIs de negocio en un rango de fechas.
     """
 
-    permission_classes = [IsStaffOrAdmin]
+    permission_classes = [CanViewAnalytics]
 
     def get(self, request):
         try:
@@ -179,8 +180,42 @@ class KpiView(DateFilterMixin, APIView):
         return Response(data)
 
 
+class TimeSeriesView(DateFilterMixin, APIView):
+    """
+    Endpoint para datos de gráficos (ingresos y citas por día).
+    """
+    permission_classes = [CanViewAnalytics]
+
+    def get(self, request):
+        try:
+            start_date, end_date = self._parse_dates(request)
+            staff_id, service_category_id = self._parse_filters(request)
+        except ValueError as exc:
+            return Response({"error": str(exc)}, status=400)
+
+        cache_key = self._cache_key(request, "timeseries", start_date, end_date, staff_id, service_category_id)
+        cached = cache.get(cache_key)
+        if cached is not None:
+            _audit_analytics(request, "timeseries_view", {"cache": "hit"})
+            return Response(cached)
+
+        service = KpiService(
+            start_date,
+            end_date,
+            staff_id=staff_id,
+            service_category_id=service_category_id,
+        )
+        data = service.get_time_series()
+        
+        ttl = self._get_cache_ttl(start_date, end_date)
+        cache.set(cache_key, data, ttl)
+        _audit_analytics(request, "timeseries_view", {"cache": "miss"})
+        
+        return Response(data)
+
+
 class AnalyticsExportView(DateFilterMixin, APIView):
-    permission_classes = [IsStaffOrAdmin]
+    permission_classes = [CanViewAnalytics]
 
     def get(self, request):
         try:
@@ -263,7 +298,7 @@ class AnalyticsExportView(DateFilterMixin, APIView):
 
 
 class DashboardViewSet(viewsets.ViewSet):
-    permission_classes = [IsStaffOrAdmin]
+    permission_classes = [CanViewAnalytics]
     CACHE_TTL = 300  # Aumentado a 5 minutos
 
     def list(self, request):

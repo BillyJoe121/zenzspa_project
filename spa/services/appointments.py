@@ -16,11 +16,11 @@ from ..models import (
     Appointment,
     AppointmentItem,
     AvailabilityExclusion,
-    Payment,
     Service,
     StaffAvailability,
 )
-from .payments import PaymentService
+from finances.models import Payment
+from finances.payments import PaymentService
 
 logger = logging.getLogger(__name__)
 
@@ -78,17 +78,29 @@ class AvailabilityService:
             availabilities = availabilities.filter(
                 staff_member_id=staff_member_id)
         availabilities = list(availabilities.select_related('staff_member'))
+        
+        # OPTIMIZATION: Filter staff who can actually perform the requested services
+        # This assumes we have a way to know which staff can do which service.
+        # If not implemented yet, we skip this specific filter or add a TODO.
+        # For now, we will filter out staff that have NO availability at all (already done by query)
+        
         staff_ids = {
             availability.staff_member_id for availability in availabilities}
 
-        appointments = Appointment.objects.filter(
+        appointments_qs = Appointment.objects.filter(
             start_time__date=self.date,
             status__in=[
                 Appointment.AppointmentStatus.CONFIRMED,
                 Appointment.AppointmentStatus.PENDING_PAYMENT,
                 Appointment.AppointmentStatus.RESCHEDULED,
             ],
-        ).select_related('staff_member')
+            staff_member_id__isnull=False,
+        ).only("start_time", "end_time", "staff_member_id")
+
+        if staff_ids:
+            appointments_qs = appointments_qs.filter(staff_member_id__in=staff_ids)
+
+        appointments = appointments_qs.iterator()
 
         busy_map = defaultdict(list)
         for appointment in appointments:
@@ -313,7 +325,15 @@ class AppointmentService:
 
         total_price = Decimal('0')
         appointment_items = []
+        seen_services = set()
         for service in self.services:
+            if service.id in seen_services:
+                raise BusinessLogicError(
+                    detail=f"El servicio '{service.name}' está duplicado en la solicitud.",
+                    internal_code="APP-005",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                )
+            seen_services.add(service.id)
             item_price = self._get_price_for_service(service)
             appointment_items.append((service, item_price))
             total_price += item_price

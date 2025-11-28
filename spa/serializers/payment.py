@@ -1,56 +1,35 @@
-from decimal import Decimal
+"""
+DEPRECADO: Este archivo ha sido migrado a finances.serializers
 
-from rest_framework import serializers
+Los serializers de Payment y FinancialAdjustment han sido movidos
+al módulo finances para centralizar la serialización de modelos financieros.
 
-from ..models import FinancialAdjustment, Payment
-from users.serializers import SimpleUserSerializer
-from django.contrib.auth import get_user_model
+Para compatibilidad temporal, se re-exportan desde finances.serializers,
+pero deberías actualizar tus imports a:
 
-CustomUser = get_user_model()
+    from finances.serializers import PaymentSerializer, FinancialAdjustmentSerializer
 
+Este archivo será eliminado en una futura versión.
+"""
+import warnings
 
-class PaymentSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Payment
-        fields = '__all__'
+warnings.warn(
+    "spa.serializers.payment está deprecado. "
+    "Los serializers de pago han sido migrados a finances.serializers. "
+    "Actualiza tus imports a 'from finances.serializers import PaymentSerializer'",
+    DeprecationWarning,
+    stacklevel=2
+)
 
+# Re-exports para compatibilidad temporal
+from finances.serializers import (
+    PaymentSerializer,
+    FinancialAdjustmentSerializer,
+    FinancialAdjustmentCreateSerializer,
+)
 
-class FinancialAdjustmentSerializer(serializers.ModelSerializer):
-    user = SimpleUserSerializer(read_only=True)
-    created_by = SimpleUserSerializer(read_only=True)
-
-    class Meta:
-        model = FinancialAdjustment
-        fields = [
-            'id',
-            'user',
-            'amount',
-            'adjustment_type',
-            'reason',
-            'related_payment',
-            'created_by',
-            'created_at',
-        ]
-        read_only_fields = fields
-
-
-class FinancialAdjustmentCreateSerializer(serializers.Serializer):
-    user_id = serializers.UUIDField()
-    amount = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal('0.01'))
-    adjustment_type = serializers.ChoiceField(choices=FinancialAdjustment.AdjustmentType.choices)
-    reason = serializers.CharField()
-    related_payment_id = serializers.UUIDField(required=False, allow_null=True)
-
-    def validate_user_id(self, value):
-        try:
-            return CustomUser.objects.get(id=value)
-        except CustomUser.DoesNotExist:
-            raise serializers.ValidationError("Usuario no encontrado.")
-
-    def validate_related_payment_id(self, value):
-        if not value:
-            return None
-        try:
-            return Payment.objects.get(id=value)
-        except Payment.DoesNotExist:
-            raise serializers.ValidationError("Pago relacionado no encontrado.")
+__all__ = [
+    "PaymentSerializer",
+    "FinancialAdjustmentSerializer",
+    "FinancialAdjustmentCreateSerializer",
+]

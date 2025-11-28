@@ -8,8 +8,9 @@ from django.core.mail import send_mail
 
 from core.models import GlobalSettings, AuditLog
 from users.models import CustomUser
-from .models import Appointment, WaitlistEntry, Payment, Voucher, LoyaltyRewardLog
-from .services import PaymentService
+from .models import Appointment, WaitlistEntry, Voucher, LoyaltyRewardLog
+from finances.models import Payment
+from finances.payments import PaymentService
 from notifications.services import NotificationService
 
 # Se obtiene una instancia del logger.
@@ -175,21 +176,17 @@ def cancel_unpaid_appointments():
     return f"{cancelled_count} citas pendientes de anticipo han sido canceladas."
 
 
+# MIGRADO A finances.tasks.check_pending_payments
+# Esta función se mantiene solo para compatibilidad temporal
 @shared_task
 def check_pending_payments():
     """
+    DEPRECADO: Migrado a finances.tasks.check_pending_payments
+
     Verifica pagos pendientes que podrían haberse quedado sin webhook.
     """
-    threshold = timezone.now() - timedelta(minutes=10)
-    pending_payments = Payment.objects.filter(
-        status=Payment.PaymentStatus.PENDING,
-        created_at__lt=threshold,
-    )[:100]
-    reviewed = 0
-    for payment in pending_payments:
-        PaymentService.poll_pending_payment(payment)
-        reviewed += 1
-    return f"Pagos pendientes revisados: {reviewed}"
+    from finances.tasks import check_pending_payments as new_check_pending_payments
+    return new_check_pending_payments()
 
 
 @shared_task
@@ -231,146 +228,30 @@ def check_vip_loyalty():
     return f"Recompensas emitidas: {rewards}"
 
 
+# MIGRADO A finances.tasks.process_recurring_subscriptions
+# Esta función se mantiene solo para compatibilidad temporal
 @shared_task
 def process_recurring_subscriptions():
     """
+    DEPRECADO: Migrado a finances.tasks.process_recurring_subscriptions
+
     Intenta cobrar y extender suscripciones VIP que están por vencer.
     """
-    settings_obj = GlobalSettings.load()
-    vip_price = settings_obj.vip_monthly_price
-    if vip_price is None or vip_price <= 0:
-        return "Precio VIP no configurado."
-
-    today = timezone.now().date()
-    window = today + timedelta(days=3)
-    users = CustomUser.objects.filter(
-        role=CustomUser.Role.VIP,
-        vip_auto_renew=True,
-        vip_expires_at__isnull=False,
-        vip_expires_at__lte=window,
-    )
-
-    processed = 0
-    for user in users:
-        reference = f"VIP-AUTO-{user.id}-{uuid.uuid4().hex[:8]}"
-        transaction_payload = {"reference": reference, "status": "PENDING"}
-        status_result = Payment.PaymentStatus.DECLINED
-
-        if user.vip_payment_token:
-            try:
-                status_result, transaction_payload, reference = PaymentService.charge_recurrence_token(
-                    user=user,
-                    amount=vip_price,
-                    token=user.vip_payment_token,
-                )
-            except Exception as exc:
-                logger.exception(
-                    "Error al ejecutar el cobro recurrente VIP para el usuario %s",
-                    user.id,
-                )
-                transaction_payload = {
-                    "reference": reference,
-                    "status": "ERROR",
-                    "error": str(exc),
-                }
-                status_result = Payment.PaymentStatus.DECLINED
-        else:
-            logger.warning(
-                "Usuario %s no tiene token de pago VIP; el cobro se marcará como fallido.",
-                user.id,
-            )
-            transaction_payload = {
-                "reference": reference,
-                "status": "ERROR",
-                "error": "missing_token",
-            }
-
-        payment = Payment.objects.create(
-            user=user,
-            amount=vip_price,
-            status=Payment.PaymentStatus.PENDING,
-            payment_type=Payment.PaymentType.VIP_SUBSCRIPTION,
-            transaction_id=reference,
-        )
-
-        final_status = PaymentService.apply_gateway_status(
-            payment, status_result, transaction_payload)
-
-        if final_status == Payment.PaymentStatus.APPROVED:
-            user.vip_failed_payments = 0
-            user.save(update_fields=['vip_failed_payments', 'updated_at'])
-            processed += 1
-            continue
-
-        if final_status == Payment.PaymentStatus.PENDING:
-            logger.info(
-                "Cobro VIP recurrente pendiente para el usuario %s; esperando confirmación de Wompi.",
-                user.id,
-            )
-            # No alteramos los contadores hasta recibir webhook/consulta.
-            continue
-
-        user.vip_failed_payments += 1
-        subscription_status = "PAST_DUE"
-        if user.vip_failed_payments >= 3:
-            user.vip_auto_renew = False
-            subscription_status = "CANCELLED"
-        user.save(update_fields=['vip_failed_payments',
-                  'vip_auto_renew', 'updated_at'])
-        try:
-            NotificationService.send_notification(
-                user=user,
-                event_code="VIP_RENEWAL_FAILED",
-                context={
-                    "failed_attempts": user.vip_failed_payments,
-                    "status": subscription_status,
-                },
-            )
-        except Exception:
-            logger.exception(
-                "No se pudo notificar fallo de renovación VIP para el usuario %s", user.id)
-    return f"Renovaciones intentadas: {processed}"
+    from finances.tasks import process_recurring_subscriptions as new_process_recurring_subscriptions
+    return new_process_recurring_subscriptions()
 
 
+# MIGRADO A finances.tasks.downgrade_expired_vips
+# Esta función se mantiene solo para compatibilidad temporal
 @shared_task
 def downgrade_expired_vips():
     """
+    DEPRECADO: Migrado a finances.tasks.downgrade_expired_vips
+
     Degrada usuarios VIP cuyo período expiró.
     """
-    today = timezone.now().date()
-    expired_users = CustomUser.objects.filter(
-        role=CustomUser.Role.VIP,
-        vip_expires_at__isnull=False,
-        vip_expires_at__lt=today,
-    )
-    count = 0
-    for user in expired_users:
-        expired_at = user.vip_expires_at
-        user.role = CustomUser.Role.CLIENT
-        user.vip_auto_renew = False
-        user.vip_active_since = None
-        user.vip_failed_payments = 0
-        user.save(update_fields=['role', 'vip_auto_renew',
-                  'vip_active_since', 'vip_failed_payments', 'updated_at'])
-        AuditLog.objects.create(
-            admin_user=None,
-            target_user=user,
-            action=AuditLog.Action.VIP_DOWNGRADED,
-            details=f"Usuario {user.id} degradado a CLIENT por expiración VIP.",
-        )
-        try:
-            NotificationService.send_notification(
-                user=user,
-                event_code="VIP_MEMBERSHIP_EXPIRED",
-                context={
-                    "expired_at": expired_at.isoformat() if expired_at else None,
-                },
-            )
-        except Exception:
-            logger.exception(
-                "No se pudo notificar expiración VIP para el usuario %s", user.id)
-        count += 1
-    return f"Usuarios degradados: {count}"
+    from finances.tasks import downgrade_expired_vips as new_downgrade_expired_vips
+    return new_downgrade_expired_vips()
 
 
 @shared_task
@@ -420,4 +301,19 @@ def cleanup_old_appointments(days_to_keep=730):
     if count:
         old.delete()
         logger.info("Limpieza de citas antiguas: %s registros eliminados (>%d días)", count, days_to_keep)
+    return {"deleted": count, "cutoff": cutoff.isoformat()}
+
+
+@shared_task
+def cleanup_webhook_events(days_to_keep=30):
+    """
+    Elimina eventos de webhook antiguos para mantener la tabla limpia.
+    """
+    from finances.models import WebhookEvent
+    cutoff = timezone.now() - timedelta(days=days_to_keep)
+    old_events = WebhookEvent.objects.filter(created_at__lt=cutoff)
+    count = old_events.count()
+    if count:
+        old_events.delete()
+        logger.info("Limpieza de WebhookEvents: %s registros eliminados (>%d días)", count, days_to_keep)
     return {"deleted": count, "cutoff": cutoff.isoformat()}

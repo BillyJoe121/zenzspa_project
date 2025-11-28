@@ -1,63 +1,27 @@
-import logging
-from datetime import timedelta
+"""
+DEPRECADO: Este archivo ha sido migrado a finances.subscriptions
 
-from django.db import transaction
-from django.utils import timezone
+Los servicios VIP han sido movidos al módulo finances para centralizar
+toda la lógica de pagos y suscripciones.
 
-from users.models import CustomUser
-from ..models import Payment, SubscriptionLog
+Para compatibilidad temporal, se re-exportan desde finances.subscriptions
+en spa/services/__init__.py, pero deberías actualizar tus imports a:
 
-logger = logging.getLogger(__name__)
+    from finances.subscriptions import VipMembershipService, VipSubscriptionService
 
+Este archivo será eliminado en una futura versión.
+"""
+import warnings
 
-class VipMembershipService:
-    """
-    Funciones auxiliares para manejar la extensión de membresías VIP.
-    """
+warnings.warn(
+    "spa.services.vip está deprecado. "
+    "Los servicios VIP han sido migrados a finances.subscriptions. "
+    "Actualiza tus imports a 'from finances.subscriptions import VipSubscriptionService'",
+    DeprecationWarning,
+    stacklevel=2
+)
 
-    @staticmethod
-    @transaction.atomic
-    def extend_membership(user, months):
-        if not user:
-            return None, None
-        months = int(months or 0)
-        if months <= 0:
-            return None, None
-        today = timezone.now().date()
-        start_date = today
-        if user.is_vip and user.vip_expires_at and user.vip_expires_at >= today:
-            start_date = user.vip_expires_at + timedelta(days=1)
-        end_date = start_date + timedelta(days=30 * months)
-        user.role = CustomUser.Role.VIP
-        update_fields = ['role', 'vip_expires_at', 'updated_at']
-        user.vip_expires_at = end_date
-        if not user.vip_active_since:
-            user.vip_active_since = start_date
-            update_fields.append('vip_active_since')
-        user.save(update_fields=update_fields)
-        return start_date, end_date
+# Re-exports para compatibilidad temporal
+from finances.subscriptions import VipMembershipService, VipSubscriptionService
 
-
-class VipSubscriptionService:
-    """
-    Servicio para manejar la lógica de negocio de las suscripciones VIP.
-    """
-    @staticmethod
-    @transaction.atomic
-    def fulfill_subscription(payment: Payment, months=1):
-        user = payment.user
-        start_date, end_date = VipMembershipService.extend_membership(
-            user, months)
-        if not start_date:
-            return
-        user.vip_auto_renew = True
-        user.vip_failed_payments = 0
-        user.save(update_fields=['vip_auto_renew', 'vip_expires_at', 'role',
-                  'vip_active_since', 'vip_failed_payments', 'updated_at'])
-        SubscriptionLog.objects.create(
-            user=user,
-            payment=payment,
-            start_date=start_date,
-            end_date=end_date
-        )
-
+__all__ = ["VipMembershipService", "VipSubscriptionService"]

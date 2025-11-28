@@ -12,7 +12,7 @@ from spa.models import Appointment
 logger = logging.getLogger(__name__)
 
 
-@shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+@shared_task(bind=True)
 def send_notification_task(self, log_id):
     from notifications.models import NotificationLog
 
@@ -45,12 +45,21 @@ def send_notification_task(self, log_id):
         log.status = NotificationLog.Status.FAILED
         log.error_message = str(exc)
         log.save(update_fields=["status", "error_message", "metadata", "updated_at"])
+
         if attempts >= max_attempts:
             metadata["dead_letter"] = True
             log.metadata = metadata
             log.save(update_fields=["metadata"])
             logger.error("Notificación %s enviada a DLQ después de %s intentos", log.id, attempts)
             return "dead_letter"
+
+        # Programar retry con backoff exponencial
+        backoff_seconds = min(60 * (2 ** (attempts - 1)), 15 * 60)
+        metadata["next_retry_at"] = (timezone.now() + timedelta(seconds=backoff_seconds)).isoformat()
+        log.metadata = metadata
+        log.status = NotificationLog.Status.QUEUED
+        log.save(update_fields=["status", "metadata", "updated_at"])
+
         fallback = metadata.get("fallback") or []
         fallback_used = metadata.get("fallback_attempted", False)
         if fallback and not fallback_used:
@@ -65,8 +74,10 @@ def send_notification_task(self, log_id):
                 channel_override=fallback[0],
                 fallback_channels=fallback[1:],
             )
-        logger.exception("Error enviando notificación %s", log.id)
-        raise
+
+        logger.exception("Error enviando notificación %s. Reintentando en %ss", log.id, backoff_seconds)
+        send_notification_task.apply_async(args=[str(log.id)], countdown=backoff_seconds)
+        return f"retry_scheduled_in_{backoff_seconds}s"
 
 
 def _dispatch_channel(log):

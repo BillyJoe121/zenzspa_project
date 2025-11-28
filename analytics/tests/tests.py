@@ -18,7 +18,7 @@ from analytics.views import DateFilterMixin, DashboardViewSet, KpiView, Analytic
 class KpiServiceTests(TestCase):
     def setUp(self):
         self.user = CustomUser.objects.create_user(
-            phone_number="+573001234567",
+            phone_number="+3157589548",
             email="test@example.com",
             first_name="Test",
             password="test123",
