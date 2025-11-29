@@ -37,24 +37,17 @@ class MarketplaceNotificationService:
             "order_id": str(order.id),
         }
 
-        if new_status == Order.OrderStatus.SHIPPED:
-            event_code = "ORDER_SHIPPED"
-            context.update({
-                "tracking_number": order.tracking_number or "Pendiente",
-                "estimated_delivery": order.estimated_delivery_date.strftime("%d de %B") if order.estimated_delivery_date else "Por confirmar",
-            })
-        elif new_status == Order.OrderStatus.DELIVERED:
-            event_code = "ORDER_DELIVERED"
-            context.update({
-                "delivery_date": order.delivered_at.strftime("%d de %B") if order.delivered_at else timezone.now().strftime("%d de %B"),
-            })
-        elif new_status == getattr(Order.OrderStatus, "READY_FOR_PICKUP", None):
+        if new_status == getattr(Order.OrderStatus, "READY_FOR_PICKUP", None):
             event_code = "ORDER_READY_FOR_PICKUP"
             context.update({
-                "store_address": getattr(settings, 'STORE_ADDRESS', 'Nuestro local'),
-                "store_hours": getattr(settings, 'STORE_HOURS', 'Lunes a Sábado 9AM - 6PM'),
-                "pickup_code": str(order.id)[-6:],  # Últimos 6 dígitos como código
+                "store_address": "Carrera 64 #1c-87, Cali",
+                "store_hours": "Lunes a Sábado 9am - 7pm",
+                "pickup_code": str(order.id)[-4:].upper()
             })
+        
+        # Si no es un estado con notificación configurada, salir
+        if not event_code:
+            return
 
         if event_code:
             try:
@@ -118,14 +111,12 @@ class MarketplaceNotificationService:
             logger.error("Error enviando alerta de stock bajo: %s", e)
 
     @classmethod
-    def send_return_processed(cls, order, amount):
+    def send_credit_issued(cls, order, amount, reason):
         """
-        Envía notificación de devolución procesada.
-        Usa el sistema centralizado de notificaciones con templates aprobados.
+        Envía notificación de crédito emitido (por devolución u otro motivo).
         """
         user = order.user
         if not user:
-            logger.warning("Orden %s no tiene usuario para notificar devolución", order.id)
             return
 
         try:
@@ -134,12 +125,12 @@ class MarketplaceNotificationService:
                 event_code="ORDER_CREDIT_ISSUED",
                 context={
                     "user_name": user.get_full_name() or user.first_name or "Cliente",
-                    "credit_amount": f"{amount:,.0f}",
-                    "reason": "Devolución de productos",
+                    "credit_amount": f"${amount:,.0f}",
+                    "reason": reason,
                     "order_id": str(order.id),
                 },
                 priority="high"
             )
-            logger.info("Notificación de devolución enviada: order_id=%s, amount=%s", order.id, amount)
+            logger.info("Notificación de crédito enviada: order_id=%s, amount=%s", order.id, amount)
         except Exception as e:
-            logger.error("Error enviando notificación de devolución %s: %s", order.id, e)
+            logger.error("Error enviando notificación de crédito %s: %s", order.id, e)

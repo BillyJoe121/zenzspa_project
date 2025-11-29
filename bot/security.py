@@ -368,6 +368,22 @@ class BotSecurityService:
         cache.delete(self.history_key)
         cache.delete(self.velocity_key)
 
+        # Notificar al usuario sobre el bloqueo
+        if self.user:
+            try:
+                from notifications.services import NotificationService
+                NotificationService.send_notification(
+                    user=self.user,
+                    event_code="BOT_AUTO_BLOCK",
+                    context={
+                        "user_name": self.user.first_name,
+                        "block_duration_hours": str(int(self.BLOCK_DURATION / 3600)),
+                        "reason": "Incumplimiento de normas de uso del chat."
+                    }
+                )
+            except Exception:
+                logger.exception("Error enviando notificación de bloqueo a usuario %s", self.user_id)
+
     def block_user(self, reason: str = "Bloqueo manual"):
         """Bloquea al usuario explícitamente."""
         logger.warning("Bloqueando usuario %s. Razón: %s", self.user_id, reason)

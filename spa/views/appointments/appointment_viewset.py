@@ -384,6 +384,22 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 if credit_amount > 0:
                     strike_credit = created_credits[0] if created_credits else None
                     response_payload['credit_generated'] = str(credit_amount)
+                    
+                    # Notificar al usuario sobre el crédito generado
+                    try:
+                        from notifications.services import NotificationService
+                        NotificationService.send_notification(
+                            user=user,
+                            event_code="ORDER_CREDIT_ISSUED",
+                            context={
+                                "user_name": user.first_name,
+                                "credit_amount": f"${credit_amount:,.0f}",
+                                "reason": f"Reembolso por cancelación de cita {appointment.id}",
+                                "order_id": str(appointment.id) # Reutilizamos el campo order_id para el ID de la cita
+                            }
+                        )
+                    except Exception:
+                        logger.exception("Error enviando notificación de crédito por cancelación de cita %s", appointment.id)
         if appointment.user == user:
             history = append_cancellation_strike(
                 user=appointment.user,
@@ -443,18 +459,16 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             "start_time": appointment.start_time.isoformat(),
             "credit_amount": str(credit_generated),
         }
-        event_code = "APPOINTMENT_NO_SHOW_PENALTY"
         if credit_generated > 0:
-            event_code = "APPOINTMENT_NO_SHOW_CREDIT"
-        try:
-            from notifications.services import NotificationService
-            NotificationService.send_notification(
-                user=appointment.user,
-                event_code=event_code,
-                context=notification_context,
-            )
-        except Exception:
-            logger.exception("No se pudo enviar notificación de No-Show para la cita %s", appointment.id)
+            try:
+                from notifications.services import NotificationService
+                NotificationService.send_notification(
+                    user=appointment.user,
+                    event_code="APPOINTMENT_NO_SHOW_CREDIT",
+                    context=notification_context,
+                )
+            except Exception:
+                logger.exception("No se pudo enviar notificación de No-Show para la cita %s", appointment.id)
 
         list_serializer = AppointmentListSerializer(appointment, context={'request': request})
         return Response(list_serializer.data, status=status.HTTP_200_OK)

@@ -40,12 +40,7 @@ TWILIO_TEMPLATE_MAP = {
         "variables": ["user_name", "start_time", "credit_amount"],
         "description": "No-show con crédito generado",
     },
-    "APPOINTMENT_NO_SHOW_PENALTY": {
-        # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000005",
-        "variables": ["user_name", "start_time"],
-        "description": "No-show sin reembolso",
-    },
+
 
     # ===== LISTA DE ESPERA =====
     "APPOINTMENT_WAITLIST_AVAILABLE": {
@@ -104,18 +99,7 @@ TWILIO_TEMPLATE_MAP = {
     },
 
     # ===== ÓRDENES MARKETPLACE =====
-    "ORDER_SHIPPED": {
-        # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000014",
-        "variables": ["user_name", "order_id", "tracking_number", "estimated_delivery"],
-        "description": "Orden enviada",
-    },
-    "ORDER_DELIVERED": {
-        # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000015",
-        "variables": ["user_name", "order_id", "delivery_date"],
-        "description": "Orden entregada",
-    },
+
     "ORDER_CANCELLED": {
         # TODO: Reemplazar con SID real
         "content_sid": "HX00000000000000000000000000000016",
@@ -130,18 +114,7 @@ TWILIO_TEMPLATE_MAP = {
     },
 
     # ===== DEVOLUCIONES =====
-    "ORDER_RETURN_REQUESTED": {
-        # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000018",
-        "variables": ["user_name", "order_id", "return_reason"],
-        "description": "Solicitud de devolución recibida",
-    },
-    "ORDER_RETURN_APPROVED": {
-        # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000019",
-        "variables": ["user_name", "order_id", "refund_amount"],
-        "description": "Devolución aprobada",
-    },
+
     "ORDER_CREDIT_ISSUED": {
         # TODO: Reemplazar con SID real
         "content_sid": "HX00000000000000000000000000000020",

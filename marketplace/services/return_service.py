@@ -143,7 +143,7 @@ class ReturnService:
 
     @staticmethod
     def _notify_return_processed(order, credited_amount):
-        MarketplaceNotificationService.send_return_processed(order, credited_amount)
+        MarketplaceNotificationService.send_credit_issued(order, credited_amount, "Devolución de productos")
 
     @staticmethod
     def _log_return_audit(order, processed_by, credited_amount, refunded_items):
