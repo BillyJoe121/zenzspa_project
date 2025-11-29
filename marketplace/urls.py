@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ProductViewSet, CartViewSet, OrderViewSet # <--- Importado
+from .views import ProductViewSet, CartViewSet, OrderViewSet, ProductReviewViewSet
 
 router = DefaultRouter()
 
@@ -12,6 +12,9 @@ router.register(r'cart', CartViewSet, basename='cart')
 
 # Endpoints privados de solo lectura para que el usuario vea su historial de órdenes
 router.register(r'orders', OrderViewSet, basename='order')
+
+# Endpoints para reseñas de productos
+router.register(r'reviews', ProductReviewViewSet, basename='review')
 
 
 urlpatterns = [

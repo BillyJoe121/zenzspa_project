@@ -376,7 +376,7 @@ class TestSerializers:
         }
         serializer = CheckoutSerializer(data=data)
         assert not serializer.is_valid()
-        assert 'al menos 10 caracteres' in str(serializer.errors)
+        assert 'al menos 15 caracteres' in str(serializer.errors)
 
         # Valid delivery
         data = {

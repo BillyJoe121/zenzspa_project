@@ -14,7 +14,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from .models import Product, Cart, CartItem, Order
+from .models import Product, Cart, CartItem, Order, ProductReview
 from .serializers import (
     ProductListSerializer,
     ProductDetailSerializer,
@@ -25,6 +25,10 @@ from .serializers import (
     CheckoutSerializer,
     ReturnRequestSerializer,
     ReturnDecisionSerializer,
+    ProductReviewSerializer,
+    ProductReviewCreateSerializer,
+    ProductReviewUpdateSerializer,
+    AdminReviewResponseSerializer,
 )
 from .services import OrderCreationService, ReturnService
 
@@ -32,6 +36,13 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     """
     ViewSet para ver el catálogo de productos.
     Permite listar todos los productos activos y ver el detalle de uno solo.
+
+    Búsqueda disponible:
+    - ?search=término : Busca en nombre y descripción del producto
+    - ?category=uuid : Filtra por categoría
+    - ?min_price=100 : Precio mínimo
+    - ?max_price=500 : Precio máximo
+    - ?in_stock=true : Solo productos con stock disponible
     """
     permission_classes = [permissions.AllowAny]
     queryset = (
@@ -48,6 +59,50 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
             return ProductDetailSerializer
         return ProductListSerializer
 
+    def get_queryset(self):
+        """
+        Filtra productos según parámetros de búsqueda.
+        """
+        queryset = super().get_queryset()
+
+        # Búsqueda por texto en nombre y descripción
+        search = self.request.query_params.get('search', None)
+        if search:
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(name__icontains=search) | Q(description__icontains=search)
+            )
+
+        # Filtro por categoría
+        category = self.request.query_params.get('category', None)
+        if category:
+            queryset = queryset.filter(category_id=category)
+
+        # Filtro por rango de precio
+        min_price = self.request.query_params.get('min_price', None)
+        max_price = self.request.query_params.get('max_price', None)
+
+        if min_price or max_price:
+            # Filtrar productos que tengan al menos una variante en el rango
+            from django.db.models import Min
+            queryset = queryset.annotate(lowest_price=Min('variants__price'))
+
+            if min_price:
+                queryset = queryset.filter(lowest_price__gte=min_price)
+            if max_price:
+                queryset = queryset.filter(lowest_price__lte=max_price)
+
+        # Filtro por disponibilidad de stock
+        in_stock = self.request.query_params.get('in_stock', None)
+        if in_stock and in_stock.lower() in ['true', '1', 'yes']:
+            # Solo productos con al menos una variante con stock disponible
+            from django.db.models import Sum, F
+            queryset = queryset.annotate(
+                total_available=Sum(F('variants__stock') - F('variants__reserved_stock'))
+            ).filter(total_available__gt=0)
+
+        return queryset
+
     @action(detail=True, methods=['get'])
     def variants(self, request, pk=None):
         """
@@ -56,6 +111,17 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
         """
         product = self.get_object()
         serializer = ProductVariantSerializer(product.variants.all(), many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def reviews(self, request, pk=None):
+        """
+        Lista las reseñas aprobadas de un producto.
+        GET /api/v1/products/{id}/reviews/
+        """
+        product = self.get_object()
+        reviews = product.reviews.filter(is_approved=True).select_related('user')
+        serializer = ProductReviewSerializer(reviews, many=True)
         return Response(serializer.data)
 
 class CartViewSet(viewsets.GenericViewSet):
@@ -308,3 +374,87 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
         except ValueError as exc:
             return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(OrderSerializer(updated_order).data, status=status.HTTP_200_OK)
+
+
+class ProductReviewViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gestionar reseñas de productos.
+    - Los usuarios autenticados pueden crear, ver, actualizar y eliminar sus propias reseñas.
+    - Los administradores pueden moderar y responder a cualquier reseña.
+    """
+    serializer_class = ProductReviewSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def get_queryset(self):
+        """
+        Los usuarios regulares ven solo reseñas aprobadas.
+        Los administradores pueden ver todas las reseñas.
+        """
+        user = self.request.user
+        queryset = ProductReview.objects.select_related('user', 'product')
+
+        # Filtrar por producto si se especifica
+        product_id = self.request.query_params.get('product', None)
+        if product_id:
+            queryset = queryset.filter(product_id=product_id)
+
+        # Los admins ven todas, los demás solo las aprobadas
+        if not (user.is_authenticated and getattr(user, 'role', None) in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]):
+            queryset = queryset.filter(is_approved=True)
+
+        return queryset
+
+    def get_serializer_class(self):
+        """Selecciona el serializador según la acción."""
+        if self.action == 'create':
+            return ProductReviewCreateSerializer
+        elif self.action in ['update', 'partial_update']:
+            return ProductReviewUpdateSerializer
+        return ProductReviewSerializer
+
+    def perform_create(self, serializer):
+        """Asigna el usuario actual a la reseña."""
+        serializer.save(user=self.request.user)
+
+    def perform_update(self, serializer):
+        """Solo permite actualizar reseñas propias."""
+        if serializer.instance.user != self.request.user:
+            raise PermissionError("No puedes editar reseñas de otros usuarios.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        """Solo permite eliminar reseñas propias o ser admin."""
+        user = self.request.user
+        is_admin = getattr(user, 'role', None) in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]
+
+        if instance.user != user and not is_admin:
+            raise PermissionError("No puedes eliminar reseñas de otros usuarios.")
+        instance.delete()
+
+    @action(detail=True, methods=['post'], permission_classes=[DomainIsAdminUser])
+    def respond(self, request, pk=None):
+        """
+        Permite a los administradores responder a una reseña.
+        POST /api/v1/reviews/{id}/respond/
+        Body: { "admin_response": "Gracias por tu comentario...", "is_approved": true }
+        """
+        review = self.get_object()
+        serializer = AdminReviewResponseSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        review.admin_response = serializer.validated_data['admin_response']
+        if 'is_approved' in serializer.validated_data:
+            review.is_approved = serializer.validated_data['is_approved']
+        review.save()
+
+        return Response(ProductReviewSerializer(review).data, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
+    def my_reviews(self, request):
+        """
+        Lista todas las reseñas del usuario autenticado.
+        GET /api/v1/reviews/my_reviews/
+        """
+        reviews = ProductReview.objects.filter(user=request.user).select_related('product')
+        serializer = self.get_serializer(reviews, many=True)
+        return Response(serializer.data)

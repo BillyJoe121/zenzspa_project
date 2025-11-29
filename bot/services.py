@@ -325,58 +325,139 @@ class GeminiService:
                 logger.critical("google-genai no instalado.")
                 self.client = None
 
-    def generate_response(self, prompt_text: str) -> tuple[dict, dict]:
+    def generate_response(self, prompt_text: str, max_retries=2) -> tuple[dict, dict]:
         """
-        Genera respuesta y la parsea como JSON.
+        Genera respuesta y la parsea como JSON con sistema de retry inteligente.
         Retorna (response_dict, metadata_dict).
+
+        Args:
+            prompt_text: El prompt completo a enviar a Gemini
+            max_retries: Número máximo de reintentos en caso de error (default: 2)
         """
         if not self.api_key or not self.client:
             return self._fallback_error("Error de configuración API Key")
 
-        try:
-            from google.genai import types
-            
-            # Configuración para forzar JSON
-            config = types.GenerateContentConfig(
-                temperature=0.3, # Baja temperatura para precisión en JSON
-                response_mime_type="application/json",
-                max_output_tokens=1000,
-            )
-            
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt_text,
-                config=config,
-            )
-            
-            # Parsear JSON
+        last_error = None
+
+        # Sistema de retry con backoff exponencial
+        for attempt in range(max_retries + 1):
             try:
-                response_json = json.loads(response.text)
-            except json.JSONDecodeError:
-                logger.error("Gemini no devolvió JSON válido: %s", response.text)
-                # Intentar recuperar si hay texto plano
-                return {
-                    "reply_to_user": response.text,
-                    "analysis": {"action": "REPLY", "toxicity_level": 0, "customer_score": 0}
-                }, {"source": "fallback_json_error"}
+                from google.genai import types
+                import time
 
-            # Metadata de tokens
-            usage = getattr(response, 'usage_metadata', None)
-            tokens = 0
-            if usage:
-                tokens = getattr(usage, 'total_token_count', 0)
+                # Configuración para forzar JSON
+                config = types.GenerateContentConfig(
+                    temperature=0.3, # Baja temperatura para precisión en JSON
+                    response_mime_type="application/json",
+                    max_output_tokens=1000,
+                )
 
-            return response_json, {
-                "source": "gemini-json",
-                "tokens": tokens
-            }
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt_text,
+                    config=config,
+                )
 
-        except Exception as e:
-            logger.exception("Error en GeminiService")
-            return self._fallback_error(str(e))
+                # Parsear JSON
+                try:
+                    response_json = json.loads(response.text)
+                except json.JSONDecodeError as json_err:
+                    logger.error("Gemini no devolvió JSON válido (intento %d/%d): %s", attempt + 1, max_retries + 1, response.text)
+
+                    # Si es el último intento, intentar recuperar con texto plano
+                    if attempt == max_retries:
+                        return {
+                            "reply_to_user": response.text if response.text else "Lo siento, no pude generar una respuesta válida.",
+                            "analysis": {"action": "REPLY", "toxicity_level": 0, "customer_score": 20, "intent": "INFO"}
+                        }, {"source": "fallback_json_error", "raw_response": response.text[:200]}
+
+                    # Reintentar
+                    time.sleep(0.5 * (attempt + 1))  # Backoff incremental
+                    last_error = json_err
+                    continue
+
+                # Metadata de tokens
+                usage = getattr(response, 'usage_metadata', None)
+                tokens = 0
+                if usage:
+                    tokens = getattr(usage, 'total_token_count', 0)
+
+                # Éxito - retornar respuesta
+                return response_json, {
+                    "source": "gemini-json",
+                    "tokens": tokens,
+                    "attempt": attempt + 1
+                }
+
+            except Exception as e:
+                last_error = e
+                logger.warning("Error en Gemini (intento %d/%d): %s", attempt + 1, max_retries + 1, str(e))
+
+                # Si es el último intento, usar fallback
+                if attempt == max_retries:
+                    break
+
+                # Backoff exponencial: 1s, 2s, 4s...
+                time.sleep(2 ** attempt)
+
+        # Si llegamos aquí, todos los reintentos fallaron
+        logger.error("Gemini falló después de %d intentos", max_retries + 1)
+        return self._fallback_error(str(last_error) if last_error else "Error desconocido")
 
     def _fallback_error(self, reason):
+        """
+        Fallback mejorado cuando Gemini falla.
+        Proporciona respuestas contextuales según el tipo de error.
+        """
+        import re
+
+        # Intentar proporcionar respuesta contextual según el tipo de error
+        fallback_message = "Lo siento, estoy experimentando dificultades técnicas en este momento. "
+
+        # Mensajes específicos según tipo de error
+        if "timeout" in reason.lower():
+            fallback_message += "El servicio está tardando más de lo habitual. Por favor, intenta nuevamente en unos momentos."
+        elif "quota" in reason.lower() or "limit" in reason.lower():
+            fallback_message += "Estamos procesando muchas consultas. Por favor, intenta de nuevo en unos minutos."
+        elif "auth" in reason.lower() or "api" in reason.lower() or "key" in reason.lower():
+            fallback_message += "Hay un problema con la configuración del servicio. Nuestro equipo está trabajando en ello."
+        elif "network" in reason.lower() or "connection" in reason.lower():
+            fallback_message += "Estamos teniendo problemas de conectividad. Por favor, intenta nuevamente."
+        else:
+            # Mensaje genérico más amigable
+            fallback_message += "Puedes intentar reformular tu pregunta o, si es urgente, solicitar hablar con una persona escribiendo 'quiero hablar con alguien'."
+
+        # Registrar el error para monitoreo
+        logger.error("Gemini fallback activado: %s", reason)
+
         return {
-            "reply_to_user": "Lo siento, tengo problemas técnicos momentáneos.",
-            "analysis": {"action": "REPLY", "toxicity_level": 0, "customer_score": 0}
-        }, {"source": "error", "reason": reason}
+            "reply_to_user": fallback_message,
+            "analysis": {
+                "action": "REPLY",
+                "toxicity_level": 0,
+                "customer_score": 20,  # Score bajo pero no cero para registrar interacción
+                "intent": "TECHNICAL_ERROR",
+                "missing_info": None
+            }
+        }, {
+            "source": "fallback_error",
+            "reason": reason,
+            "error_type": self._classify_error(reason)
+        }
+
+    def _classify_error(self, reason):
+        """Clasifica el tipo de error para métricas."""
+        reason_lower = reason.lower()
+
+        if "timeout" in reason_lower:
+            return "timeout"
+        elif "quota" in reason_lower or "limit" in reason_lower or "429" in reason_lower:
+            return "rate_limit"
+        elif "auth" in reason_lower or "401" in reason_lower or "403" in reason_lower:
+            return "authentication"
+        elif "network" in reason_lower or "connection" in reason_lower:
+            return "network"
+        elif "json" in reason_lower:
+            return "json_parse"
+        else:
+            return "unknown"

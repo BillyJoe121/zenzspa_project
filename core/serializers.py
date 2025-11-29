@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 from rest_framework import serializers
 
+from .models import GlobalSettings
+
 
 class DynamicFieldsModelSerializer(serializers.ModelSerializer):
     """
@@ -178,3 +180,82 @@ class DataMaskingMixin:
         else:
             masked_local = f"{local[0]}***{local[-1]}"
         return f"{masked_local}@{domain}"
+
+
+class GlobalSettingsSerializer(ReadOnlyModelSerializer):
+    """
+    Serializer completo de solo lectura para GlobalSettings.
+
+    Expone todos los campos relevantes del modelo de configuración global
+    para que puedan ser consultados por el frontend y otros servicios.
+
+    Los campos sensibles (comisiones, pagos al desarrollador) se ocultan
+    para usuarios no-ADMIN mediante role_based_fields.
+    """
+
+    # Campo calculado para mostrar el nombre legible de la política de crédito
+    no_show_credit_policy_display = serializers.CharField(
+        source='get_no_show_credit_policy_display',
+        read_only=True
+    )
+
+    # Información del servicio de recompensa VIP
+    loyalty_voucher_service_name = serializers.CharField(
+        source='loyalty_voucher_service.name',
+        read_only=True,
+        allow_null=True
+    )
+
+    class Meta:
+        model = GlobalSettings
+        fields = [
+            # Identificación
+            'id',
+            'created_at',
+            'updated_at',
+
+            # Capacidad y programación
+            'low_supervision_capacity',
+            'appointment_buffer_time',
+            'timezone_display',
+
+            # Política de pagos y anticipos
+            'advance_payment_percentage',
+            'advance_expiration_minutes',
+
+            # Membresía VIP
+            'vip_monthly_price',
+            'loyalty_months_required',
+            'loyalty_voucher_service',
+            'loyalty_voucher_service_name',
+
+            # Créditos y devoluciones
+            'credit_expiration_days',
+            'return_window_days',
+            'no_show_credit_policy',
+            'no_show_credit_policy_display',
+
+            # Lista de espera
+            'waitlist_enabled',
+            'waitlist_ttl_minutes',
+
+            # Notificaciones
+            'quiet_hours_start',
+            'quiet_hours_end',
+
+            # Comisiones del desarrollador (solo ADMIN)
+            'developer_commission_percentage',
+            'developer_payout_threshold',
+            'developer_in_default',
+            'developer_default_since',
+        ]
+
+        # Campos sensibles solo visibles para ADMIN
+        role_based_fields = {
+            'ADMIN': [
+                'developer_commission_percentage',
+                'developer_payout_threshold',
+                'developer_in_default',
+                'developer_default_since',
+            ]
+        }

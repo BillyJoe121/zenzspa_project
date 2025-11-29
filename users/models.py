@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
 from django.conf import settings
 from cryptography.fernet import Fernet
+from fernet_fields import EncryptedTextField
 
 from core.models import BaseModel
 
@@ -107,12 +108,11 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
         verbose_name="Renovación automática VIP",
         help_text="Indica si la suscripción VIP debe intentarse renovar automáticamente.",
     )
-    vip_payment_token = models.CharField(
-        max_length=512, # Aumentado para soportar token encriptado
+    vip_payment_token = EncryptedTextField(
         blank=True,
         null=True,
         verbose_name="Token de pago recurrente (Encriptado)",
-        help_text="Token seguro para cobrar renovaciones automáticas.",
+        help_text="Token seguro para cobrar renovaciones automáticas. Encriptado con Fernet.",
     )
     vip_failed_payments = models.PositiveIntegerField(
         default=0,
@@ -172,58 +172,18 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
         ]
 
     def clean(self):
+        """
+        Validaciones de dominio del modelo CustomUser.
+
+        Verifica que los campos cumplan las reglas de negocio antes de guardar.
+        """
         super().clean()
-        self.vip_payment_token = self._normalize_vip_payment_token(self.vip_payment_token)
         if self.phone_number:
             digits = self.phone_number.replace("+", "")
             if not digits.isdigit() or len(digits) < 10 or len(digits) > 15:
                 raise ValidationError(
                     {'phone_number': 'Número de teléfono inválido. Usa formato internacional (+573157589548).'}
                 )
-
-    def save(self, *args, **kwargs):
-        self.vip_payment_token = self._normalize_vip_payment_token(self.vip_payment_token)
-        super().save(*args, **kwargs)
-
-    @staticmethod
-    def _normalize_vip_payment_token(value):
-        if not value:
-            return None
-        # Si ya parece encriptado (largo y caracteres base64), lo dejamos
-        if len(str(value)) > 50 and "=" in str(value):
-             return value
-             
-        if isinstance(value, str):
-            token = value.strip()
-        else:
-            token = str(value).strip()
-        if not token:
-            return None
-            
-        # Si es numérico puro, es un token raw que debemos encriptar
-        if token.isdigit():
-             # Encriptar
-             try:
-                 key = getattr(settings, 'FERNET_KEY', None)
-                 if key:
-                     f = Fernet(key)
-                     return f.encrypt(token.encode()).decode()
-             except Exception:
-                 pass # Fallback si no hay key
-        
-        return token
-
-    def get_decrypted_payment_token(self):
-        if not self.vip_payment_token:
-            return None
-        try:
-            key = getattr(settings, 'FERNET_KEY', None)
-            if not key:
-                return self.vip_payment_token # Return raw if no key configured
-            f = Fernet(key)
-            return f.decrypt(self.vip_payment_token.encode()).decode()
-        except Exception:
-            return self.vip_payment_token # Return raw if decryption fails (legacy data)
 
 
     @property

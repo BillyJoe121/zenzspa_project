@@ -9,6 +9,7 @@ from .models import (
     Order,
     OrderItem,
     InventoryMovement,
+    ProductReview,
 )
 
 
@@ -85,3 +86,25 @@ class InventoryMovementAdmin(admin.ModelAdmin):
     list_filter = ('movement_type',)
     search_fields = ('variant__sku', 'reference_order__id')
     raw_id_fields = ('variant', 'reference_order', 'created_by')
+
+
+@admin.register(ProductReview)
+class ProductReviewAdmin(admin.ModelAdmin):
+    list_display = ('product', 'user', 'rating', 'is_verified_purchase', 'is_approved', 'created_at')
+    list_filter = ('rating', 'is_verified_purchase', 'is_approved', 'created_at')
+    search_fields = ('product__name', 'user__email', 'title', 'comment')
+    raw_id_fields = ('product', 'user', 'order')
+    readonly_fields = ('is_verified_purchase', 'created_at', 'updated_at')
+
+    fieldsets = (
+        ('Información Básica', {
+            'fields': ('product', 'user', 'order', 'rating', 'title', 'comment')
+        }),
+        ('Estado', {
+            'fields': ('is_verified_purchase', 'is_approved', 'admin_response')
+        }),
+        ('Fechas', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )

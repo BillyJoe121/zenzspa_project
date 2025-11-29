@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser, BlockedPhoneNumber
+from .models import BlockedDevice, BlockedPhoneNumber, CustomUser
 
 
 class CustomUserAdmin(UserAdmin):
@@ -36,3 +36,38 @@ admin.site.register(CustomUser, CustomUserAdmin)
 class BlockedPhoneNumberAdmin(admin.ModelAdmin):
     list_display = ("phone_number", "notes", "created_at")
     search_fields = ("phone_number",)
+
+
+@admin.register(BlockedDevice)
+class BlockedDeviceAdmin(admin.ModelAdmin):
+    """
+    Panel de administración para dispositivos bloqueados.
+
+    Permite a los administradores ver, bloquear y desbloquear dispositivos
+    basándose en su fingerprint (hash del User-Agent).
+    """
+    list_display = ("device_fingerprint_short", "user", "is_blocked", "reason", "ip_address", "created_at")
+    list_filter = ("is_blocked", "created_at")
+    search_fields = ("device_fingerprint", "user__phone_number", "user__email", "ip_address", "reason")
+    readonly_fields = ("device_fingerprint", "user_agent", "created_at", "updated_at")
+
+    fieldsets = (
+        ("Información del Dispositivo", {
+            "fields": ("device_fingerprint", "user_agent", "ip_address"),
+        }),
+        ("Estado del Bloqueo", {
+            "fields": ("is_blocked", "reason"),
+        }),
+        ("Asociación con Usuario", {
+            "fields": ("user",),
+        }),
+        ("Metadatos", {
+            "fields": ("created_at", "updated_at"),
+            "classes": ("collapse",),
+        }),
+    )
+
+    def device_fingerprint_short(self, obj):
+        """Muestra una versión corta del fingerprint para legibilidad."""
+        return f"{obj.device_fingerprint[:16]}..."
+    device_fingerprint_short.short_description = "Fingerprint"

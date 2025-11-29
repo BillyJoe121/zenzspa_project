@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.db.models import (
     Sum,
     Avg,
@@ -18,6 +19,7 @@ from django.utils import timezone
 from spa.models import Appointment, AppointmentItem, StaffAvailability, Payment, ClientCredit
 from marketplace.models import Order
 from users.models import CustomUser
+from .decorators import log_performance
 
 
 class KpiService:
@@ -31,8 +33,9 @@ class KpiService:
         self.end_date = end_date
         self.staff_id = staff_id
         self.service_category_id = service_category_id
-        self.tz = ZoneInfo("America/Bogota")
+        self.tz = ZoneInfo(settings.TIME_ZONE)  # Usar timezone de settings
 
+    @log_performance(threshold_seconds=0.5)
     def get_business_kpis(self):
         return {
             "conversion_rate": self._get_conversion_rate(),
@@ -271,30 +274,47 @@ class KpiService:
             "recovery_rate": rate,
         }
 
+    @log_performance(threshold_seconds=1.0)
     def get_sales_details(self):
+        """
+        Retorna detalles de ventas con optimización de queries.
+        OPTIMIZADO: Usa select_related para evitar queries N+1.
+        """
         orders = (
             self._order_queryset()
-            .select_related("user")
+            .select_related("user")  # Ya optimizado
+            .prefetch_related("items__variant__product")  # Optimizar acceso a items
             .order_by("-created_at")
         )
         details = []
         for order in orders:
+            # Calcular items sin queries adicionales (ya están prefetched)
+            item_count = sum(1 for _ in order.items.all())
+
             details.append(
                 {
                     "order_id": str(order.id),
                     "user": order.user.get_full_name() if order.user else "",
+                    "user_email": order.user.email if order.user else "",
                     "status": order.status,
                     "total_amount": float(order.total_amount),
+                    "item_count": item_count,
+                    "delivery_option": order.delivery_option,
                     "created_at": order.created_at.astimezone(self.tz).isoformat(),
                 }
             )
         return details
 
     def get_debt_rows(self):
+        """
+        Retorna filas de deuda con optimización de queries.
+        OPTIMIZADO: Usa select_related y prefetch_related para evitar N+1.
+        """
         base_qs = Payment.objects.filter(
             created_at__date__gte=self.start_date,
             created_at__date__lte=self.end_date,
-        ).select_related("user")
+        ).select_related("user", "appointment")  # Optimizar relaciones
+
         debt_related = base_qs.filter(
             Q(status__in=[
                 Payment.PaymentStatus.PENDING,
@@ -307,24 +327,35 @@ class KpiService:
                 updated_at__date__gte=self.start_date,
                 updated_at__date__lte=self.end_date,
             )
-        )
+        ).order_by("-created_at")  # Añadir ordenamiento para consistencia
+
         rows = []
         for payment in debt_related:
-            rows.append(
-                {
-                    "payment_id": str(payment.id),
-                    "user": payment.user.get_full_name() if payment.user else "",
-                    "status": payment.status,
-                    "amount": float(payment.amount),
-                    "created_at": payment.created_at.astimezone(self.tz).isoformat(),
-                    "updated_at": payment.updated_at.astimezone(self.tz).isoformat(),
-                }
-            )
+            row_data = {
+                "payment_id": str(payment.id),
+                "user": payment.user.get_full_name() if payment.user else "",
+                "user_email": payment.user.email if payment.user else "",
+                "user_phone": payment.user.phone_number if payment.user else "",
+                "status": payment.status,
+                "payment_type": payment.payment_type,
+                "amount": float(payment.amount),
+                "created_at": payment.created_at.astimezone(self.tz).isoformat(),
+                "updated_at": payment.updated_at.astimezone(self.tz).isoformat(),
+            }
+
+            # Información de cita si existe (ya está select_related)
+            if payment.appointment:
+                row_data["appointment_id"] = str(payment.appointment.id)
+                row_data["appointment_date"] = payment.appointment.start_time.astimezone(self.tz).isoformat()
+
+            rows.append(row_data)
+
         return rows
 
     def _get_total_revenue(self):
         return self._payment_queryset().aggregate(total=Sum("amount"))["total"] or Decimal("0")
 
+    @log_performance(threshold_seconds=0.5)
     def get_time_series(self, interval="day"):
         """
         Retorna datos de series de tiempo para gráficos.
@@ -382,3 +413,272 @@ class KpiService:
         rows.append(
             ("debt_recovery_rate", debt_metrics.get("recovery_rate", 0)))
         return rows
+
+    # --- 360 Business Intelligence (Option C) --------------------------------
+
+    def get_growth_metrics(self):
+        """
+        Calcula crecimiento WoW (Week over Week) o MoM (Month over Month)
+        dependiendo del rango de fechas seleccionado.
+        OPTIMIZADO: Usa una sola query con CASE WHEN en lugar de duplicar KpiService.
+        """
+        from django.db.models import Case, When, Value, CharField
+        
+        # Determinar periodo anterior
+        duration = self.end_date - self.start_date
+        previous_start = self.start_date - duration - timedelta(days=1)
+        previous_end = self.end_date - duration - timedelta(days=1)
+
+        # Query única para ambos periodos - REVENUE
+        revenue_data = (
+            Payment.objects
+            .filter(
+                Q(created_at__date__gte=previous_start, created_at__date__lte=previous_end) |
+                Q(created_at__date__gte=self.start_date, created_at__date__lte=self.end_date),
+                status__in=[Payment.PaymentStatus.APPROVED, Payment.PaymentStatus.PAID_WITH_CREDIT]
+            )
+            .annotate(
+                period=Case(
+                    When(created_at__date__gte=self.start_date, then=Value('current')),
+                    default=Value('previous'),
+                    output_field=CharField()
+                )
+            )
+            .values('period')
+            .annotate(total=Coalesce(Sum('amount'), Decimal('0')))
+        )
+        
+        revenue_dict = {item['period']: item['total'] for item in revenue_data}
+        current_revenue = revenue_dict.get('current', Decimal('0'))
+        previous_revenue = revenue_dict.get('previous', Decimal('0'))
+
+        # Query única para ambos periodos - APPOINTMENTS
+        appt_data = (
+            Appointment.objects
+            .filter(
+                Q(start_time__date__gte=previous_start, start_time__date__lte=previous_end) |
+                Q(start_time__date__gte=self.start_date, start_time__date__lte=self.end_date)
+            )
+            .annotate(
+                period=Case(
+                    When(start_time__date__gte=self.start_date, then=Value('current')),
+                    default=Value('previous'),
+                    output_field=CharField()
+                )
+            )
+            .values('period')
+            .annotate(count=Count('id'))
+        )
+        
+        appt_dict = {item['period']: item['count'] for item in appt_data}
+        current_appointments = appt_dict.get('current', 0)
+        previous_appointments = appt_dict.get('previous', 0)
+
+        def calculate_growth(current, previous):
+            if previous == 0:
+                return 100.0 if current > 0 else 0.0
+            return float(((current - previous) / previous) * 100)
+
+        return {
+            "revenue": {
+                "current": float(current_revenue),
+                "previous": float(previous_revenue),
+                "growth_rate": calculate_growth(current_revenue, previous_revenue)
+            },
+            "appointments": {
+                "current": current_appointments,
+                "previous": previous_appointments,
+                "growth_rate": calculate_growth(current_appointments, previous_appointments)
+            }
+        }
+
+    def get_retention_metrics(self):
+        """
+        Análisis de Cohortes simplificado:
+        - Ingresos de clientes nuevos vs recurrentes en el periodo.
+        OPTIMIZADO: Usa agregación en DB en lugar de iterar en memoria.
+        """
+        # Usuario nuevo = creado en este periodo
+        new_user_revenue = (
+            self._payment_queryset()
+            .filter(user__date_joined__date__gte=self.start_date)
+            .aggregate(total=Coalesce(Sum('amount'), Decimal('0')))['total']
+        )
+        
+        # Usuario recurrente = creado antes de este periodo
+        returning_user_revenue = (
+            self._payment_queryset()
+            .filter(user__date_joined__date__lt=self.start_date)
+            .aggregate(total=Coalesce(Sum('amount'), Decimal('0')))['total']
+        )
+        
+        total = new_user_revenue + returning_user_revenue
+        
+        return {
+            "revenue_breakdown": {
+                "new_users": float(new_user_revenue),
+                "returning_users": float(returning_user_revenue),
+                "total": float(total),
+                "new_users_pct": float(new_user_revenue / total * 100) if total > 0 else 0
+            }
+        }
+
+    def get_heatmap_data(self):
+        """
+        Retorna datos para mapa de calor: Ocupación por Día de Semana vs Hora.
+        """
+        appointments = self._appointment_queryset()
+        
+        # Inicializar matriz 7 dias x 24 horas (o rango operativo)
+        # 1=Lunes, 7=Domingo
+        heatmap = defaultdict(lambda: defaultdict(int))
+        
+        for appt in appointments:
+            # Convertir a zona horaria local
+            start_local = appt.start_time.astimezone(self.tz)
+            day_of_week = start_local.isoweekday() # 1-7
+            hour = start_local.hour
+            
+            heatmap[day_of_week][hour] += 1
+            
+        # Formatear para frontend: lista de {day, hour, value}
+        data = []
+        for day in range(1, 8):
+            for hour in range(6, 22): # Asumimos horario operativo 6am-10pm para reducir payload
+                data.append({
+                    "day": day,
+                    "hour": hour,
+                    "value": heatmap[day][hour]
+                })
+        return data
+
+    @log_performance(threshold_seconds=0.3)
+    def get_staff_leaderboard(self):
+        """
+        Ranking de staff por ingresos y citas.
+        OPTIMIZADO: Usa una sola query con agregación en lugar de N+1.
+        """
+        # Construir query base con filtros
+        base_query = Appointment.objects.filter(
+            start_time__date__gte=self.start_date,
+            start_time__date__lte=self.end_date,
+            status=Appointment.AppointmentStatus.COMPLETED
+        )
+        
+        # Aplicar filtro de staff si existe
+        if self.staff_id:
+            base_query = base_query.filter(staff_member_id=self.staff_id)
+        
+        # Agregar por staff member con una sola query
+        leaderboard_data = (
+            base_query
+            .values('staff_member__id', 'staff_member__first_name', 'staff_member__last_name')
+            .annotate(
+                revenue=Coalesce(Sum('price_at_purchase'), Decimal('0')),
+                appointments=Count('id')
+            )
+            .order_by('-revenue')
+        )
+        
+        # Formatear resultados
+        leaderboard = [
+            {
+                "staff_id": str(item['staff_member__id']),
+                "name": f"{item['staff_member__first_name']} {item['staff_member__last_name']}".strip(),
+                "revenue": float(item['revenue']),
+                "appointments": item['appointments']
+            }
+            for item in leaderboard_data
+            if item['staff_member__id']  # Filtrar nulls
+        ]
+        
+        return leaderboard
+
+    def get_waitlist_metrics(self):
+        """
+        Métricas de demanda insatisfecha.
+        """
+        from spa.models import WaitlistEntry
+        
+        entries = WaitlistEntry.objects.filter(
+            desired_date__gte=self.start_date,
+            desired_date__lte=self.end_date
+        )
+        
+        total_entries = entries.count()
+        by_status = entries.values('status').annotate(count=Count('id'))
+        
+        # Estimar valor perdido (Demanda no atendida)
+        # Asumimos promedio de precio de servicios solicitados
+        waiting_entries = entries.filter(status=WaitlistEntry.Status.WAITING)
+        lost_revenue_estimate = 0
+        for entry in waiting_entries:
+            # Promedio de precio de servicios en la entry
+            avg_price = entry.services.aggregate(avg=Avg('price'))['avg'] or 0
+            lost_revenue_estimate += float(avg_price)
+
+        return {
+            "total_entries": total_entries,
+            "by_status": {item['status']: item['count'] for item in by_status},
+            "estimated_lost_revenue": lost_revenue_estimate
+        }
+
+    def get_inventory_health(self):
+        """
+        Métricas de inventario: Top productos y mermas.
+        """
+        from marketplace.models import ProductVariant, InventoryMovement, OrderItem
+        
+        # 1. Top Productos Vendidos (Pareto)
+        top_products = (
+            OrderItem.objects
+            .filter(order__created_at__date__gte=self.start_date, order__created_at__date__lte=self.end_date)
+            .values('variant__product__name', 'variant__name')
+            .annotate(total_sold=Sum('quantity'), total_revenue=Sum(F('quantity') * F('price_at_purchase')))
+            .order_by('-total_revenue')[:10]
+        )
+        
+        # 2. Mermas (Ajustes negativos)
+        shrinkage = (
+            InventoryMovement.objects
+            .filter(
+                created_at__date__gte=self.start_date, 
+                created_at__date__lte=self.end_date,
+                movement_type=InventoryMovement.MovementType.ADJUSTMENT,
+                quantity__lt=0
+            )
+            .aggregate(
+                total_items=Sum('quantity'), # Será negativo
+                # Para valor monetario necesitaríamos costo, usaremos precio como proxy o nada por ahora
+            )
+        )
+        
+        return {
+            "top_products": [
+                {
+                    "name": f"{item['variant__product__name']} - {item['variant__name']}",
+                    "sold": item['total_sold'],
+                    "revenue": float(item['total_revenue'])
+                }
+                for item in top_products
+            ],
+            "shrinkage_items": abs(shrinkage['total_items'] or 0)
+        }
+
+    def get_funnel_metrics(self):
+        """
+        Embudo de conversión de citas.
+        """
+        qs = self._appointment_queryset()
+        total = qs.count()
+        confirmed = qs.filter(status__in=[Appointment.AppointmentStatus.CONFIRMED, Appointment.AppointmentStatus.COMPLETED]).count()
+        completed = qs.filter(status=Appointment.AppointmentStatus.COMPLETED).count()
+        
+        return {
+            "steps": [
+                {"name": "Solicitadas", "value": total},
+                {"name": "Confirmadas", "value": confirmed},
+                {"name": "Completadas", "value": completed}
+            ],
+            "conversion_rate": float(completed / total * 100) if total > 0 else 0
+        }

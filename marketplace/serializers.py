@@ -10,6 +10,7 @@ from .models import (
     CartItem,
     Order,
     OrderItem,
+    ProductReview,
 )
 
 # --- Serializadores de Lectura (Para mostrar datos) ---
@@ -75,6 +76,8 @@ class ProductDetailSerializer(ProductListSerializer):
     """
     images = ProductImageSerializer(many=True, read_only=True)
     variants = ProductVariantSerializer(many=True, read_only=True)
+    average_rating = serializers.SerializerMethodField()
+    review_count = serializers.SerializerMethodField()
 
     class Meta(ProductListSerializer.Meta):
         fields = ProductListSerializer.Meta.fields + [
@@ -83,7 +86,20 @@ class ProductDetailSerializer(ProductListSerializer):
             'preparation_days',
             'images',
             'variants',
+            'average_rating',
+            'review_count',
         ]
+
+    def get_average_rating(self, obj):
+        """Calcula el promedio de calificaciones aprobadas."""
+        from django.db.models import Avg
+        result = obj.reviews.filter(is_approved=True).aggregate(avg=Avg('rating'))
+        avg = result['avg']
+        return round(avg, 2) if avg else None
+
+    def get_review_count(self, obj):
+        """Cuenta las reseñas aprobadas."""
+        return obj.reviews.filter(is_approved=True).count()
 
 class CartItemSerializer(serializers.ModelSerializer):
     """Serializador para mostrar los ítems dentro de un carrito."""
@@ -238,21 +254,97 @@ class CheckoutSerializer(serializers.Serializer):
     delivery_address = serializers.CharField(required=False, allow_blank=True)
     associated_appointment_id = serializers.UUIDField(required=False)
 
+    def _validate_delivery_address(self, address):
+        """
+        Valida exhaustivamente la dirección de envío.
+
+        Formato esperado (Colombia):
+        Tipo de Vía + Número Principal + # + Número Secundario + - + Número Terciario
+        Ejemplo: Calle 123 # 45-67, Apartamento 801
+        """
+        import re
+
+        # Validación 1: Longitud mínima
+        if len(address.strip()) < 15:
+            raise serializers.ValidationError({
+                "delivery_address": "La dirección debe tener al menos 15 caracteres para ser considerada válida."
+            })
+
+        # Validación 2: No debe ser solo números o caracteres especiales
+        if re.match(r'^[\d\s\-#]+$', address):
+            raise serializers.ValidationError({
+                "delivery_address": "La dirección debe incluir el tipo de vía (Calle, Carrera, Avenida, etc.)."
+            })
+
+        # Validación 3: Debe contener el tipo de vía
+        via_types = [
+            'calle', 'carrera', 'avenida', 'transversal', 'diagonal',
+            'circular', 'autopista', 'manzana', 'vereda', 'kilometro',
+            'cra', 'cll', 'av', 'trans', 'diag', 'circ', 'km'
+        ]
+
+        address_lower = address.lower()
+        if not any(via_type in address_lower for via_type in via_types):
+            raise serializers.ValidationError({
+                "delivery_address": "La dirección debe incluir el tipo de vía (Calle, Carrera, Avenida, Transversal, Diagonal, etc.)."
+            })
+
+        # Validación 4: Debe contener números (para la nomenclatura)
+        if not re.search(r'\d', address):
+            raise serializers.ValidationError({
+                "delivery_address": "La dirección debe incluir la nomenclatura numérica (ej: Calle 123 #45-67)."
+            })
+
+        # Validación 5: Formato de nomenclatura colombiana (flexible)
+        # Busca patrones como "123 # 45-67" o "123 #45-67" o "123#45-67"
+        nomenclatura_pattern = r'\d+\s*[#]\s*\d+[\s\-]\d+'
+        if not re.search(nomenclatura_pattern, address):
+            raise serializers.ValidationError({
+                "delivery_address": "La dirección debe seguir el formato de nomenclatura colombiana (ej: Calle 123 #45-67). "
+                                    "Asegúrate de incluir el símbolo # y los números de vía correctamente."
+            })
+
+        # Validación 6: Verificar que no sea una dirección común inválida
+        invalid_patterns = [
+            r'^123.*456.*789',  # Direcciones de prueba
+            r'(test|prueba|ejemplo|xxx)',  # Palabras de prueba
+            r'^(no tengo|sin direccion|n/a|na)',  # Negaciones
+        ]
+
+        for pattern in invalid_patterns:
+            if re.search(pattern, address_lower):
+                raise serializers.ValidationError({
+                    "delivery_address": "La dirección proporcionada no parece ser válida. Por favor, ingresa tu dirección real."
+                })
+
+        # Validación 7: Recomendar información adicional si es muy corta
+        if len(address.strip()) < 25:
+            # No es error, pero advertimos que puede faltar información
+            import warnings
+            warnings.warn(
+                "Se recomienda incluir información adicional como barrio, apartamento, o puntos de referencia.",
+                UserWarning
+            )
+
+        return address
+
     def validate(self, data):
         if data['delivery_option'] == Order.DeliveryOptions.DELIVERY:
             address = data.get('delivery_address')
             if not address:
-                raise serializers.ValidationError("La dirección de envío es obligatoria para esta opción de entrega.")
-            
-            if len(address.strip()) < 10:
-                raise serializers.ValidationError("La dirección debe tener al menos 10 caracteres.")
-            
-            required_keywords = ['calle', 'carrera', 'avenida', 'transversal', 'diagonal', 'circular', 'manzana', 'lote']
-            if not any(keyword in address.lower() for keyword in required_keywords):
-                raise serializers.ValidationError("La dirección debe incluir el tipo de vía (Calle, Carrera, etc.).")
+                raise serializers.ValidationError({
+                    "delivery_address": "La dirección de envío es obligatoria para esta opción de entrega."
+                })
+
+            # Usar validación exhaustiva
+            validated_address = self._validate_delivery_address(address)
+            data['delivery_address'] = validated_address.strip()
 
         if data['delivery_option'] == Order.DeliveryOptions.ASSOCIATE_TO_APPOINTMENT and not data.get('associated_appointment_id'):
-            raise serializers.ValidationError("Debe seleccionar una cita para asociar la entrega.")
+            raise serializers.ValidationError({
+                "associated_appointment_id": "Debe seleccionar una cita para asociar la entrega."
+            })
+
         return data
 
 
@@ -268,3 +360,110 @@ class ReturnRequestSerializer(serializers.Serializer):
 
 class ReturnDecisionSerializer(serializers.Serializer):
     approved = serializers.BooleanField()
+
+
+# --- Serializadores de Reviews ---
+
+class ProductReviewSerializer(serializers.ModelSerializer):
+    """
+    Serializador para mostrar reseñas de productos.
+    """
+    user_name = serializers.CharField(source='user.get_full_name', read_only=True)
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+
+    class Meta:
+        model = ProductReview
+        fields = [
+            'id',
+            'product',
+            'user_name',
+            'user_email',
+            'rating',
+            'title',
+            'comment',
+            'is_verified_purchase',
+            'is_approved',
+            'admin_response',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['user_name', 'user_email', 'is_verified_purchase', 'is_approved', 'created_at', 'updated_at']
+
+
+class ProductReviewCreateSerializer(serializers.ModelSerializer):
+    """
+    Serializador para crear reseñas de productos.
+    """
+    order_id = serializers.UUIDField(required=False, allow_null=True)
+
+    class Meta:
+        model = ProductReview
+        fields = ['product', 'rating', 'title', 'comment', 'order_id']
+
+    def validate_rating(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError("La calificación debe estar entre 1 y 5.")
+        return value
+
+    def validate(self, data):
+        user = self.context['request'].user
+        product = data.get('product')
+
+        # Verificar que el usuario no haya dejado ya una reseña para este producto
+        if ProductReview.objects.filter(product=product, user=user).exists():
+            raise serializers.ValidationError(
+                "Ya has dejado una reseña para este producto. Puedes editarla o eliminarla."
+            )
+
+        # Validar que al menos haya título o comentario
+        if not data.get('title') and not data.get('comment'):
+            raise serializers.ValidationError(
+                "Debes proporcionar al menos un título o un comentario."
+            )
+
+        # Si se proporciona order_id, validar que exista y pertenezca al usuario
+        order_id = data.pop('order_id', None)
+        if order_id:
+            try:
+                order = Order.objects.get(id=order_id, user=user)
+                # Verificar que la orden contenga el producto
+                if not order.items.filter(variant__product=product).exists():
+                    raise serializers.ValidationError(
+                        "El producto no está en la orden especificada."
+                    )
+                # Verificar que la orden esté entregada
+                if order.status != Order.OrderStatus.DELIVERED:
+                    raise serializers.ValidationError(
+                        "Solo puedes dejar reseñas verificadas para productos de órdenes entregadas."
+                    )
+                data['order'] = order
+            except Order.DoesNotExist:
+                raise serializers.ValidationError("La orden especificada no existe o no te pertenece.")
+
+        return data
+
+    def create(self, validated_data):
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
+
+
+class ProductReviewUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializador para actualizar reseñas existentes.
+    """
+    class Meta:
+        model = ProductReview
+        fields = ['rating', 'title', 'comment']
+
+    def validate_rating(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError("La calificación debe estar entre 1 y 5.")
+        return value
+
+
+class AdminReviewResponseSerializer(serializers.Serializer):
+    """
+    Serializador para que los administradores respondan a reseñas.
+    """
+    admin_response = serializers.CharField(required=True, allow_blank=False)
+    is_approved = serializers.BooleanField(required=False)

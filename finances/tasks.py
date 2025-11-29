@@ -19,7 +19,7 @@ from users.models import CustomUser
 from notifications.services import NotificationService
 from .services import DeveloperCommissionService
 from .payments import PaymentService
-from .models import Payment
+from .models import Payment, WebhookEvent
 
 logger = logging.getLogger(__name__)
 
@@ -193,3 +193,43 @@ def downgrade_expired_vips():
                 "No se pudo notificar expiración VIP para el usuario %s", user.id)
         count += 1
     return f"Usuarios degradados: {count}"
+
+
+@shared_task
+def cleanup_old_webhook_events():
+    """
+    Limpia registros antiguos de WebhookEvent para prevenir crecimiento ilimitado.
+
+    Elimina eventos procesados/ignorados con más de 90 días de antigüedad,
+    y eventos fallidos con más de 180 días.
+
+    Se mantienen eventos recientes para auditoría y debugging.
+    """
+    now = timezone.now()
+
+    # Eliminar eventos procesados/ignorados con más de 90 días
+    processed_threshold = now - timedelta(days=90)
+    deleted_processed = WebhookEvent.objects.filter(
+        status__in=[WebhookEvent.Status.PROCESSED, WebhookEvent.Status.IGNORED],
+        created_at__lt=processed_threshold
+    ).delete()[0]
+
+    # Eliminar eventos fallidos con más de 180 días (más tiempo para debugging)
+    failed_threshold = now - timedelta(days=180)
+    deleted_failed = WebhookEvent.objects.filter(
+        status=WebhookEvent.Status.FAILED,
+        created_at__lt=failed_threshold
+    ).delete()[0]
+
+    total_deleted = deleted_processed + deleted_failed
+
+    logger.info(
+        f"Cleanup de WebhookEvent: {deleted_processed} procesados/ignorados (>90d), "
+        f"{deleted_failed} fallidos (>180d). Total: {total_deleted}"
+    )
+
+    return {
+        "deleted_processed": deleted_processed,
+        "deleted_failed": deleted_failed,
+        "total_deleted": total_deleted
+    }

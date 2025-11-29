@@ -102,4 +102,8 @@ CELERY_BEAT_SCHEDULE = {
         "task": "notifications.tasks.cleanup_old_notification_logs",
         "schedule": crontab(hour=2, minute=0),
     },
+    "cleanup-webhook-events": {
+        "task": "finances.tasks.cleanup_old_webhook_events",
+        "schedule": crontab(hour=3, minute=15, day_of_week=0),  # Domingos a las 3:15 AM
+    },
 }

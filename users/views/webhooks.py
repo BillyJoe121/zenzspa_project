@@ -16,28 +16,62 @@ logger = logging.getLogger(__name__)
 
 
 class TwilioWebhookView(views.APIView):
-    """Webhook para eventos de Twilio."""
+    """
+    Webhook para eventos de Twilio con validación de firma.
+
+    Recibe y valida webhooks de Twilio verificando la firma HMAC-SHA1
+    para garantizar que las peticiones provienen realmente de Twilio.
+
+    Security:
+        - Valida firma usando TWILIO_AUTH_TOKEN
+        - Rechaza peticiones con firma inválida (HTTP 403)
+        - Usa AllowAny porque la autenticación es por firma
+
+    Referencias:
+        https://www.twilio.com/docs/usage/webhooks/webhooks-security
+    """
     permission_classes = [AllowAny]
 
     def post(self, request):
-        # Validate signature
+        """
+        Procesa webhook de Twilio después de validar su firma.
+
+        Returns:
+            Response: HTTP 200 si la firma es válida y se procesa correctamente
+            Response: HTTP 403 si la firma es inválida
+        """
+        # Importar en tiempo de ejecución para evitar dependencias circulares
         from twilio.request_validator import RequestValidator
         from django.conf import settings
-        
+
+        # Validar firma de Twilio
         validator = RequestValidator(settings.TWILIO_AUTH_TOKEN)
         signature = request.META.get('HTTP_X_TWILIO_SIGNATURE', '')
-        # Twilio requires the full URL including query params
-        url = request.build_absolute_uri()
-        
-        # request.POST is a QueryDict, we need a standard dict
-        post_vars = request.POST.dict()
-        
-        if not validator.validate(url, post_vars, signature):
-            logger.warning("Invalid Twilio signature")
-            return Response(status=status.HTTP_403_FORBIDDEN)
 
+        # Twilio requiere la URL completa incluyendo query params para la validación
+        url = request.build_absolute_uri()
+
+        # Convertir request.POST (QueryDict) a dict estándar para validación
+        post_vars = request.POST.dict()
+
+        # Validar firma HMAC-SHA1
+        if not validator.validate(url, post_vars, signature):
+            logger.warning(
+                "Twilio webhook rejected: invalid signature from %s",
+                request.META.get('REMOTE_ADDR', 'unknown')
+            )
+            return Response(
+                {"detail": "Invalid signature"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Firma válida, procesar webhook
         data = request.data
-        logger.info("Twilio Webhook: %s", data)
+        logger.info("Twilio Webhook received: %s", data)
+
+        # TODO: Implementar lógica de procesamiento de eventos específicos de Twilio
+        # Por ejemplo: delivery status, message status, call status, etc.
+
         return Response(status=status.HTTP_200_OK)
 
 

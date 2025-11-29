@@ -10,6 +10,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 
+from core.throttling import PasswordChangeThrottle
 from ..models import CustomUser, OTPAttempt
 from ..serializers import PasswordResetConfirmSerializer, PasswordResetRequestSerializer
 from ..services import TwilioService, verify_recaptcha
@@ -90,9 +91,14 @@ class PasswordResetConfirmView(views.APIView):
 
 
 class ChangePasswordView(views.APIView):
-    """Cambia la contraseña del usuario autenticado."""
+    """
+    Cambia la contraseña del usuario autenticado.
+
+    Implementa rate limiting restrictivo (3 intentos por hora) para proteger
+    contra ataques de fuerza bruta en caso de sesión comprometida.
+    """
     permission_classes = [IsAuthenticated]
-    throttle_classes = [UserRateThrottle]
+    throttle_classes = [PasswordChangeThrottle]
 
     def post(self, request, *args, **kwargs):
         old_password = request.data.get("old_password")

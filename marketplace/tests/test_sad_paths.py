@@ -200,7 +200,7 @@ class TestSerializersSadPath:
         }
         serializer = CheckoutSerializer(data=data)
         assert not serializer.is_valid()
-        assert 'al menos 10 caracteres' in str(serializer.errors)
+        assert 'al menos 15 caracteres' in str(serializer.errors)
 
     def test_checkout_serializer_delivery_bad_address_format(self):
         data = {

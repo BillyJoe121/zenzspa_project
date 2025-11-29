@@ -22,7 +22,8 @@ from core.models import AuditLog
 from core.utils import safe_audit_log
 from .services import KpiService
 from .utils import build_analytics_workbook
-from .permissions import CanViewAnalytics
+from .permissions import CanViewAnalytics, CanViewFinancialMetrics, CanViewOperationalMetrics
+from .throttling import AnalyticsRateThrottle, AnalyticsExportRateThrottle
 
 
 def _audit_analytics(request, action, extra=None):
@@ -136,9 +137,13 @@ class DateFilterMixin:
 class KpiView(DateFilterMixin, APIView):
     """
     Endpoint que entrega los KPIs de negocio en un rango de fechas.
+    Contiene métricas financieras sensibles - Solo Admin.
+
+    Soporta invalidación de caché con ?force_refresh=true
     """
 
-    permission_classes = [CanViewAnalytics]
+    permission_classes = [CanViewFinancialMetrics]
+    throttle_classes = [AnalyticsRateThrottle]
 
     def get(self, request):
         try:
@@ -146,8 +151,13 @@ class KpiView(DateFilterMixin, APIView):
             staff_id, service_category_id = self._parse_filters(request)
         except ValueError as exc:
             return Response({"error": str(exc)}, status=400)
+
+        # Soporte para forzar actualización de caché
+        force_refresh = request.query_params.get('force_refresh', 'false').lower() == 'true'
+
         cache_key = self._cache_key(request, "kpis", start_date, end_date, staff_id, service_category_id)
-        cached = cache.get(cache_key)
+        cached = None if force_refresh else cache.get(cache_key)
+
         if cached is not None:
             _audit_analytics(
                 request,
@@ -163,19 +173,26 @@ class KpiView(DateFilterMixin, APIView):
             service_category_id=service_category_id,
         )
         data = service.get_business_kpis()
+        # Option A: Growth Metrics
+        data["growth"] = service.get_growth_metrics()
         data["start_date"] = start_date.isoformat()
         data["end_date"] = end_date.isoformat()
         data["staff_id"] = staff_id
         data["service_category_id"] = service_category_id
-        
-        # CAMBIAR - Usar TTL dinámico
+        data["_cached_at"] = timezone.now().isoformat()
+
+        # Usar TTL dinámico
         ttl = self._get_cache_ttl(start_date, end_date)
         cache.set(cache_key, data, ttl)
 
         _audit_analytics(
             request,
             "kpi_view",
-            {"start_date": start_date.isoformat(), "end_date": end_date.isoformat(), "cache": "miss"},
+            {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+                "cache": "miss" if not force_refresh else "forced_refresh"
+            },
         )
         return Response(data)
 
@@ -183,8 +200,10 @@ class KpiView(DateFilterMixin, APIView):
 class TimeSeriesView(DateFilterMixin, APIView):
     """
     Endpoint para datos de gráficos (ingresos y citas por día).
+    Contiene datos financieros - Solo Admin.
     """
-    permission_classes = [CanViewAnalytics]
+    permission_classes = [CanViewFinancialMetrics]
+    throttle_classes = [AnalyticsRateThrottle]
 
     def get(self, request):
         try:
@@ -215,7 +234,9 @@ class TimeSeriesView(DateFilterMixin, APIView):
 
 
 class AnalyticsExportView(DateFilterMixin, APIView):
-    permission_classes = [CanViewAnalytics]
+    """Exportación de analytics - Solo Admin."""
+    permission_classes = [CanViewFinancialMetrics]
+    throttle_classes = [AnalyticsExportRateThrottle]
 
     def get(self, request):
         try:
@@ -295,6 +316,86 @@ class AnalyticsExportView(DateFilterMixin, APIView):
             },
         )
         return response
+
+
+class CacheClearView(APIView):
+    """
+    Endpoint para limpiar el caché de analytics.
+    Solo accesible para admins.
+    """
+    permission_classes = [IsStaffOrAdmin]
+
+    def post(self, request):
+        """
+        Limpia el caché de analytics.
+        Parámetros opcionales:
+        - scope: 'kpis', 'timeseries', 'dashboard', 'all' (default: 'all')
+        """
+        scope = request.data.get('scope', 'all')
+
+        if scope not in ['kpis', 'timeseries', 'dashboard', 'dataset', 'all']:
+            return Response(
+                {"error": "Scope inválido. Use: kpis, timeseries, dashboard, dataset, o all"},
+                status=400
+            )
+
+        cleared_count = 0
+
+        try:
+            if scope == 'all':
+                # Limpiar todas las claves que empiecen con 'analytics:'
+                # Nota: Esto requiere acceso al backend de caché
+                from django.core.cache import cache as django_cache
+
+                # Para Redis, podemos usar keys()
+                if hasattr(django_cache, 'keys'):
+                    keys = django_cache.keys('analytics:*')
+                    for key in keys:
+                        django_cache.delete(key)
+                        cleared_count += 1
+                else:
+                    # Fallback: limpiar todo el caché
+                    django_cache.clear()
+                    cleared_count = -1  # Indicador de limpieza total
+
+            else:
+                # Limpiar solo el scope específico
+                from django.core.cache import cache as django_cache
+
+                if hasattr(django_cache, 'keys'):
+                    pattern = f'analytics:{scope}:*'
+                    keys = django_cache.keys(pattern)
+                    for key in keys:
+                        django_cache.delete(key)
+                        cleared_count += 1
+                else:
+                    return Response(
+                        {"error": "El backend de caché no soporta limpieza selectiva. Use scope='all'"},
+                        status=400
+                    )
+
+            _audit_analytics(
+                request,
+                "cache_cleared",
+                {"scope": scope, "cleared_count": cleared_count}
+            )
+
+            message = f"Caché limpiado exitosamente"
+            if cleared_count >= 0:
+                message += f": {cleared_count} claves eliminadas"
+
+            return Response({
+                "success": True,
+                "message": message,
+                "scope": scope,
+                "cleared_count": cleared_count if cleared_count >= 0 else "all"
+            })
+
+        except Exception as e:
+            return Response(
+                {"error": f"Error limpiando caché: {str(e)}"},
+                status=500
+            )
 
 
 class DashboardViewSet(viewsets.ViewSet):
@@ -516,3 +617,79 @@ class DashboardViewSet(viewsets.ViewSet):
             {"date": today.isoformat()},
         )
         return Response({"results": results})
+
+
+class OperationalInsightsView(DateFilterMixin, viewsets.ViewSet):
+    """
+    Endpoints para insights operativos (Heatmap, Leaderboard, Funnel).
+    Métricas operativas - Solo Admin.
+    """
+    permission_classes = [CanViewFinancialMetrics]  # Admin only
+    throttle_classes = [AnalyticsRateThrottle]
+
+    def list(self, request):
+        return Response({"detail": "Use specific actions: heatmap, leaderboard, funnel"})
+
+    def _get_service(self, request):
+        start_date, end_date = self._parse_dates(request)
+        staff_id, service_category_id = self._parse_filters(request)
+        return KpiService(start_date, end_date, staff_id=staff_id, service_category_id=service_category_id)
+
+    @action(detail=False, methods=["get"])
+    def heatmap(self, request):
+        service = self._get_service(request)
+        data = service.get_heatmap_data()
+        return Response(data)
+
+    @action(detail=False, methods=["get"])
+    def leaderboard(self, request):
+        service = self._get_service(request)
+        data = service.get_staff_leaderboard()
+        return Response(data)
+
+    @action(detail=False, methods=["get"])
+    def funnel(self, request):
+        service = self._get_service(request)
+        data = service.get_funnel_metrics()
+        return Response(data)
+
+
+class BusinessIntelligenceView(DateFilterMixin, viewsets.ViewSet):
+    """
+    Endpoints para inteligencia de negocio (Waitlist, Inventory, Retention, Growth).
+    Contiene métricas financieras - Solo Admin.
+    """
+    permission_classes = [CanViewFinancialMetrics]
+    throttle_classes = [AnalyticsRateThrottle]
+
+    def list(self, request):
+        return Response({"detail": "Use specific actions: waitlist, inventory, retention, growth"})
+
+    def _get_service(self, request):
+        start_date, end_date = self._parse_dates(request)
+        staff_id, service_category_id = self._parse_filters(request)
+        return KpiService(start_date, end_date, staff_id=staff_id, service_category_id=service_category_id)
+
+    @action(detail=False, methods=["get"])
+    def waitlist(self, request):
+        service = self._get_service(request)
+        data = service.get_waitlist_metrics()
+        return Response(data)
+
+    @action(detail=False, methods=["get"])
+    def inventory(self, request):
+        service = self._get_service(request)
+        data = service.get_inventory_health()
+        return Response(data)
+
+    @action(detail=False, methods=["get"])
+    def retention(self, request):
+        service = self._get_service(request)
+        data = service.get_retention_metrics()
+        return Response(data)
+
+    @action(detail=False, methods=["get"])
+    def growth(self, request):
+        service = self._get_service(request)
+        data = service.get_growth_metrics()
+        return Response(data)

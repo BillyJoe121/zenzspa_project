@@ -147,6 +147,17 @@ class Payment(BaseModel):
     def is_approved(self):
         return self.status in [self.PaymentStatus.APPROVED, self.PaymentStatus.PAID_WITH_CREDIT]
 
+    class Meta:
+        verbose_name = "Payment"
+        verbose_name_plural = "Payments"
+        ordering = ['-created_at']
+        # Índices para optimizar queries de analytics
+        indexes = [
+            models.Index(fields=['created_at', 'status'], name='payment_time_status_idx'),
+            models.Index(fields=['user', 'created_at'], name='payment_user_time_idx'),
+            models.Index(fields=['status', 'payment_type'], name='payment_status_type_idx'),
+        ]
+
     def __str__(self):
         return f"Payment {self.id} - {self.amount} ({self.payment_type})"
 

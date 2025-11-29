@@ -21,3 +21,32 @@ class CanViewAnalytics(permissions.BasePermission):
             return True
             
         return False
+
+
+class CanViewFinancialMetrics(permissions.BasePermission):
+    """
+    Permite acceso a métricas financieras sensibles SOLO a administradores.
+    Incluye: ingresos, deuda, LTV, AOV, growth rates.
+    """
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        return request.user.role == CustomUser.Role.ADMIN
+
+
+class CanViewOperationalMetrics(permissions.BasePermission):
+    """
+    Permite acceso a métricas operativas a administradores y staff.
+    Incluye: heatmap, leaderboard, funnel, waitlist.
+    """
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        
+        return request.user.role in [
+            CustomUser.Role.ADMIN,
+            CustomUser.Role.STAFF
+        ]

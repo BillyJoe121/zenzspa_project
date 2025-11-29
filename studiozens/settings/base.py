@@ -179,6 +179,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "users.middleware.BlockedDeviceMiddleware",  # Bloqueo de dispositivos
     "profiles.middleware.KioskFlowEnforcementMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -269,9 +270,10 @@ REST_FRAMEWORK = {
         "user": os.getenv("THROTTLE_USER", "100/min"),
         "anon": os.getenv("THROTTLE_ANON", "30/min"),
 
-        # Scopes específicos
+        # Scopes específicos de autenticación
         "auth_login": os.getenv("THROTTLE_AUTH_LOGIN", "3/min"),
         "auth_verify": os.getenv("THROTTLE_AUTH_VERIFY", "3/10min"),
+        "password_change": os.getenv("THROTTLE_PASSWORD_CHANGE", "3/hour"),  # Protección anti brute-force
         "payments": os.getenv("THROTTLE_PAYMENTS", "30/min"),
 
         # Bot
@@ -281,6 +283,10 @@ REST_FRAMEWORK = {
 
         # Admin (NUEVO)
         "admin": os.getenv("THROTTLE_ADMIN", "1000/hour"),
+
+        # Analytics (NUEVO)
+        "analytics": os.getenv("THROTTLE_ANALYTICS", "30/minute"),
+        "analytics_export": os.getenv("THROTTLE_ANALYTICS_EXPORT", "5/minute"),
 
         # Endpoints críticos adicionales
         "appointments_create": os.getenv("THROTTLE_APPT_CREATE", "10/hour"),

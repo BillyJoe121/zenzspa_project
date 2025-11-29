@@ -1,5 +1,8 @@
 """
 Modelo de configuración global del sistema (Singleton).
+
+Este módulo define el modelo GlobalSettings que almacena todas las
+configuraciones operativas del sistema como un patrón Singleton.
 """
 import logging
 import uuid
@@ -16,15 +19,34 @@ from .base import BaseModel
 
 logger = logging.getLogger(__name__)
 
+# Importar la clave de caché desde el módulo centralizado
+from ..caching import GLOBAL_SETTINGS_CACHE_KEY
 
-GLOBAL_SETTINGS_CACHE_KEY = "core:global_settings:v1"
+# UUID fijo para garantizar singleton
 GLOBAL_SETTINGS_SINGLETON_UUID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
 class GlobalSettings(BaseModel):
     """
-    Modelo Singleton para almacenar las configuraciones globales del sistema.
-    Se guarda con un UUID fijo y se cachea en memoria para lecturas rápidas.
+    Modelo Singleton para configuraciones globales del sistema.
+
+    Implementa el patrón Singleton mediante un UUID fijo para garantizar
+    que solo exista una instancia de configuración en la base de datos.
+
+    Características:
+    - UUID fijo: GLOBAL_SETTINGS_SINGLETON_UUID
+    - Caché persistente: Los datos se cachean automáticamente en memoria
+    - Validaciones robustas: Previene valores absurdos en producción
+    - Logging de cambios: Registra modificaciones en campos críticos
+    - Thread-safe: Usa select_for_update en operaciones críticas
+
+    Uso:
+        # Obtener la configuración (crea si no existe)
+        settings = GlobalSettings.load()
+
+        # Modificar valores
+        settings.advance_payment_percentage = 25
+        settings.save()  # Invalida caché automáticamente
     """
     low_supervision_capacity = models.PositiveIntegerField(
         default=1,
@@ -141,8 +163,16 @@ class GlobalSettings(BaseModel):
         verbose_name="Inicio de mora con el desarrollador",
     )
 
-    # Validaciones de dominio (evita valores absurdos en producción)
     def clean(self):
+        """
+        Ejecuta validaciones de dominio antes de guardar.
+
+        Valida que todos los campos tengan valores razonables y consistentes
+        para prevenir configuraciones que puedan causar problemas en producción.
+
+        Raises:
+            ValidationError: Si algún campo tiene un valor inválido.
+        """
         errors = {}
         if self.advance_payment_percentage > 100:
             errors["advance_payment_percentage"] = "Debe estar entre 0 y 100."
@@ -191,10 +221,23 @@ class GlobalSettings(BaseModel):
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
+        """
+        Guarda la configuración aplicando el patrón singleton y registrando cambios.
+
+        Comportamiento:
+        1. Fuerza el UUID singleton para garantizar una única instancia
+        2. Registra cambios en campos críticos en los logs
+        3. Ejecuta validaciones completas (full_clean)
+        4. Actualiza automáticamente la caché después de guardar
+
+        Args:
+            *args: Argumentos posicionales para el método save de Django
+            **kwargs: Argumentos con nombre para el método save de Django
+        """
         # Forzamos UUID singleton
         self.pk = self.id = GLOBAL_SETTINGS_SINGLETON_UUID
 
-        # Log cambios importantes
+        # Log cambios importantes en campos críticos
         if self.pk:
             try:
                 old = GlobalSettings.objects.get(pk=self.pk)
@@ -222,8 +265,19 @@ class GlobalSettings(BaseModel):
     @classmethod
     def load(cls) -> "GlobalSettings":
         """
-        Obtiene la instancia desde caché o DB, creándola si no existe.
-        Usa select_for_update para prevenir race conditions.
+        Obtiene la instancia singleton de configuración global.
+
+        Comportamiento:
+        1. Intenta obtener desde caché primero (rendimiento)
+        2. Si no está en caché, consulta la base de datos
+        3. Si no existe en BD, crea una nueva instancia con valores default
+        4. Usa select_for_update para prevenir condiciones de carrera
+        5. Actualiza la caché antes de retornar
+
+        Returns:
+            GlobalSettings: La única instancia de configuración global.
+
+        Thread-safe: Sí, mediante transacciones atómicas y locks de base de datos.
         """
         cached = cache.get(GLOBAL_SETTINGS_CACHE_KEY)
         if cached is not None:

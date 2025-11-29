@@ -244,6 +244,13 @@ class Appointment(BaseModel):
         verbose_name = "Appointment"
         verbose_name_plural = "Appointments"
         ordering = ['-start_time']
+        # Índices para optimizar queries de analytics
+        indexes = [
+            models.Index(fields=['start_time', 'status'], name='appt_time_status_idx'),
+            models.Index(fields=['staff_member', 'start_time'], name='appt_staff_time_idx'),
+            models.Index(fields=['status', 'start_time'], name='appt_status_time_idx'),
+            models.Index(fields=['user', 'start_time'], name='appt_user_time_idx'),
+        ]
 
     def __str__(self):
         services = ", ".join(item.service.name for item in self.items.all())
@@ -322,15 +329,48 @@ class AppointmentItem(BaseModel):
         super().save(*args, **kwargs)
 
     def clean(self):
+        """
+        Validaciones de dominio para AppointmentItem.
+
+        Valida:
+        1. Servicios duplicados en la misma cita
+        2. Solapamiento temporal con otros items de la misma cita
+        3. Que el item cabe dentro del tiempo total de la cita
+        """
         super().clean()
         if self.appointment_id and self.service_id:
-            # Check if service already exists in this appointment (exclude self)
+            # 1. Check if service already exists in this appointment (exclude self)
             exists = AppointmentItem.objects.filter(
                 appointment=self.appointment,
                 service=self.service
             ).exclude(id=self.id).exists()
             if exists:
-                raise ValidationError(f"El servicio '{self.service.name}' ya está incluido en esta cita.")
+                raise ValidationError({
+                    'service': f"El servicio '{self.service.name}' ya está incluido en esta cita."
+                })
+
+            # 2. Validar que la duración total de items no exceda el tiempo de la cita
+            if self.appointment and self.duration:
+                # Obtener duración total de otros items
+                other_items_duration = AppointmentItem.objects.filter(
+                    appointment=self.appointment
+                ).exclude(id=self.id).aggregate(
+                    total=models.Sum('duration')
+                )['total'] or 0
+
+                # Calcular duración total incluyendo este item
+                total_duration = other_items_duration + self.duration
+
+                # Calcular tiempo disponible en la cita
+                appointment_duration = (
+                    self.appointment.end_time - self.appointment.start_time
+                ).total_seconds() / 60  # Convertir a minutos
+
+                if total_duration > appointment_duration:
+                    raise ValidationError({
+                        'duration': f"La duración total de servicios ({total_duration} min) "
+                                  f"excede el tiempo de la cita ({int(appointment_duration)} min)."
+                    })
 
 
 class WaitlistEntry(BaseModel):

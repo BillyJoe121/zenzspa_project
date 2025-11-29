@@ -360,6 +360,8 @@ class TestBotTasks:
 
         result = cleanup_expired_anonymous_users()
 
-        assert result["deleted_count"] == 1
+        # El método ahora retorna stats más detalladas
+        assert result["total_deleted"] == 1
+        assert result["expired_deleted"] == 1
         assert not AnonymousUser.objects.filter(id=expired.id).exists()
         assert AnonymousUser.objects.filter(id=active.id).exists()
