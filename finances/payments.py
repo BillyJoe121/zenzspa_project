@@ -37,62 +37,75 @@ class PaymentService:
     @staticmethod
     def apply_gateway_status(payment, gateway_status, transaction_payload=None):
         normalized = (gateway_status or "").upper()
-        previous_status = payment.status
-        if transaction_payload is not None:
-            payment.raw_response = transaction_payload
-        if normalized == 'APPROVED':
-            if transaction_payload:
-                payment.transaction_id = transaction_payload.get(
-                    "id", payment.transaction_id)
-            payment.status = Payment.PaymentStatus.APPROVED
-            payment.save(update_fields=[
-                         'status', 'transaction_id', 'raw_response', 'updated_at'])
-            if payment.payment_type == Payment.PaymentType.PACKAGE:
-                # Import lazy para evitar ciclo circular
-                from spa.services.vouchers import PackagePurchaseService
-                PackagePurchaseService.fulfill_purchase(payment)
-            elif payment.payment_type == Payment.PaymentType.ADVANCE and payment.appointment:
-                payment.appointment.status = Appointment.AppointmentStatus.CONFIRMED
-                payment.appointment.save(
-                    update_fields=['status', 'updated_at'])
-            elif payment.payment_type == Payment.PaymentType.VIP_SUBSCRIPTION:
-                VipSubscriptionService.fulfill_subscription(payment)
-            elif (
-                payment.payment_type == Payment.PaymentType.FINAL
-                and payment.appointment
-            ):
-                payment.appointment.status = Appointment.AppointmentStatus.PAID
-                payment.appointment.save(
-                    update_fields=['status', 'updated_at'])
-            elif (
-                payment.payment_type == Payment.PaymentType.ORDER
-                and payment.order
-            ):
-                try:
-                    from marketplace.services import OrderService  # import local para evitar ciclos
-                    OrderService.confirm_payment(payment.order)
-                except BusinessLogicError as exc:
-                    logger.error("No se pudo confirmar la orden %s: %s", payment.order_id, exc)
-            if payment.payment_type in (
-                Payment.PaymentType.ADVANCE,
-                Payment.PaymentType.FINAL,
-                Payment.PaymentType.PACKAGE,
-                Payment.PaymentType.VIP_SUBSCRIPTION,
-                Payment.PaymentType.ORDER,
-            ):
-                DeveloperCommissionService.handle_successful_payment(payment)
-        elif normalized in ('DECLINED', 'VOIDED'):
-            payment.status = Payment.PaymentStatus.DECLINED
-            payment.save(update_fields=[
-                         'status', 'raw_response', 'updated_at'])
-        elif normalized == 'PENDING':
-            payment.status = Payment.PaymentStatus.PENDING
-            payment.save(update_fields=[
-                         'status', 'raw_response', 'updated_at'])
-        else:
-            payment.status = Payment.PaymentStatus.ERROR
-            payment.save(update_fields=[
-                         'status', 'raw_response', 'updated_at'])
+        with transaction.atomic():
+            payment = Payment.objects.select_for_update().get(pk=payment.pk)
+            previous_status = payment.status
+            terminal_statuses = {
+                Payment.PaymentStatus.APPROVED,
+                Payment.PaymentStatus.DECLINED,
+                Payment.PaymentStatus.TIMEOUT,
+                Payment.PaymentStatus.ERROR,
+                Payment.PaymentStatus.PAID_WITH_CREDIT,
+            }
+            # Idempotencia: si ya está en estado terminal, no reprocesar.
+            if previous_status in terminal_statuses:
+                return payment.status
+
+            if transaction_payload is not None:
+                payment.raw_response = transaction_payload
+            if normalized == 'APPROVED':
+                if transaction_payload:
+                    payment.transaction_id = transaction_payload.get(
+                        "id", payment.transaction_id)
+                payment.status = Payment.PaymentStatus.APPROVED
+                payment.save(update_fields=[
+                             'status', 'transaction_id', 'raw_response', 'updated_at'])
+                if payment.payment_type == Payment.PaymentType.PACKAGE:
+                    # Import lazy para evitar ciclo circular
+                    from spa.services.vouchers import PackagePurchaseService
+                    PackagePurchaseService.fulfill_purchase(payment)
+                elif payment.payment_type == Payment.PaymentType.ADVANCE and payment.appointment:
+                    payment.appointment.status = Appointment.AppointmentStatus.CONFIRMED
+                    payment.appointment.save(
+                        update_fields=['status', 'updated_at'])
+                elif payment.payment_type == Payment.PaymentType.VIP_SUBSCRIPTION:
+                    VipSubscriptionService.fulfill_subscription(payment)
+                elif (
+                    payment.payment_type == Payment.PaymentType.FINAL
+                    and payment.appointment
+                ):
+                    payment.appointment.status = Appointment.AppointmentStatus.PAID
+                    payment.appointment.save(
+                        update_fields=['status', 'updated_at'])
+                elif (
+                    payment.payment_type == Payment.PaymentType.ORDER
+                    and payment.order
+                ):
+                    try:
+                        from marketplace.services import OrderService  # import local para evitar ciclos
+                        OrderService.confirm_payment(payment.order)
+                    except BusinessLogicError as exc:
+                        logger.error("No se pudo confirmar la orden %s: %s", payment.order_id, exc)
+                if payment.payment_type in (
+                    Payment.PaymentType.ADVANCE,
+                    Payment.PaymentType.FINAL,
+                    Payment.PaymentType.PACKAGE,
+                    Payment.PaymentType.VIP_SUBSCRIPTION,
+                    Payment.PaymentType.ORDER,
+                ):
+                    DeveloperCommissionService.handle_successful_payment(payment)
+            elif normalized in ('DECLINED', 'VOIDED'):
+                payment.status = Payment.PaymentStatus.DECLINED
+                payment.save(update_fields=[
+                             'status', 'raw_response', 'updated_at'])
+            elif normalized == 'PENDING':
+                payment.status = Payment.PaymentStatus.PENDING
+                payment.save(update_fields=[
+                             'status', 'raw_response', 'updated_at'])
+            else:
+                payment.status = Payment.PaymentStatus.ERROR
+                payment.save(update_fields=[
+                             'status', 'raw_response', 'updated_at'])
         
         PaymentService._send_payment_status_notification(
             payment=payment,

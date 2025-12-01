@@ -63,6 +63,12 @@ class CustomUserManager(BaseUserManager):
         return self.create_user(phone_number, email, first_name, password, **extra_fields)
 
 
+class ActiveUserManager(CustomUserManager):
+    """Manager que excluye usuarios soft-deleted por defecto."""
+    def get_queryset(self):
+        return super().get_queryset().filter(is_deleted=False)
+
+
 PHONE_NUMBER_REGEX = RegexValidator(
     regex=r"^\+[1-9]\d{9,14}$",
     message="El número debe estar en formato internacional (+573157589548).",
@@ -138,8 +144,12 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
     email_verified = models.BooleanField(
         default=False, verbose_name="Email Verificado"
     )
-    totp_secret = models.CharField(
-        max_length=32, blank=True, null=True, verbose_name="Secreto TOTP (2FA App)"
+    # Secreto de 2FA cifrado en reposo
+    totp_secret = EncryptedTextField(
+        blank=True,
+        null=True,
+        verbose_name="Secreto TOTP (2FA App, Encriptado)",
+        help_text="Guardado cifrado con Fernet. No se almacena en texto plano.",
     )
     is_deleted = models.BooleanField(
         default=False, verbose_name="Eliminado Suavemente"
@@ -153,7 +163,8 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
         help_text="DEPRECATED: Usar modelo CancellationStreak. Almacena eventos recientes para aplicar penalizaciones (3 strikes).",
     )
 
-    objects = CustomUserManager()
+    objects = ActiveUserManager()
+    all_objects = CustomUserManager()
 
     USERNAME_FIELD = 'phone_number'
     REQUIRED_FIELDS = ['first_name']
@@ -305,4 +316,3 @@ class BlockedDevice(BaseModel):
 
     def __str__(self):
         return f"Device {self.device_fingerprint[:8]}... ({'Blocked' if self.is_blocked else 'Active'})"
-

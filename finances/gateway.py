@@ -1,13 +1,28 @@
 import logging
+import time
 from datetime import timedelta
 import hashlib
+from urllib.parse import urlparse
 
 import requests
 from django.conf import settings
 from django.core.cache import cache
 from django.utils import timezone
 
+from core.metrics import get_counter, get_histogram
+
 logger = logging.getLogger(__name__)
+
+gateway_latency = get_histogram(
+    "payment_gateway_latency_seconds",
+    "Latencia de llamadas a Wompi",
+    ["method", "endpoint", "status"],
+)
+gateway_failures = get_counter(
+    "payment_failures_total",
+    "Errores al llamar a Wompi",
+    ["reason", "endpoint"],
+)
 
 
 class WompiGateway:
@@ -51,6 +66,44 @@ class WompiGateway:
             headers["Authorization"] = f"Bearer {self.private_key}"
         return headers
 
+    def _request_with_retry(self, method, url, *, json=None, headers=None, timeout=None, attempts=3):
+        """
+        Ejecuta una petición con reintentos y backoff exponencial corto.
+        Usar solo en llamados idempotentes o con referencia fija.
+        """
+        last_exc = None
+        parsed = urlparse(url)
+        endpoint = parsed.path
+        for attempt in range(1, attempts + 1):
+            start = time.perf_counter()
+            try:
+                resp = requests.request(
+                    method=method,
+                    url=url,
+                    json=json,
+                    headers=headers or {},
+                    timeout=timeout or self.REQUEST_TIMEOUT,
+                )
+                duration = time.perf_counter() - start
+                gateway_latency.labels(method, endpoint, resp.status_code).observe(duration)
+                return resp
+            except requests.Timeout as exc:
+                last_exc = exc
+                logger.warning("Timeout Wompi %s %s (intento %d/%d)", method, url, attempt, attempts)
+                gateway_failures.labels(reason="timeout", endpoint=endpoint).inc()
+            except requests.RequestException as exc:
+                last_exc = exc
+                logger.warning("Error Wompi %s %s (intento %d/%d): %s", method, url, attempt, attempts, exc)
+                gateway_failures.labels(reason="http_error", endpoint=endpoint).inc()
+
+            if attempt < attempts:
+                time.sleep(0.5 * (2 ** (attempt - 1)))
+
+        if last_exc:
+            gateway_failures.labels(reason="max_retries", endpoint=endpoint).inc()
+            raise last_exc
+        return None
+
     def fetch_transaction(self, reference):
         """
         Devuelve el payload de la transacción o None si no hay base URL/reference.
@@ -63,7 +116,13 @@ class WompiGateway:
             return None
         url = f"{self.base_url.rstrip('/')}/transactions/{reference}"
         try:
-            response = requests.get(url, headers=self._headers(), timeout=self.REQUEST_TIMEOUT)
+            response = self._request_with_retry(
+                "GET",
+                url,
+                headers=self._headers(),
+                timeout=self.REQUEST_TIMEOUT,
+                attempts=3,
+            )
             if response.status_code >= 400:
                 self._record_failure()
                 response.raise_for_status()
@@ -166,6 +225,35 @@ class WompiPaymentClient:
             "Content-Type": "application/json",
         }
 
+    def _request_with_retry(self, method, url, *, json=None, headers=None, timeout=None, attempts=2):
+        """
+        Reintentos con backoff corto solo para operaciones con referencia fija.
+        Evita duplicados inadvertidos: el payload debe tener referencia única.
+        """
+        last_exc = None
+        for attempt in range(1, attempts + 1):
+            try:
+                return requests.request(
+                    method=method,
+                    url=url,
+                    json=json,
+                    headers=headers or {},
+                    timeout=timeout or self.REQUEST_TIMEOUT,
+                )
+            except requests.Timeout as exc:
+                last_exc = exc
+                logger.warning("Timeout Wompi %s %s (intento %d/%d)", method, url, attempt, attempts)
+            except requests.RequestException as exc:
+                last_exc = exc
+                logger.warning("Error Wompi %s %s (intento %d/%d): %s", method, url, attempt, attempts, exc)
+
+            if attempt < attempts:
+                time.sleep(0.5 * (2 ** (attempt - 1)))
+
+        if last_exc:
+            raise last_exc
+        return None
+
     def create_transaction(self, payload: dict):
         if not self._circuit_allows():
             raise requests.RequestException("Circuito Wompi abierto")
@@ -173,11 +261,13 @@ class WompiPaymentClient:
             raise requests.RequestException("WOMPI_BASE_URL no configurada")
         url = f"{self.base_url.rstrip('/')}/transactions"
         try:
-            response = requests.post(
+            response = self._request_with_retry(
+                "POST",
                 url,
                 json=payload,
                 headers=self._headers(),
                 timeout=self.REQUEST_TIMEOUT,
+                attempts=2,
             )
             data = response.json()
             if response.status_code >= 400:

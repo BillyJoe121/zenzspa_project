@@ -4,6 +4,7 @@ Modelos del módulo finances.
 Incluye todos los modelos relacionados con pagos, créditos, suscripciones
 y comisiones del desarrollador.
 """
+import hashlib
 from datetime import timedelta
 from decimal import Decimal
 
@@ -11,6 +12,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
+from fernet_fields import EncryptedTextField
 
 from core.models import BaseModel
 
@@ -314,7 +316,19 @@ class PaymentToken(BaseModel):
 
     # Override BaseModel UUID to mantener compatibilidad con la migración inicial (BigAutoField)
     id = models.BigAutoField(primary_key=True)
-    token_id = models.CharField(max_length=255, unique=True, db_index=True)
+    # token enmascarado para visualización; el valor real se guarda cifrado
+    token_id = models.CharField(max_length=255, db_index=True, blank=True, default="")
+    token_fingerprint = models.CharField(
+        max_length=64,
+        unique=True,
+        db_index=True,
+        help_text="SHA256 del token para idempotencia/lookup sin exponer el valor real.",
+    )
+    token_secret = EncryptedTextField(
+        null=True,
+        blank=True,
+        help_text="Token de pago cifrado en reposo (Fernet).",
+    )
     token_type = models.CharField(max_length=50, blank=True, default="")
     status = models.CharField(
         max_length=20,
@@ -341,7 +355,36 @@ class PaymentToken(BaseModel):
         ]
 
     def __str__(self):
-        return f"PaymentToken {self.token_id} ({self.status})"
+        return f"PaymentToken {self.masked_token} ({self.status})"
+
+    @staticmethod
+    def fingerprint(token_value: str) -> str:
+        raw = (token_value or "").encode()
+        return hashlib.sha256(raw).hexdigest()
+
+    @staticmethod
+    def mask_token(token_value: str) -> str:
+        if not token_value:
+            return ""
+        tail = token_value[-4:]
+        return f"****{tail}"
+
+    @property
+    def masked_token(self) -> str:
+        if self.token_id:
+            return self.token_id
+        if self.token_secret:
+            try:
+                decrypted = str(self.token_secret)
+                return self.mask_token(decrypted)
+            except Exception:
+                return "****"
+        return ""
+
+    @property
+    def plain_token(self) -> str | None:
+        # EncryptedTextField devuelve str ya desencriptado
+        return self.token_secret or None
 
 
 class CommissionLedger(BaseModel):

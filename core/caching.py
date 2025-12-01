@@ -1,10 +1,8 @@
 """
-Claves de caché centralizadas para todo el sistema.
-
-Este módulo define todas las claves de caché utilizadas en la aplicación
-de forma centralizada para evitar duplicación y facilitar el mantenimiento.
+Claves de caché centralizadas y utilidades básicas de locking.
 """
 from dataclasses import dataclass
+from django.core.cache import cache
 
 
 @dataclass(frozen=True)
@@ -27,3 +25,14 @@ class CacheKeys:
 
 # Alias para retrocompatibilidad
 GLOBAL_SETTINGS_CACHE_KEY = CacheKeys.GLOBAL_SETTINGS
+
+
+def acquire_lock(key: str, timeout: int = 5) -> bool:
+    """
+    Intenta adquirir un lock distribuido usando cache.add (SETNX).
+    Devuelve True si se adquiere, False en caso contrario.
+    """
+    try:
+        return cache.add(f"lock:{key}", True, timeout=timeout)
+    except Exception:
+        return False

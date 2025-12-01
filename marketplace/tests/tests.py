@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from django.urls import reverse
-from rest_framework.test import APIClient
+from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 from rest_framework import status
 
 from core.exceptions import BusinessLogicError
@@ -20,7 +20,8 @@ from marketplace.services import OrderCreationService, OrderService, ReturnServi
 from marketplace.serializers import (
     ProductListSerializer, CartItemCreateUpdateSerializer, CheckoutSerializer
 )
-from marketplace.tasks import notify_order_status_change, release_expired_order_reservations
+from marketplace.tasks import notify_order_status_change, release_expired_order_reservations, cleanup_expired_carts
+from marketplace.views import CartViewSet
 
 # --- Fixtures ---
 
@@ -118,6 +119,72 @@ class TestCartModels:
         with pytest.raises(Exception): 
             CartItem.objects.create(cart=cart, variant=variant, quantity=2)
 
+
+@pytest.mark.django_db
+class TestCartExpiration:
+    def test_get_cart_replaces_expired_cart(self, user):
+        expired = Cart.objects.create(
+            user=user,
+            is_active=True,
+            expires_at=timezone.now() - timedelta(days=1),
+        )
+        factory = APIRequestFactory()
+        request = factory.get("/api/v1/marketplace/cart/my-cart/")
+        force_authenticate(request, user=user)
+
+        view = CartViewSet()
+        view.request = request
+        view.args = ()
+        view.kwargs = {}
+        view.action = "my_cart"
+
+        new_cart = view.get_cart()
+
+        expired.refresh_from_db()
+        assert not expired.is_active
+        assert new_cart.id != expired.id
+        assert new_cart.is_active
+        assert new_cart.expires_at > timezone.now()
+
+    def test_add_item_extends_cart_expiry(self, user, cart, variant):
+        cart.expires_at = timezone.now() + timedelta(hours=1)
+        cart.save(update_fields=["expires_at"])
+
+        factory = APIRequestFactory()
+        request = factory.post(
+            "/api/v1/marketplace/cart/add-item/",
+            {"variant_id": str(variant.id), "quantity": 1},
+            format="json",
+        )
+        force_authenticate(request, user=user)
+
+        view = CartViewSet()
+        view.request = request
+        view.args = ()
+        view.kwargs = {}
+        view.action = "add_item"
+
+        response = view.add_item(request)
+        assert response.status_code == status.HTTP_201_CREATED
+
+        cart.refresh_from_db()
+        assert cart.expires_at > timezone.now() + timedelta(days=6)
+
+    def test_cleanup_expired_carts_task(self, user, variant):
+        cart = Cart.objects.create(
+            user=user,
+            is_active=True,
+            expires_at=timezone.now() - timedelta(hours=2),
+        )
+        CartItem.objects.create(cart=cart, variant=variant, quantity=1)
+
+        result = cleanup_expired_carts()
+
+        cart.refresh_from_db()
+        assert not cart.is_active
+        assert cart.items.count() == 0
+        assert "Carritos expirados limpiados" in result
+
 @pytest.mark.django_db
 class TestOrderModels:
     def test_order_str(self, user):
@@ -162,6 +229,10 @@ class TestOrderCreationService:
         assert order.total_amount == Decimal('200.00')
         assert order.items.count() == 1
         assert order.items.first().quantity == 2
+        assert InventoryMovement.objects.filter(
+            reference_order=order,
+            movement_type=InventoryMovement.MovementType.RESERVATION,
+        ).count() == 1
         
         variant.refresh_from_db()
         assert variant.reserved_stock == 2
@@ -252,6 +323,10 @@ class TestOrderService:
         variant.refresh_from_db()
         assert variant.stock == 48 
         assert variant.reserved_stock == 0
+        assert InventoryMovement.objects.filter(
+            reference_order=pending_order,
+            movement_type=InventoryMovement.MovementType.SALE,
+        ).count() == 1
 
     def test_confirm_payment_amount_mismatch(self, pending_order):
         with pytest.raises(BusinessLogicError, match="monto pagado"):
@@ -274,6 +349,10 @@ class TestOrderService:
         variant.refresh_from_db()
         assert variant.reserved_stock == 0
         assert variant.stock == 50
+        assert InventoryMovement.objects.filter(
+            reference_order=pending_order,
+            movement_type=InventoryMovement.MovementType.RESERVATION_RELEASE,
+        ).count() == 1
 
 @pytest.mark.django_db
 class TestReturnService:

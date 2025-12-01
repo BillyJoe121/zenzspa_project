@@ -1,0 +1,29 @@
+groups:
+- name: studiozens-alerts
+  rules:
+  - alert: PaymentFailuresSpike
+    expr: sum(increase(payment_failures_total[5m])) > 5
+    for: 5m
+    labels:
+      severity: page
+    annotations:
+      summary: "Pago fallando (>5 fallos en 5m)"
+      description: "payment_failures_total alto. Revisar Wompi/gateway."
+
+  - alert: BookingConflictsHigh
+    expr: sum(increase(appointment_concurrency_conflicts_total[10m])) > 20
+    for: 10m
+    labels:
+      severity: warn
+    annotations:
+      summary: "Conflictos de booking elevados"
+      description: "Muchos APP-001. UX o slots casi ocupados."
+
+  - alert: LLMCircuitTrips
+    expr: increase(llm_circuit_breaker_trips_total[15m]) > 0
+    for: 0m
+    labels:
+      severity: warn
+    annotations:
+      summary: "Circuit breaker LLM se activó"
+      description: "Revisar proveedor LLM / claves / latencia."

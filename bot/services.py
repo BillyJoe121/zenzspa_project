@@ -4,6 +4,7 @@ import re
 import time
 import json
 from decimal import Decimal
+from typing import Any, Dict, Optional
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -13,6 +14,8 @@ from django.utils import timezone
 from marketplace.models import ProductVariant
 from spa.models import Service, Appointment
 from .models import BotConfiguration
+from .security import sanitize_for_logging, anonymize_pii
+from pydantic import BaseModel, ValidationError
 
 logger = logging.getLogger(__name__)
 CustomUser = get_user_model()
@@ -29,6 +32,36 @@ def _format_money(value: Decimal | None) -> str:
     if value is None:
         return "N/D"
     return f"${value:,.0f}".replace(",", ".")
+
+
+def _clean_text(value: str, max_length: int = 400) -> str:
+    """Elimina caracteres de control, anonimiza PII e inyecciones básicas antes de mandar a LLM."""
+    return anonymize_pii(value or "", max_length=max_length)
+
+
+class LLMResponseSchema(BaseModel):
+    reply_to_user: str
+    analysis: Dict[str, Any]
+
+    @classmethod
+    def validate_payload(cls, payload: dict) -> dict:
+        try:
+            data = cls.parse_obj(payload)
+        except ValidationError as exc:
+            logger.warning("LLM response schema validation failed: %s", exc)
+            raise
+        # Normalizar campos esperados
+        analysis = data.analysis or {}
+        return {
+            "reply_to_user": str(data.reply_to_user)[:1200],
+            "analysis": {
+                "toxicity_level": int(analysis.get("toxicity_level") or 0),
+                "customer_score": int(analysis.get("customer_score") or 10),
+                "intent": analysis.get("intent") or "INFO",
+                "missing_info": analysis.get("missing_info"),
+                "action": analysis.get("action") or "REPLY",
+            },
+        }
 
 
 class DataContextService:
@@ -51,9 +84,10 @@ class DataContextService:
             lines = []
             for s in services:
                 price = _format_money(s.price)
-                desc = s.description[:150] + \
-                    "..." if len(s.description) > 150 else s.description
-                lines.append(f"- {s.name} ({s.duration}min): {price}. {desc}")
+                desc_raw = s.description or ""
+                desc = _clean_text(desc_raw[:150] + ("..." if len(desc_raw) > 150 else ""))
+                name = _clean_text(s.name)
+                lines.append(f"- {name} ({s.duration}min): {price}. {desc}")
             result = "\n".join(lines)
 
         cache.set(cache_key, result, timeout=300)
@@ -84,7 +118,7 @@ class DataContextService:
                     else "Actualmente agotado, pronto reabastecemos."
                 )
                 lines.append(
-                    f"- {v.product.name} ({v.name}): {price} | {stock_msg}"
+                    f"- {_clean_text(v.product.name)} ({_clean_text(v.name)}): {price} | {_clean_text(stock_msg)}"
                 )
             result = "\n".join(lines)
 
@@ -105,7 +139,7 @@ class DataContextService:
         if not staff.exists():
             result = "Equipo de terapeutas expertos."
         else:
-            result = "\n".join([f"- {person.get_full_name()}" for person in staff])
+            result = "\n".join([f"- {_clean_text(person.get_full_name())}" for person in staff])
 
         cache.set(cache_key, result, timeout=300)
         return result
@@ -127,14 +161,14 @@ class DataContextService:
             local_time = timezone.localtime(
                 upcoming.start_time).strftime("%d/%m a las %H:%M")
             services = upcoming.get_service_names() or "servicios personalizados"
-            appt_info = f"Tiene una cita próxima: {services} el {local_time}."
+            appt_info = f"Tiene una cita próxima: {_clean_text(services)} el {local_time}."
 
         is_vip = getattr(user, 'is_vip', False)
-        first_name_only = user.first_name if hasattr(user, 'first_name') else "Cliente"
+        first_name_only = _clean_text(user.first_name if hasattr(user, 'first_name') else "Cliente")
         return f"""
         Cliente: {first_name_only}
         Estado VIP: {'Sí' if is_vip else 'No'}
-        {appt_info}
+        {_clean_text(appt_info)}
         """
 
 
@@ -322,6 +356,10 @@ class GeminiService:
         self.model_name = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash") # Recomendado para JSON
         self.timeout = 30
         self.client = None
+        self.circuit_key = "bot:llm:circuit_until"
+        self.failure_key = "bot:llm:failures"
+        self.circuit_ttl_seconds = getattr(settings, "BOT_LLM_CIRCUIT_TTL_SECONDS", 120)
+        self.circuit_failure_threshold = getattr(settings, "BOT_LLM_CIRCUIT_THRESHOLD", 5)
         
         if self.api_key:
             try:
@@ -344,6 +382,11 @@ class GeminiService:
             return self._fallback_error("Error de configuración API Key")
 
         last_error = None
+        now_ts = time.time()
+        circuit_until = cache.get(self.circuit_key, 0)
+        if circuit_until and now_ts < circuit_until:
+            logger.warning("Circuito LLM abierto hasta %s", circuit_until)
+            return self._fallback_error("Circuito abierto por fallos recientes")
 
         # Sistema de retry con backoff exponencial
         for attempt in range(max_retries + 1):
@@ -358,11 +401,20 @@ class GeminiService:
                     max_output_tokens=1000,
                 )
 
+                start = time.perf_counter()
                 response = self.client.models.generate_content(
                     model=self.model_name,
                     contents=prompt_text,
                     config=config,
                 )
+                duration = time.perf_counter() - start
+                from core.metrics import get_histogram
+                get_histogram(
+                    "llm_request_duration_seconds",
+                    "Latencia de llamadas al LLM",
+                    ["status"],
+                    buckets=[0.1, 0.3, 0.5, 1, 2, 5],
+                ).labels("success").observe(duration)
 
                 # Parsear JSON
                 try:
@@ -388,6 +440,12 @@ class GeminiService:
                 if usage:
                     tokens = getattr(usage, 'total_token_count', 0)
 
+                # Validar esquema mínimo para evitar inyección o respuestas malformadas
+                try:
+                    response_json = LLMResponseSchema.validate_payload(response_json)
+                except Exception:
+                    response_json = self._validate_response_schema(response_json)
+
                 # Éxito - retornar respuesta
                 return response_json, {
                     "source": "gemini-json",
@@ -408,6 +466,16 @@ class GeminiService:
 
         # Si llegamos aquí, todos los reintentos fallaron
         logger.error("Gemini falló después de %d intentos", max_retries + 1)
+        failures = cache.get(self.failure_key, 0) + 1
+        cache.set(self.failure_key, failures, timeout=300)
+        if failures >= self.circuit_failure_threshold:
+            cache.set(self.circuit_key, time.time() + self.circuit_ttl_seconds, timeout=self.circuit_ttl_seconds + 60)
+            from core.metrics import get_counter
+            get_counter(
+                "llm_circuit_breaker_trips_total",
+                "Circuit breaker de LLM abierto",
+                ["reason"],
+            ).labels("failures").inc()
         return self._fallback_error(str(last_error) if last_error else "Error desconocido")
 
     def _fallback_error(self, reason):
@@ -449,6 +517,37 @@ class GeminiService:
             "source": "fallback_error",
             "reason": reason,
             "error_type": self._classify_error(reason)
+        }
+
+    @staticmethod
+    def _validate_response_schema(payload: dict) -> dict:
+        """
+        Garantiza que la respuesta tenga estructura esperada.
+        Si falta algo, se reemplaza con valores seguros.
+        """
+        if not isinstance(payload, dict):
+            return {
+                "reply_to_user": "Lo siento, no pude procesar tu solicitud.",
+                "analysis": {"toxicity_level": 0, "customer_score": 10, "intent": "INFO", "action": "REPLY", "missing_info": None},
+            }
+
+        reply = payload.get("reply_to_user")
+        if not isinstance(reply, str) or not reply.strip():
+            reply = "Lo siento, no pude procesar tu solicitud."
+
+        analysis = payload.get("analysis") or {}
+        if not isinstance(analysis, dict):
+            analysis = {}
+
+        return {
+            "reply_to_user": reply[:1200],
+            "analysis": {
+                "toxicity_level": int(analysis.get("toxicity_level") or 0),
+                "customer_score": int(analysis.get("customer_score") or 10),
+                "intent": analysis.get("intent") or "INFO",
+                "missing_info": analysis.get("missing_info"),
+                "action": analysis.get("action") or "REPLY",
+            },
         }
 
     def _classify_error(self, reason):

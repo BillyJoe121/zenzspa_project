@@ -29,6 +29,12 @@ class KpiService:
     """
 
     def __init__(self, start_date, end_date, *, staff_id=None, service_category_id=None):
+        if start_date is None or end_date is None:
+            raise ValueError("Debes especificar fechas de inicio y fin.")
+        if start_date > end_date:
+            raise ValueError("La fecha de inicio no puede ser mayor a la fecha de fin.")
+        if (end_date - start_date).days > 365:
+            raise ValueError("El rango de fechas no puede exceder 365 días.")
         self.start_date = start_date
         self.end_date = end_date
         self.staff_id = staff_id

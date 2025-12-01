@@ -21,4 +21,5 @@ urlpatterns = [
     path('api/v1/legal/', include('legal.urls')),
     path('api/v1/', include(api_patterns)),
     path('health/', health_check_view, name='health-check'),
+    path('metrics/', include('django_prometheus.urls')),
 ]

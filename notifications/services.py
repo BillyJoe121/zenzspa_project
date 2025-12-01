@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import timedelta
 
 from django.template import Context, Template, TemplateSyntaxError, VariableDoesNotExist
@@ -78,7 +79,7 @@ class NotificationService:
         channel_override=None,
         fallback_channels=None,
     ):
-        context = context or {}
+        context = cls._sanitize_context(context or {})
         if user is None:
             phone = context.get("phone_number")
             if not phone:
@@ -178,6 +179,22 @@ class NotificationService:
             silenced=within_quiet,
         )
 
+    @staticmethod
+    def _sanitize_context(context: dict) -> dict:
+        """
+        Limpia valores para reducir riesgo de PII/inyección en plantillas.
+        Limita longitud y elimina caracteres de control.
+        """
+        sanitized = {}
+        for key, value in context.items():
+            if isinstance(value, str):
+                cleaned = re.sub(r"[\x00-\x1f\x7f-\x9f]", " ", value)
+                cleaned = re.sub(r"\s+", " ", cleaned).strip()
+                sanitized[key] = cleaned[:500]
+            else:
+                sanitized[key] = value
+        return sanitized
+
     @classmethod
     def _get_templates(cls, event_code, channel_override=None):
         queryset = NotificationTemplate.objects.filter(
@@ -215,6 +232,9 @@ class NotificationService:
             "attempts": 0,
             "max_attempts": cls.MAX_DELIVERY_ATTEMPTS,
             "dead_letter": False,
+            "telemetry": {
+                "created_at": timezone.now().isoformat(),
+            },
         }
         
         # Lift phone_number to top-level metadata if present

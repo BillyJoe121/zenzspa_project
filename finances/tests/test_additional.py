@@ -97,9 +97,13 @@ class WebhookServiceTests(TestCase):
         }
         service = WompiWebhookService(payload, headers={})
         result = service.process_token_update()
-        token = PaymentToken.objects.get(token_id="tok_nequi_abc")
+        token = PaymentToken.objects.get(
+            token_fingerprint=PaymentToken.fingerprint("tok_nequi_abc")
+        )
         self.assertEqual(result["token_status"], "APPROVED")
         self.assertEqual(token.status, "APPROVED")
+        self.assertEqual(token.plain_token, "tok_nequi_abc")
+        self.assertTrue(token.token_id.startswith("****"))
 
     @mock.patch.object(WompiWebhookService, "_validate_signature", return_value=None)
     def test_process_payout_update_updates_commission_ledger(self, _):

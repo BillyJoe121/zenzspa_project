@@ -123,13 +123,15 @@ class OrderService:
             if release_qty > 0:
                 variant.reserved_stock -= release_qty
                 variant.save(update_fields=['reserved_stock'])
-                InventoryMovement.objects.create(
+                InventoryMovement.objects.get_or_create(
                     variant=variant,
-                    quantity=release_qty,
-                    movement_type=movement_type,
                     reference_order=order,
-                    description=reason,
-                    created_by=changed_by,
+                    movement_type=movement_type,
+                    defaults={
+                        "quantity": release_qty,
+                        "description": reason,
+                        "created_by": changed_by,
+                    },
                 )
         order.reservation_expires_at = None
         order.save(update_fields=['reservation_expires_at', 'updated_at'])
@@ -216,12 +218,14 @@ class OrderService:
                 variant.reserved_stock = 0
             variant.stock -= item.quantity
             variant.save(update_fields=['stock', 'reserved_stock'])
-            InventoryMovement.objects.create(
+            InventoryMovement.objects.get_or_create(
                 variant=variant,
-                quantity=item.quantity,
-                movement_type=InventoryMovement.MovementType.SALE,
                 reference_order=order,
-                description="Venta confirmada",
-                created_by=None,
+                movement_type=InventoryMovement.MovementType.SALE,
+                defaults={
+                    "quantity": item.quantity,
+                    "description": "Venta confirmada",
+                    "created_by": None,
+                },
             )
             InventoryService.check_low_stock(variant)

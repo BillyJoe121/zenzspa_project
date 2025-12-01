@@ -36,6 +36,7 @@ def consent_required_permission(doc_type, context_type=None):
                 user=user,
                 document=latest_doc,
                 document_version=latest_doc.version,
+                is_valid=True,
             )
             if self.required_context_type:
                 qs = qs.filter(context_type=self.required_context_type)

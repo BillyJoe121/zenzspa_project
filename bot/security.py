@@ -43,6 +43,21 @@ def sanitize_for_logging(text: str, max_length: int = 100) -> str:
     return sanitized.strip()
 
 
+def anonymize_pii(text: str, max_length: int = 200) -> str:
+    """
+    Remueve patrones típicos de PII (emails, teléfonos, direcciones) antes de enviarlos al LLM.
+    """
+    if not text:
+        return ""
+    # Quitar emails
+    text = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+", "[email]", text)
+    # Quitar números con 7+ dígitos (teléfonos)
+    text = re.sub(r"\\b\\d{7,15}\\b", "[phone]", text)
+    # Quitar direcciones comunes
+    text = re.sub(r"(calle|cra|carrera|avenida|av|cll|diag|trans|transversal)\\s+[^\\s,]{1,50}", "[address]", text, flags=re.IGNORECASE)
+    return sanitize_for_logging(text, max_length=max_length)
+
+
 class BotSecurityService:
     # --- CONFIGURACIÓN DE SEGURIDAD ---
     MAX_CHAR_LIMIT = 300

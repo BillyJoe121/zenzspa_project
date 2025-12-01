@@ -6,6 +6,7 @@ from model_bakery import baker
 from spa.services import AppointmentService
 from spa.models import Appointment, Service, ServiceCategory, StaffAvailability
 from core.exceptions import BusinessLogicError
+from django.core.cache import cache
 
 
 @pytest.mark.django_db
@@ -30,6 +31,7 @@ def test_create_appointment_blocks_conflict(mocker):
 
     # Evitar efectos colaterales de pago
     mocker.patch("spa.services.appointments.PaymentService.create_advance_payment_for_appointment", return_value=None)
+    metric_mock = mocker.patch("spa.services.appointments.emit_metric")
 
     # Primer booking debe pasar
     svc = AppointmentService(user=user, services=[service], staff_member=staff, start_time=start_time)
@@ -42,3 +44,11 @@ def test_create_appointment_blocks_conflict(mocker):
     svc_conflict = AppointmentService(user=user, services=[service], staff_member=staff, start_time=start_time)
     with pytest.raises(BusinessLogicError):
         svc_conflict.create_appointment_with_lock()
+
+    # Métricas fueron emitidas (success + conflict)
+    metric_events = [call.args[0] for call in metric_mock.call_args_list]
+    assert "booking.success" in metric_events
+    assert "booking.conflict" in metric_events
+
+    # liberar locks
+    cache.clear()

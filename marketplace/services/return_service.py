@@ -107,13 +107,15 @@ class ReturnService:
             variant = order_item.variant
             variant.stock += quantity
             variant.save(update_fields=['stock'])
-            InventoryMovement.objects.create(
+            InventoryMovement.objects.get_or_create(
                 variant=variant,
-                quantity=quantity,
-                movement_type=InventoryMovement.MovementType.RETURN,
                 reference_order=order,
-                description="Devolución aprobada",
-                created_by=processed_by,
+                movement_type=InventoryMovement.MovementType.RETURN,
+                defaults={
+                    "quantity": quantity,
+                    "description": "Devolución aprobada",
+                    "created_by": processed_by,
+                },
             )
 
             total_refund += order_item.price_at_purchase * quantity

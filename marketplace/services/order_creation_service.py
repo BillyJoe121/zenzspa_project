@@ -102,13 +102,16 @@ class OrderCreationService:
             )
 
             created_by = self.user if getattr(self.user, "is_authenticated", False) else None
-            InventoryMovement.objects.create(
+            # Idempotencia: si ya existe movimiento de reserva para esta orden+variante, no duplicar
+            InventoryMovement.objects.get_or_create(
                 variant=variant,
-                quantity=cart_item.quantity,
-                movement_type=InventoryMovement.MovementType.RESERVATION,
                 reference_order=order,
-                description="Reserva temporal de stock",
-                created_by=created_by,
+                movement_type=InventoryMovement.MovementType.RESERVATION,
+                defaults={
+                    "quantity": cart_item.quantity,
+                    "description": "Reserva temporal de stock",
+                    "created_by": created_by,
+                },
             )
 
         # 4. Crear todos los OrderItem en una sola consulta y actualizar el total

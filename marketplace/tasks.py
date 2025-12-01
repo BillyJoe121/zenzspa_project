@@ -71,3 +71,25 @@ def release_expired_order_reservations():
             OrderService.transition_to(order, Order.OrderStatus.CANCELLED)
             count += 1
     return f"Reservas liberadas: {count}"
+
+
+@shared_task
+def cleanup_expired_carts():
+    """
+    Desactiva y limpia carritos vencidos para liberar el constraint de carrito activo.
+    """
+    from .models import Cart
+
+    now = timezone.now()
+    count = 0
+    with transaction.atomic():
+        expired = (
+            Cart.objects.select_for_update()
+            .filter(is_active=True, expires_at__isnull=False, expires_at__lt=now)
+        )
+        for cart in expired:
+            cart.items.all().delete()
+            cart.is_active = False
+            cart.save(update_fields=['is_active', 'updated_at'])
+            count += 1
+    return f"Carritos expirados limpiados: {count}"

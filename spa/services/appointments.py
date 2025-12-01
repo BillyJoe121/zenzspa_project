@@ -10,6 +10,8 @@ from django.utils import timezone
 from rest_framework import status
 
 from core.exceptions import BusinessLogicError
+from core.utils import emit_metric
+from core.metrics import get_histogram, get_counter
 from core.models import AuditLog, GlobalSettings
 from users.models import CustomUser
 from ..models import (
@@ -24,6 +26,17 @@ from finances.payments import PaymentService
 
 logger = logging.getLogger(__name__)
 
+availability_duration = get_histogram(
+    "availability_calculation_duration_seconds",
+    "Duración del cálculo de disponibilidad",
+    ["staff_filter"],
+    buckets=[0.05, 0.1, 0.25, 0.5, 1, 2, 5],
+)
+booking_conflicts = get_counter(
+    "appointment_concurrency_conflicts_total",
+    "Conflictos de doble booking evitados",
+    ["staff_id"],
+)
 
 class AvailabilityService:
     """
@@ -71,6 +84,7 @@ class AvailabilityService:
         return total
 
     def _build_slots(self, staff_member_id=None):
+        start = timezone.now()
         day_of_week = self.date.isoweekday()
         availabilities = StaffAvailability.objects.filter(
             day_of_week=day_of_week)
@@ -174,6 +188,8 @@ class AvailabilityService:
                 slot_start += self.slot_interval
 
         slots.sort(key=lambda slot: (slot["start_time"], slot["staff_name"]))
+        duration = (timezone.now() - start).total_seconds()
+        availability_duration.labels(bool(staff_member_id)).observe(duration)
         return slots
 
     def _overlaps(self, intervals, start, end):
@@ -220,6 +236,10 @@ class AppointmentService:
 
     def _validate_appointment_rules(self):
         """Validaciones de reglas de negocio que no requieren bloqueo de BD."""
+        emit_metric(
+            "booking.validate_start",
+            tags={"staff_id": getattr(self.staff_member, "id", None)},
+        )
         if self.start_time < timezone.now():
             raise ValueError("No se puede reservar una cita en el pasado.")
 
@@ -300,28 +320,68 @@ class AppointmentService:
     @transaction.atomic
     def create_appointment_with_lock(self):
         self._validate_appointment_rules()
+        lock_key = None
         if self.staff_member:
-            # Lock en staff para evitar carreras de disponibilidad
-            self.staff_member = CustomUser.objects.select_for_update().get(pk=self.staff_member.pk)
-            self._ensure_staff_is_available()
-            conflicting_appointments = Appointment.objects.select_for_update().filter(
-                staff_member=self.staff_member,
-                status__in=[
-                    Appointment.AppointmentStatus.CONFIRMED,
-                    Appointment.AppointmentStatus.PENDING_PAYMENT,
-                    Appointment.AppointmentStatus.RESCHEDULED,
-                ],
-                start_time__lt=self.end_time + self.buffer,
-                end_time__gt=self.start_time - self.buffer,
-            ).exists()
-            if conflicting_appointments:
+            lock_key = f"appt:staff:{self.staff_member_id}:{self.start_time.isoformat()}"
+        else:
+            lock_key = f"appt:low_supervision:{self.start_time.isoformat()}"
+        # Fallback a SELECT FOR UPDATE en staff, pero intentamos lock distribuido para nodos múltiples.
+        acquired = True
+        try:
+            if lock_key:
+                from core.caching import acquire_lock
+                acquired = acquire_lock(lock_key, timeout=5)
+            if not acquired:
+                emit_metric("booking.lock_unavailable", tags={"staff_id": getattr(self.staff_member, 'id', None)})
                 raise BusinessLogicError(
-                    detail="Horario no disponible por solapamiento.",
-                    internal_code="APP-001",
-                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Sistema ocupado, intenta de nuevo en unos segundos.",
+                    internal_code="APP-LOCK",
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 )
-        elif self.is_low_supervision_bundle:
-            self._enforce_low_supervision_capacity()
+
+            if self.staff_member:
+                # Lock en staff para evitar carreras de disponibilidad
+                self.staff_member = CustomUser.objects.select_for_update().get(pk=self.staff_member.pk)
+                self._ensure_staff_is_available()
+                conflicting_appointments = Appointment.objects.select_for_update().filter(
+                    staff_member=self.staff_member,
+                    status__in=[
+                        Appointment.AppointmentStatus.CONFIRMED,
+                        Appointment.AppointmentStatus.PENDING_PAYMENT,
+                        Appointment.AppointmentStatus.RESCHEDULED,
+                    ],
+                    start_time__lt=self.end_time + self.buffer,
+                    end_time__gt=self.start_time - self.buffer,
+                ).exists()
+                if conflicting_appointments:
+                    booking_conflicts.labels(str(self.staff_member.id)).inc()
+                    emit_metric(
+                        "booking.conflict",
+                        tags={
+                            "staff_id": self.staff_member.id,
+                            "start": self.start_time.isoformat(),
+                        },
+                    )
+                    logger.warning(
+                        "Conflicto de agenda detectado staff=%s start=%s end=%s",
+                        self.staff_member.id,
+                        self.start_time.isoformat(),
+                        self.end_time.isoformat(),
+                    )
+                    raise BusinessLogicError(
+                        detail="Horario no disponible por solapamiento.",
+                        internal_code="APP-001",
+                        status_code=status.HTTP_409_CONFLICT,
+                    )
+            elif self.is_low_supervision_bundle:
+                self._enforce_low_supervision_capacity()
+        finally:
+            if lock_key:
+                try:
+                    from django.core.cache import cache
+                    cache.delete(lock_key)
+                except Exception:
+                    pass
 
         total_price = Decimal('0')
         appointment_items = []
@@ -345,6 +405,13 @@ class AppointmentService:
             end_time=self.end_time,
             price_at_purchase=total_price,
             status=Appointment.AppointmentStatus.PENDING_PAYMENT
+        )
+        emit_metric(
+            "booking.success",
+            tags={
+                "staff_id": getattr(self.staff_member, "id", None),
+                "is_low_supervision": self.is_low_supervision_bundle,
+            },
         )
 
         for service, price in appointment_items:

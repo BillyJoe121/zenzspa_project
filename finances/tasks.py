@@ -45,10 +45,51 @@ def check_pending_payments():
         created_at__lt=threshold,
     )[:100]
     reviewed = 0
+    updated = 0
     for payment in pending_payments:
-        PaymentService.poll_pending_payment(payment)
+        before = payment.status
+        result = PaymentService.poll_pending_payment(payment)
+        if result and payment.status != before:
+            updated += 1
         reviewed += 1
-    return f"Pagos pendientes revisados: {reviewed}"
+    return f"Pagos pendientes revisados: {reviewed}, actualizados: {updated}"
+
+
+@shared_task
+def reconcile_recent_payments(hours=24, limit=200):
+    """
+    Reconciliación ligera: consulta Wompi para pagos recientes no aprobados
+    y corrige estado si difiere.
+    """
+    cutoff = timezone.now() - timedelta(hours=hours)
+    candidates = (
+        Payment.objects.filter(
+            transaction_id__isnull=False,
+            transaction_id__gt="",
+            created_at__gte=cutoff,
+            status__in=[
+                Payment.PaymentStatus.PENDING,
+                Payment.PaymentStatus.DECLINED,
+                Payment.PaymentStatus.ERROR,
+                Payment.PaymentStatus.TIMEOUT,
+            ],
+        )
+        .order_by("-created_at")[:limit]
+    )
+    checked = 0
+    updated = 0
+    for payment in candidates:
+        checked += 1
+        if PaymentService.poll_pending_payment(payment):
+            payment.refresh_from_db()
+            if payment.status in (
+                Payment.PaymentStatus.APPROVED,
+                Payment.PaymentStatus.DECLINED,
+                Payment.PaymentStatus.ERROR,
+                Payment.PaymentStatus.TIMEOUT,
+            ):
+                updated += 1
+    return f"Reconciliación: revisados={checked}, actualizados={updated}"
 
 
 @shared_task

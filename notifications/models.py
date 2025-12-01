@@ -143,6 +143,19 @@ class NotificationTemplate(BaseModel):
     def __str__(self):
         return f"{self.event_code} ({self.channel})"
 
+    def clean(self):
+        super().clean()
+        if not self.body_template or not self.body_template.strip():
+            raise ValidationError({"body_template": "El cuerpo de la plantilla no puede estar vacío."})
+        if len(self.body_template) > 8000:
+            raise ValidationError({"body_template": "El cuerpo de la plantilla excede el límite de 8000 caracteres."})
+        if self.channel != self.ChannelChoices.WHATSAPP and not self.subject_template:
+            raise ValidationError({"subject_template": "El asunto es requerido para canales distintos a WhatsApp."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
 
 class NotificationLog(BaseModel):
     class Status(models.TextChoices):

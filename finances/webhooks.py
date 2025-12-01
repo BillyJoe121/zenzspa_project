@@ -18,8 +18,22 @@ from finances.models import (
 )
 from marketplace.models import Order
 from users.models import CustomUser
+from core.models import IdempotencyKey
+from core.metrics import get_counter
 
 logger = logging.getLogger(__name__)
+
+webhook_signature_errors = get_counter(
+    "webhook_signature_errors_total",
+    "Errores de firma en webhooks de Wompi",
+    ["event_type"],
+)
+
+payment_failures = get_counter(
+    "payment_failures_total",
+    "Pagos fallidos por razón",
+    ["reason", "gateway"],
+)
 
 
 class WompiWebhookService:
@@ -74,6 +88,7 @@ class WompiWebhookService:
             logger.error(
                 "[PAYMENT-ALERT] Webhook Error: Firma o properties ausentes (event=%s)", self.event_type
             )
+            webhook_signature_errors.labels(self.event_type or "unknown").inc()
             raise ValueError("Firma del webhook incompleta.")
 
         # Validar frescura del timestamp para prevenir replays
@@ -136,6 +151,7 @@ class WompiWebhookService:
                 sent_checksum,
                 properties
             )
+            webhook_signature_errors.labels(self.event_type or "unknown").inc()
             raise ValueError("Firma del webhook inválida. La petición podría ser fraudulenta.")
 
         logger.info("[PAYMENT-SUCCESS] Webhook validado correctamente (event=%s)", self.event_type)
@@ -168,12 +184,40 @@ class WompiWebhookService:
                 raise ValueError(
                     "Referencia o estado de la transacción ausentes en el webhook.")
 
+            # Idempotencia por referencia
+            idem_key, _ = IdempotencyKey.objects.get_or_create(
+                key=f"wompi:{reference}",
+                defaults={
+                    "endpoint": "webhook:transaction.updated",
+                    "status": IdempotencyKey.Status.PENDING,
+                },
+            )
+
             try:
                 payment = Payment.objects.select_for_update().get(
                     transaction_id=reference,
                     status=Payment.PaymentStatus.PENDING,
                 )
             except Payment.DoesNotExist:
+                try:
+                    order = Order.objects.select_for_update().get(wompi_transaction_id=reference)
+                except Order.DoesNotExist:
+                    self._update_event_status(
+                        WebhookEvent.Status.IGNORED, "Pago u orden no encontrados.")
+                    logger.error(
+                        "[PAYMENT-ALERT] Webhook Error: Pago u orden no encontrados (reference=%s)", reference)
+                    return {"status": "already_processed_or_invalid"}
+
+                amount_in_cents = transaction_data.get("amount_in_cents")
+                expected_cents = int(
+                    (order.total_amount or Decimal('0')) * Decimal('100'))
+
+                payment_record = order.payments.filter(transaction_id=reference).first()
+
+                if transaction_status == 'APPROVED':
+                    if amount_in_cents is None or int(amount_in_cents) != expected_cents:
+                        order.status = Order.OrderStatus.FRAUD_ALERT
+                        order.fraud_reason = "Monto pagado no coincide con el total."
                 try:
                     order = Order.objects.select_for_update().get(wompi_transaction_id=reference)
                 except Order.DoesNotExist:
@@ -203,6 +247,7 @@ class WompiWebhookService:
                             expected_cents,
                             amount_in_cents,
                         )
+                        payment_failures.labels(reason="amount_mismatch", gateway="wompi").inc()
                         return {"status": "fraud_alert"}
                     order.wompi_transaction_id = transaction_data.get(
                         "id", order.wompi_transaction_id)
@@ -254,6 +299,7 @@ class WompiWebhookService:
                         self._update_event_status(
                             WebhookEvent.Status.FAILED, str(exc))
                         logger.error("[PAYMENT-ALERT] Webhook Error: %s", exc)
+                        payment_failures.labels(reason="fraud_check_failed", gateway="wompi").inc()
                         return {"status": "fraud_alert"}
                 else:
                     from marketplace.services import OrderService
@@ -278,16 +324,22 @@ class WompiWebhookService:
                         expected_cents,
                         amount_in_cents,
                     )
+                    payment_failures.labels(reason="amount_mismatch", gateway="wompi").inc()
                     return {"status": "amount_mismatch"}
 
             PaymentService.apply_gateway_status(
                 payment, transaction_status, transaction_data)
             self._update_event_status(WebhookEvent.Status.PROCESSED)
+            idem_key.mark_completed(
+                response_body={"payment_id": str(payment.id)},
+                status_code=200,
+            )
             return {"status": "processed_successfully", "payment_id": payment.id}
         except Exception as exc:
             self._update_event_status(WebhookEvent.Status.FAILED, str(exc))
             logger.error("[PAYMENT-ALERT] Webhook Error: %s",
                          exc, exc_info=True)
+            payment_failures.labels(reason="unhandled_exception", gateway="wompi").inc()
             raise
 
     def process_token_update(self):
@@ -313,9 +365,14 @@ class WompiWebhookService:
             if not token_id:
                 raise ValueError("No se encontró token_id en el evento de token.")
 
+            fingerprint = PaymentToken.fingerprint(token_id)
+            masked = PaymentToken.mask_token(token_id)
+
             PaymentToken.objects.update_or_create(
-                token_id=token_id,
+                token_fingerprint=fingerprint,
                 defaults={
+                    "token_id": masked,
+                    "token_secret": token_id,
                     "status": token_status,
                     "token_type": token_type,
                     "phone_number": phone_number or "",
@@ -326,8 +383,13 @@ class WompiWebhookService:
             )
 
             self._update_event_status(WebhookEvent.Status.PROCESSED)
-            logger.info("[PAYMENT-SUCCESS] Evento de token procesado (event=%s, token=%s, status=%s)", self.event_type, token_id, token_status)
-            return {"status": "token_event_processed", "token_id": token_id, "token_status": token_status}
+            logger.info(
+                "[PAYMENT-SUCCESS] Evento de token procesado (event=%s, token=%s, status=%s)",
+                self.event_type,
+                masked,
+                token_status,
+            )
+            return {"status": "token_event_processed", "token_id": masked, "token_status": token_status}
         except Exception as exc:
             self._update_event_status(WebhookEvent.Status.FAILED, str(exc))
             logger.error("[PAYMENT-ALERT] Webhook Token Error: %s", exc, exc_info=True)

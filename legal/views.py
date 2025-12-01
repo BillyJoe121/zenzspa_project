@@ -56,7 +56,7 @@ class UserConsentViewSet(
     """
     Permite registrar la aceptación de términos (anon o autenticados) y consultarlos para el usuario autenticado.
     """
-    queryset = UserConsent.objects.select_related("document", "user")
+    queryset = UserConsent.objects.select_related("document", "user").filter(is_valid=True)
     permission_classes = [permissions.IsAuthenticated]
 
     def get_serializer_class(self):

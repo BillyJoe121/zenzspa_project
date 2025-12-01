@@ -135,6 +135,12 @@ class InventoryMovement(BaseModel):
         verbose_name = "Movimiento de Inventario"
         verbose_name_plural = "Movimientos de Inventario"
         ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=["movement_type", "reference_order", "variant"],
+                name="unique_movement_per_order_variant_type",
+            )
+        ]
 
 class ProductImage(BaseModel):
     product = models.ForeignKey(
@@ -169,13 +175,32 @@ class ProductImage(BaseModel):
         file = self.image
         if not file:
             return
-        max_size_mb = 5
+        max_size_mb = 3
         if hasattr(file, "size") and file.size > max_size_mb * 1024 * 1024:
             raise ValidationError({"image": f"El archivo supera el límite de {max_size_mb}MB."})
         content_type = getattr(file, "content_type", "")
         allowed_types = {"image/jpeg", "image/png", "image/webp"}
         if content_type and content_type not in allowed_types:
             raise ValidationError({"image": "Formato de imagen no permitido. Usa JPEG, PNG o WEBP."})
+        # Validar extensión del filename para evitar uploads disfrazados
+        filename = getattr(file, "name", "") or ""
+        lowered = filename.lower()
+        if not lowered.endswith((".jpg", ".jpeg", ".png", ".webp")):
+            raise ValidationError({"image": "Extensión de archivo no permitida. Usa JPG, JPEG, PNG o WEBP."})
+        # Validar dimensiones para evitar payloads gigantes
+        try:
+            from PIL import Image
+            file.seek(0)
+            with Image.open(file) as img:
+                width, height = img.size
+                if width > 4096 or height > 4096:
+                    raise ValidationError({"image": "La imagen excede las dimensiones máximas 4096x4096."})
+                if width < 50 or height < 50:
+                    raise ValidationError({"image": "La imagen debe tener al menos 50x50 píxeles."})
+        except ValidationError:
+            raise
+        except Exception:
+            raise ValidationError({"image": "No se pudo validar la imagen. Asegúrate de que sea un archivo de imagen válido."})
 
 class Cart(BaseModel):
     user = models.ForeignKey(

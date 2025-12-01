@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Callable, Optional, TypeVar, Tuple, List
+from typing import Any, Callable, Optional, TypeVar, Tuple, List, Iterable
 from functools import lru_cache, wraps
 from django.utils.timezone import now
 from django.core.cache import cache
@@ -8,6 +8,12 @@ from django.conf import settings
 from zoneinfo import ZoneInfo
 import time
 import logging
+from datetime import datetime
+
+try:
+    from prometheus_client import Counter
+except ImportError:
+    Counter = None
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +21,12 @@ T = TypeVar("T")
 
 BOGOTA_TZ = ZoneInfo("America/Bogota")
 
-def utc_now():
+def utc_now() -> Any:
+    """Retorna el timestamp aware en UTC (alias de django.utils.timezone.now)."""
     return now()
 
-def to_bogota(dt):
+def to_bogota(dt: Optional[datetime]) -> Optional[datetime]:
+    """Convierte un datetime aware a zona America/Bogota si existe."""
     if not dt:
         return dt
     return dt.astimezone(BOGOTA_TZ)
@@ -44,6 +52,7 @@ def get_client_ip(request: HttpRequest) -> str:
     return request.META.get("REMOTE_ADDR", "")
 
 def cached_singleton(key: str, timeout: int, loader: Callable[[], T]) -> T:
+    """Obtiene un valor de caché y si no existe lo calcula y guarda."""
     value = cache.get(key)
     if value is None:
         value = loader()
@@ -51,7 +60,48 @@ def cached_singleton(key: str, timeout: int, loader: Callable[[], T]) -> T:
     return value
 
 def invalidate(key: str):
+    """Elimina una clave de caché si existe."""
     cache.delete(key)
+
+
+def emit_metric(name: str, value: float = 1, tags: Optional[dict] = None) -> None:
+    """
+    Emite una métrica en formato log estructurado para recolectores externos (Prometheus/statsd por sidecar).
+
+    Args:
+        name: nombre de la métrica, ej: "booking.conflict"
+        value: valor numérico (counter/gauge)
+        tags: diccionario opcional de etiquetas
+    """
+    tags = tags or {}
+    # Prometheus counter si está disponible
+    if Counter:
+        try:
+            label_names = sorted(tags.keys())
+            key = (name, tuple(label_names))
+            if not hasattr(emit_metric, "_counters"):
+                emit_metric._counters = {}
+            counters = emit_metric._counters
+            if key not in counters:
+                counters[key] = Counter(name.replace(".", "_"), name, label_names)
+            counter = counters[key]
+            counter.labels(**{k: str(tags[k]) for k in label_names}).inc(value)
+            return
+        except Exception:
+            # Fallback a logging si algo falla
+            pass
+
+    try:
+        logger.info(
+            "metric",
+            extra={
+                "metric_name": name,
+                "metric_value": value,
+                "metric_tags": tags,
+            },
+        )
+    except Exception:
+        return None
 
 def safe_audit_log(action: str, admin_user=None, target_user=None, target_appointment=None, details: Any = None):
     """

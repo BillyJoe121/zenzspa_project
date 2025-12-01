@@ -68,10 +68,24 @@ if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY no configurada. Define la variable de entorno antes de iniciar la aplicación.")
 
 # Configuración de encriptación Fernet para datos sensibles (HIPAA/GDPR Compliance)
-FERNET_KEYS = [
-    os.getenv('FERNET_KEY', '').encode() if os.getenv('FERNET_KEY') else None
-]
-if not FERNET_KEYS[0]:
+def _load_fernet_keys():
+    """
+    Permite rotación: FERNET_KEYS="key_actual,key_anterior" (la primera se usa para cifrar).
+    Si no hay lista, usa FERNET_KEY.
+    """
+    keys: list[bytes] = []
+    raw_list = os.getenv("FERNET_KEYS", "")
+    for chunk in raw_list.replace(",", " ").split():
+        if chunk.strip():
+            keys.append(chunk.strip().encode())
+    single = os.getenv("FERNET_KEY")
+    if single:
+        keys.append(single.encode())
+    return [k for k in keys if k]
+
+
+FERNET_KEYS = _load_fernet_keys()
+if not FERNET_KEYS:
     if os.getenv("DEBUG", "0") in ("1", "true", "True"):
         from cryptography.fernet import Fernet
         FERNET_KEYS = [Fernet.generate_key()]
@@ -149,6 +163,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django_prometheus",
 
     # Terceros
     "rest_framework",
@@ -173,6 +188,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "django_prometheus.middleware.PrometheusBeforeMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # CORS antes de CommonMiddleware
     "corsheaders.middleware.CorsMiddleware",
@@ -189,6 +205,8 @@ MIDDLEWARE = [
     "core.middleware.RequestIDMiddleware",
     "core.middleware.AdminAuditMiddleware",
     "core.middleware.PerformanceLoggingMiddleware",  # NUEVO - Logging de performance
+    "django_prometheus.middleware.PrometheusAfterMiddleware",
+    "legal.middleware.LegalConsentRequiredMiddleware",  # Enforce re-aceptación de términos
     # "axes.middleware.AxesMiddleware",               # Habilita si usas django-axes
 ]
 

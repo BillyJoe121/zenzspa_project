@@ -33,6 +33,28 @@ class LegalDocument(BaseModel):
     def __str__(self):
         return f"{self.title} v{self.version}"
 
+    def save(self, *args, **kwargs):
+        is_new_version = False
+        if self.pk:
+            old = type(self).objects.filter(pk=self.pk).first()
+            if old and old.version != self.version:
+                is_new_version = True
+        else:
+            # Documento nuevo cuenta como nueva versión
+            is_new_version = True
+        result = super().save(*args, **kwargs)
+        if is_new_version:
+            # Invalidar consentimientos de versiones anteriores del mismo slug
+            try:
+                from .models import UserConsent  # import local para evitar ciclos al importar
+                UserConsent.objects.filter(
+                    document__slug=self.slug,
+                    document_version__lt=self.version,
+                ).update(is_valid=False)
+            except Exception:
+                pass
+        return result
+
 
 class UserConsent(BaseModel):
     class ContextType(models.TextChoices):
@@ -52,6 +74,7 @@ class UserConsent(BaseModel):
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     user_agent = models.TextField(blank=True)
     accepted_at = models.DateTimeField(auto_now_add=True)
+    is_valid = models.BooleanField(default=True, help_text="Marcado en falso cuando hay nueva versión del documento o se revoca.")
 
     class Meta:
         verbose_name = "Consentimiento de Usuario"

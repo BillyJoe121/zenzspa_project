@@ -57,6 +57,7 @@ class NotificationTemplateAdmin(SimpleHistoryAdmin):
         "event_code",
         "channel",
         "is_active_colored",
+        "validation_status",
         "preview_link",
         "usage_count",
         "created_at"
@@ -132,6 +133,14 @@ class NotificationTemplateAdmin(SimpleHistoryAdmin):
         ).count()
         return f"{count} envíos"
     usage_count.short_description = "Uso"
+
+    def validation_status(self, obj):
+        try:
+            obj.full_clean()
+            return format_html('<span style="color: green;">✓ Válida</span>')
+        except Exception as exc:
+            return format_html('<span style="color: red;" title="{}">✗ Inválida</span>', exc)
+    validation_status.short_description = "Validación"
 
     def usage_stats(self, obj):
         """Estadísticas de uso del template"""

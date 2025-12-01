@@ -59,6 +59,7 @@ class UserConsentSerializer(serializers.ModelSerializer):
             "ip_address",
             "user_agent",
             "accepted_at",
+            "is_valid",
         ]
         read_only_fields = fields
 

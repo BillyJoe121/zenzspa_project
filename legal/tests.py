@@ -2,6 +2,7 @@ import pytest
 from rest_framework.test import APIClient, APIRequestFactory
 
 from legal.models import LegalDocument, UserConsent
+from legal.middleware import LegalConsentRequiredMiddleware
 from legal.permissions import consent_required_permission
 from users.models import CustomUser
 
@@ -159,6 +160,26 @@ class TestLegalConsentsAPI:
         )
         assert perm_cls().has_permission(request, dummy_view) is True
 
+    def test_middleware_blocks_when_missing_latest_consent(self, api_rf):
+        latest = LegalDocument.objects.create(
+            slug="terms-global",
+            title="Términos",
+            body="contenido",
+            doc_type=LegalDocument.DocumentType.GLOBAL_POPUP,
+            version=2,
+            is_active=True,
+        )
+        user = CustomUser.objects.create_user(
+            phone_number="+573000000099",
+            password="pass",
+            role=CustomUser.Role.CLIENT,
+        )
+        request = api_rf.get("/api/v1/secure-endpoint")
+        request.user = user
+        middleware = LegalConsentRequiredMiddleware()
+        response = middleware.process_request(request)
+        assert response.status_code == 428
+
 
 @pytest.mark.django_db
 class TestAdminLegalDocuments:
@@ -191,6 +212,22 @@ class TestAdminLegalDocuments:
         assert doc2.is_active is True
         doc1.refresh_from_db()
         assert doc1.is_active is False
+
+        # Consentimientos previos deben invalidarse
+        user = CustomUser.objects.create_user(
+            phone_number="+573000000012",
+            password="pass",
+            role=CustomUser.Role.CLIENT,
+        )
+        UserConsent.objects.create(
+            document=doc1,
+            document_version=doc1.version,
+            user=user,
+            context_type=UserConsent.ContextType.GLOBAL,
+        )
+        # Guardar doc2 debe invalidar consents de versiones anteriores con mismo slug
+        doc2.save()
+        assert UserConsent.objects.filter(document=doc1, is_valid=False).exists()
 
     def test_non_admin_cannot_manage_documents(self, api_client):
         user = CustomUser.objects.create_user(

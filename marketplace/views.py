@@ -156,6 +156,7 @@ class CartViewSet(viewsets.GenericViewSet):
     No es un ModelViewSet completo porque el carrito es un recurso singular.
     """
     permission_classes = [permissions.IsAuthenticated]
+    CART_TTL_DAYS = getattr(settings, "CART_TTL_DAYS", 7)
 
     def get_queryset(self):
         # Este método es necesario para los mixins, aunque no se use directamente.
@@ -163,9 +164,35 @@ class CartViewSet(viewsets.GenericViewSet):
 
     def get_cart(self):
         """
-        Método de ayuda para obtener o crear el carrito activo del usuario.
+        Obtiene o crea el carrito activo, invalidando carritos vencidos.
         """
-        cart, _ = Cart.objects.get_or_create(user=self.request.user, is_active=True)
+        now = timezone.now()
+        cart = (
+            Cart.objects.filter(user=self.request.user, is_active=True)
+            .order_by('-created_at')
+            .first()
+        )
+        if cart and cart.expires_at and cart.expires_at < now:
+            cart.items.all().delete()
+            cart.is_active = False
+            cart.save(update_fields=['is_active', 'updated_at'])
+            cart = None
+
+        if not cart:
+            cart = Cart.objects.create(
+                user=self.request.user,
+                is_active=True,
+                expires_at=now + timedelta(days=self.CART_TTL_DAYS),
+            )
+        return cart
+
+    def _touch_cart_expiration(self, cart: Cart):
+        """Extiende el TTL del carrito en cada interacción."""
+        now = timezone.now()
+        new_expiry = now + timedelta(days=self.CART_TTL_DAYS)
+        if not cart.expires_at or cart.expires_at < new_expiry:
+            cart.expires_at = new_expiry
+            cart.save(update_fields=['expires_at', 'updated_at'])
         return cart
 
     @action(detail=False, methods=['get'], url_path='my-cart')
@@ -195,6 +222,7 @@ class CartViewSet(viewsets.GenericViewSet):
         MAX_ITEM_QUANTITY = 100
 
         cart = self.get_cart()
+        self._touch_cart_expiration(cart)
         
         if cart.items.count() >= MAX_CART_ITEMS:
             return Response(
@@ -282,6 +310,7 @@ class CartViewSet(viewsets.GenericViewSet):
         serializer.save()
         
         cart_serializer = CartSerializer(self.get_cart(), context={'request': request, 'view': self})
+        self._touch_cart_expiration(cart_item.cart)
         return Response(cart_serializer.data)
 
     @action(detail=True, methods=['delete'], url_path='remove-item')
@@ -292,7 +321,9 @@ class CartViewSet(viewsets.GenericViewSet):
         """
         try:
             cart_item = CartItem.objects.get(pk=pk, cart__user=request.user)
+            cart = cart_item.cart
             cart_item.delete()
+            self._touch_cart_expiration(cart)
             return Response(status=status.HTTP_204_NO_CONTENT)
         except CartItem.DoesNotExist:
             return Response({"error": "Ítem de carrito no encontrado."}, status=status.HTTP_404_NOT_FOUND)
