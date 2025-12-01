@@ -4,12 +4,13 @@ Vistas administrativas: gestión de usuarios, exportación, bloqueos.
 import csv
 import logging
 
+from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
 from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.crypto import get_random_string
-from rest_framework import generics, status, views
+from rest_framework import generics, status, views, viewsets
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
@@ -21,6 +22,7 @@ from spa.models import Appointment
 from ..models import BlockedPhoneNumber, CustomUser, UserSession
 from ..permissions import IsStaffOrAdmin
 from ..serializers import (
+    AdminUserSerializer,
     FlagNonGrataSerializer,
     StaffListSerializer,
     UserExportSerializer,
@@ -116,12 +118,21 @@ class FlagNonGrataView(generics.UpdateAPIView):
 
         # Enviar notificación al usuario
         try:
+            admin_url = f"{settings.SITE_URL.rstrip('/')}/admin/users/customuser/{instance.id}/change/"
             NotificationService.send_notification(
                 user=instance,
                 event_code="USER_FLAGGED_NON_GRATA",
                 context={
-                    "phone_number": instance.phone_number,
-                    "notes": instance.internal_notes or "",
+                    "user_name": instance.get_full_name()
+                    or instance.first_name
+                    or "Cliente",
+                    "user_email": instance.email or "No disponible",
+                    "user_phone": instance.phone_number,
+                    "flag_reason": serializer.validated_data.get("internal_notes")
+                    or instance.internal_notes
+                    or "Motivo no especificado",
+                    "action_taken": "Acceso bloqueado y sesiones terminadas",
+                    "admin_url": admin_url,
                 },
                 priority="high",
             )
@@ -178,3 +189,23 @@ class UserExportView(generics.ListAPIView):
                 ])
             return response
         return super().get(request, *args, **kwargs)
+
+
+class AdminUserViewSet(viewsets.ModelViewSet):
+    """CRUD administrativo para usuarios."""
+    permission_classes = [IsAdminUser]
+    serializer_class = AdminUserSerializer
+    throttle_classes = [AdminRateThrottle]
+    queryset = CustomUser.objects.all().order_by('-created_at')
+
+    def perform_destroy(self, instance):
+        # Soft delete para no romper integridad de datos
+        instance.is_active = False
+        instance.is_persona_non_grata = True
+        instance.save(update_fields=['is_active', 'is_persona_non_grata', 'updated_at'])
+        AuditLog.objects.create(
+            admin_user=self.request.user,
+            target_user=instance,
+            action=AuditLog.Action.FLAG_NON_GRATA,
+            details="Usuario desactivado desde API admin.",
+        )

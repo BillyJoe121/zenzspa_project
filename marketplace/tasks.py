@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 @shared_task
 def notify_order_status_change(order_id, new_status):
     from .models import Order
+    from .services.notification_service import MarketplaceNotificationService
 
     try:
         order = Order.objects.select_related('user').get(id=order_id)
@@ -19,23 +20,26 @@ def notify_order_status_change(order_id, new_status):
         return "missing"
 
     event_map = {
-        Order.OrderStatus.SHIPPED: "ORDER_SHIPPED",
-        Order.OrderStatus.DELIVERED: "ORDER_DELIVERED",
         Order.OrderStatus.CANCELLED: "ORDER_CANCELLED",
     }
     ready_status = getattr(Order.OrderStatus, "READY_FOR_PICKUP", None)
     if ready_status:
         event_map[ready_status] = "ORDER_READY_FOR_PICKUP"
-    event_code = event_map.get(new_status)
+    specialized_event, specialized_context = MarketplaceNotificationService.get_event_payload(order, new_status)
+
+    event_code = specialized_event or event_map.get(new_status)
     if not event_code:
         return "no_event"
 
-    context = {
-        "order_id": str(order.id),
-        "tracking_number": order.tracking_number,
-        "delivered_at": order.delivered_at.isoformat() if order.delivered_at else None,
-        "status": new_status,
-    }
+    if specialized_context:
+        context = specialized_context
+    else:
+        context = {
+            "order_id": str(order.id),
+            "tracking_number": order.tracking_number,
+            "delivered_at": order.delivered_at.isoformat() if order.delivered_at else None,
+            "status": new_status,
+        }
     try:
         NotificationService.send_notification(
             user=order.user,

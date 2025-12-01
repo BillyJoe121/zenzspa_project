@@ -3,9 +3,6 @@ Servicio de notificaciones para el módulo Marketplace.
 """
 import logging
 
-from django.conf import settings
-from django.utils import timezone
-
 from notifications.services import NotificationService
 
 logger = logging.getLogger(__name__)
@@ -23,29 +20,13 @@ class MarketplaceNotificationService:
         Envía notificación de actualización de estado de orden.
         Usa el sistema centralizado de notificaciones con templates aprobados.
         """
-        from ..models import Order
-
         user = order.user
         if not user:
             logger.warning("Orden %s no tiene usuario asociado", order.id)
             return
 
-        # Determinar qué event_code usar según el estado
-        event_code = None
-        context = {
-            "user_name": user.get_full_name() or user.first_name or "Cliente",
-            "order_id": str(order.id),
-        }
+        event_code, context = cls.get_event_payload(order, new_status)
 
-        if new_status == getattr(Order.OrderStatus, "READY_FOR_PICKUP", None):
-            event_code = "ORDER_READY_FOR_PICKUP"
-            context.update({
-                "store_address": "Carrera 64 #1c-87, Cali",
-                "store_hours": "Lunes a Sábado 9am - 7pm",
-                "pickup_code": str(order.id)[-4:].upper()
-            })
-        
-        # Si no es un estado con notificación configurada, salir
         if not event_code:
             return
 
@@ -60,6 +41,15 @@ class MarketplaceNotificationService:
                 logger.info("Notificación de orden enviada: order_id=%s, event=%s", order.id, event_code)
             except Exception as e:
                 logger.error("Error enviando notificación de orden %s: %s", order.id, e)
+
+    @classmethod
+    def get_event_payload(cls, order, new_status):
+        """
+        Devuelve el event_code y contexto especializado (si aplica)
+        para la notificación de estado de orden.
+        """
+        event_code, context = cls._build_event_payload(order, new_status)
+        return event_code, context
 
     @classmethod
     def send_low_stock_alert(cls, variants):
@@ -133,4 +123,52 @@ class MarketplaceNotificationService:
             )
             logger.info("Notificación de crédito enviada: order_id=%s, amount=%s", order.id, amount)
         except Exception as e:
-            logger.error("Error enviando notificación de crédito %s: %s", order.id, e)
+                logger.error("Error enviando notificación de crédito %s: %s", order.id, e)
+
+    @classmethod
+    def _build_event_payload(cls, order, new_status):
+        from ..models import Order
+
+        user = order.user
+        if not user:
+            return None, None
+
+        base_context = {
+            "user_name": user.get_full_name() or user.first_name or "Cliente",
+            "order_id": str(order.id),
+        }
+
+        ready_for_pickup = getattr(Order.OrderStatus, "READY_FOR_PICKUP", None)
+        if ready_for_pickup and new_status == ready_for_pickup:
+            base_context.update({
+                "store_address": "Carrera 64 #1c-87",
+                "pickup_code": cls._build_pickup_code(order),
+            })
+            return "ORDER_READY_FOR_PICKUP", base_context
+
+        if new_status == Order.OrderStatus.CANCELLED:
+            base_context.update({
+                "cancellation_reason": cls._resolve_cancellation_reason(order),
+            })
+            return "ORDER_CANCELLED", base_context
+
+        return None, None
+
+    @staticmethod
+    def _build_pickup_code(order):
+        pickup_code = getattr(order, "pickup_code", None)
+        if pickup_code:
+            return str(pickup_code)
+        return str(order.id)
+
+    @staticmethod
+    def _resolve_cancellation_reason(order):
+        candidates = [
+            getattr(order, "cancellation_reason", None),
+            getattr(order, "return_reason", None),
+            getattr(order, "fraud_reason", None),
+        ]
+        for reason in candidates:
+            if reason:
+                return reason
+        return "Motivo no especificado."

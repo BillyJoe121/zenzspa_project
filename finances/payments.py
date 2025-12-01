@@ -130,6 +130,39 @@ class PaymentService:
             payment, transaction_status, transaction_data)
         return True
 
+    @staticmethod
+    def _build_tax_payload(payment: Payment) -> dict:
+        """Construye tax_in_cents para Wompi si el pago tiene impuestos registrados."""
+        tax_payload = {}
+        if payment.tax_vat_in_cents is not None:
+            tax_payload["vat"] = payment.tax_vat_in_cents
+        if payment.tax_consumption_in_cents is not None:
+            tax_payload["consumption"] = payment.tax_consumption_in_cents
+        return tax_payload
+
+    @staticmethod
+    def _build_customer_data(payment: Payment) -> dict:
+        """Construye customer_data para Wompi a partir del pago y el usuario."""
+        customer_data: dict = {}
+        if payment.customer_legal_id:
+            customer_data["legal_id"] = payment.customer_legal_id
+        if payment.customer_legal_id_type:
+            customer_data["legal_id_type"] = payment.customer_legal_id_type
+
+        user = getattr(payment, "user", None)
+        if user:
+            full_name = ""
+            try:
+                full_name = user.get_full_name()
+            except Exception:
+                full_name = f"{getattr(user, 'first_name', '')} {getattr(user, 'last_name', '')}".strip()
+            if full_name:
+                customer_data["full_name"] = full_name
+            phone = getattr(user, "phone_number", None)
+            if phone:
+                customer_data["phone_number"] = phone
+        return customer_data
+
     @classmethod
     def charge_recurrence_token(cls, user, amount, token):
         """
@@ -199,7 +232,7 @@ class PaymentService:
             currency=currency,
         )
         if signature:
-            payload["signature"] = signature
+            payload["signature"] = {"integrity": signature}
 
         client = WompiPaymentClient()
         try:
@@ -479,6 +512,10 @@ class PaymentService:
         client = WompiPaymentClient()
         amount_in_cents = int(payment.amount * 100)
 
+        # Preparar datos opcionales (impuestos y customer_data)
+        taxes = cls._build_tax_payload(payment)
+        customer_data = cls._build_customer_data(payment)
+
         # Actualizar campos del modelo Payment
         payment.customer_legal_id = user_legal_id
         payment.customer_legal_id_type = user_legal_id_type
@@ -500,6 +537,8 @@ class PaymentService:
             payment_description=payment_description,
             redirect_url=redirect_url,
             expiration_time=expiration_time,
+            taxes=taxes,
+            customer_data=customer_data,
         )
 
         if status_code == 201:
@@ -543,6 +582,9 @@ class PaymentService:
         client = WompiPaymentClient()
         amount_in_cents = int(payment.amount * 100)
 
+        taxes = cls._build_tax_payload(payment)
+        customer_data = cls._build_customer_data(payment)
+
         # Actualizar campos del modelo Payment
         payment.payment_method_type = "NEQUI"
         payment.payment_method_data = {
@@ -556,11 +598,120 @@ class PaymentService:
             phone_number=phone_number,
             redirect_url=redirect_url,
             expiration_time=expiration_time,
+            taxes=taxes,
+            customer_data=customer_data,
         )
 
         if status_code == 201:
             transaction_data = response_data.get("data", {})
             payment.raw_response = transaction_data
+
+        payment.save(update_fields=[
+            'payment_method_type',
+            'payment_method_data',
+            'raw_response',
+            'updated_at'
+        ])
+
+        return response_data, status_code
+
+    @classmethod
+    def create_daviplata_payment(
+        cls,
+        *,
+        payment: Payment,
+        phone_number: str,
+        redirect_url: str | None = None,
+        expiration_time: str | None = None,
+    ):
+        """Crea una transacción Daviplata en Wompi para un pago existente."""
+        if payment.status != Payment.PaymentStatus.PENDING:
+            raise ValueError("El pago debe estar en estado PENDING para crear la transacción Daviplata")
+        if not payment.user:
+            raise ValueError("El pago debe tener un usuario asociado")
+
+        client = WompiPaymentClient()
+        amount_in_cents = int(payment.amount * 100)
+        taxes = cls._build_tax_payload(payment)
+        customer_data = cls._build_customer_data(payment)
+
+        payment.payment_method_type = "DAVIPLATA"
+        payment.payment_method_data = {"phone_number": phone_number}
+
+        response_data, status_code = client.create_daviplata_transaction(
+            amount_in_cents=amount_in_cents,
+            reference=payment.transaction_id,
+            customer_email=payment.user.email,
+            phone_number=phone_number,
+            redirect_url=redirect_url,
+            expiration_time=expiration_time,
+            taxes=taxes,
+            customer_data=customer_data,
+        )
+
+        if status_code == 201:
+            transaction_data = response_data.get("data", {})
+            payment.raw_response = transaction_data
+
+        payment.save(update_fields=[
+            'payment_method_type',
+            'payment_method_data',
+            'raw_response',
+            'updated_at'
+        ])
+
+        return response_data, status_code
+
+    @classmethod
+    def create_bancolombia_transfer_payment(
+        cls,
+        *,
+        payment: Payment,
+        payment_description: str,
+        redirect_url: str | None = None,
+        expiration_time: str | None = None,
+    ):
+        """Crea una transacción Bancolombia Transfer (Botón) en Wompi para un pago existente."""
+        if payment.status != Payment.PaymentStatus.PENDING:
+            raise ValueError("El pago debe estar en estado PENDING para crear la transacción Bancolombia Transfer")
+        if not payment.user:
+            raise ValueError("El pago debe tener un usuario asociado")
+
+        client = WompiPaymentClient()
+        amount_in_cents = int(payment.amount * 100)
+        taxes = cls._build_tax_payload(payment)
+        customer_data = cls._build_customer_data(payment)
+
+        payment.payment_method_type = "BANCOLOMBIA_TRANSFER"
+        payment.payment_method_data = {"payment_description": payment_description}
+
+        response_data, status_code = client.create_bancolombia_transfer_transaction(
+            amount_in_cents=amount_in_cents,
+            reference=payment.transaction_id,
+            customer_email=payment.user.email,
+            payment_description=payment_description,
+            redirect_url=redirect_url,
+            expiration_time=expiration_time,
+            taxes=taxes,
+            customer_data=customer_data,
+        )
+
+        if status_code == 201:
+            transaction_data = response_data.get("data", {})
+            payment.raw_response = transaction_data
+            # async_payment_url puede venir en extra o en payment_method directamente
+            async_url = None
+            payment_method = transaction_data.get("payment_method", {})
+            extra = payment_method.get("extra", {}) if isinstance(payment_method, dict) else {}
+            async_url = (
+                payment_method.get("async_payment_url")
+                if isinstance(payment_method, dict)
+                else None
+            )
+            if not async_url:
+                async_url = extra.get("async_payment_url")
+            if async_url:
+                payment.payment_method_data["async_payment_url"] = async_url
 
         payment.save(update_fields=[
             'payment_method_type',
@@ -582,8 +733,8 @@ class PaymentService:
         if previous_status == new_status:
             return
         user = getattr(payment, "user", None)
-        email = getattr(user, "email", None)
-        if not user or not email:
+        phone = getattr(user, "phone_number", None)
+        if not user or not phone:
             return
         reference = None
         if isinstance(transaction_payload, dict):
@@ -592,11 +743,9 @@ class PaymentService:
         reference = reference or payment.transaction_id
         amount = payment.amount or Decimal('0')
         amount_str = f"{amount:,.2f}"
-        payment_type = payment.get_payment_type_display()
-        timestamp = timezone.localtime().strftime("%d/%m/%Y %H:%M")
         display_name = user.get_full_name() if hasattr(
             user, "get_full_name") else (user.first_name or "")
-        display_name = display_name or user.email
+        display_name = display_name or user.email or "Cliente"
         # Refactor: Use NotificationService instead of direct send_mail
         try:
             from notifications.services import NotificationService
@@ -615,14 +764,25 @@ class PaymentService:
         if not event_code:
             return
 
-        context = {
+        base_context = {
+            "user_name": display_name,
             "amount": amount_str,
-            "payment_type": payment_type,
             "reference": reference or "N/A",
-            "date": timestamp,
-            "display_name": display_name,
-            "payment_id": payment.id,
         }
+
+        service_description = PaymentService._describe_payment_service(payment)
+        if event_code == "PAYMENT_STATUS_APPROVED":
+            context = {
+                **base_context,
+                "service": service_description,
+            }
+        elif event_code == "PAYMENT_STATUS_DECLINED":
+            context = {
+                **base_context,
+                "decline_reason": PaymentService._extract_decline_reason(transaction_payload),
+            }
+        else:
+            context = base_context
 
         try:
             NotificationService.send_notification(
@@ -637,6 +797,62 @@ class PaymentService:
                 payment.id,
                 new_status,
             )
+
+    @staticmethod
+    def _describe_payment_service(payment):
+        appointment = getattr(payment, "appointment", None)
+        if appointment:
+            try:
+                services = appointment.get_service_names()
+            except Exception:
+                services = ""
+            if services:
+                return services
+            return "Servicios de tu cita"
+
+        order = getattr(payment, "order", None)
+        if order:
+            return f"Orden #{order.id}"
+
+        payment_type_display = payment.get_payment_type_display()
+        if payment_type_display:
+            return payment_type_display
+        return "Pago en StudioZens"
+
+    @staticmethod
+    def _extract_decline_reason(transaction_payload):
+        default_reason = "El banco rechazó la transacción. Intenta nuevamente."
+        if not isinstance(transaction_payload, dict):
+            return default_reason
+
+        candidates = [
+            "status_message",
+            "status_detail",
+            "status_reason",
+            "reason",
+            "error",
+            "message",
+            "response_message",
+        ]
+        for key in candidates:
+            value = transaction_payload.get(key)
+            if value:
+                return str(value)
+
+        payment_method = transaction_payload.get("payment_method") or {}
+        extra = payment_method.get("extra") or {}
+        for key in ("status", "status_message", "message", "reason"):
+            value = extra.get(key)
+            if value:
+                return str(value)
+
+        processor = transaction_payload.get("processor_fields") or {}
+        for key in ("explanation", "message", "status_message"):
+            value = processor.get(key)
+            if value:
+                return str(value)
+
+        return default_reason
 
     @staticmethod
     def reset_user_cancellation_history(appointment: Appointment):

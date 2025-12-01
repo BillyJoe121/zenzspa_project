@@ -26,7 +26,7 @@ class TestNotificationPreference:
         )
         pref = NotificationPreference.for_user(user)
         assert pref.user == user
-        assert pref.email_enabled is True
+        assert pref.whatsapp_enabled is True
 
     def test_for_user_returns_existing(self):
         """for_user debe retornar preferencia existente"""
@@ -136,11 +136,11 @@ class TestNotificationPreference:
         )
         pref = NotificationPreference.objects.create(
             user=user,
-            email_enabled=True,
+            whatsapp_enabled=True,
             sms_enabled=False
         )
 
-        assert pref.channel_enabled(NotificationTemplate.ChannelChoices.EMAIL) is True
+        assert pref.channel_enabled(NotificationTemplate.ChannelChoices.WHATSAPP) is True
         assert pref.channel_enabled(NotificationTemplate.ChannelChoices.SMS) is False
 
 
@@ -159,7 +159,7 @@ class TestNotificationService:
         # Crear template
         NotificationTemplate.objects.create(
             event_code="TEST_EVENT",
-            channel=NotificationTemplate.ChannelChoices.EMAIL,
+            channel=NotificationTemplate.ChannelChoices.WHATSAPP,
             subject_template="Test Subject",
             body_template="Test Body",
             is_active=True
@@ -218,15 +218,15 @@ class TestNotificationService:
             password="testpass123"
         )
 
-        # Deshabilitar email
+        # Deshabilitar WhatsApp
         pref = NotificationPreference.for_user(user)
-        pref.email_enabled = False
+        pref.whatsapp_enabled = False
         pref.save()
 
-        # Crear template solo EMAIL
+        # Crear template solo WHATSAPP
         NotificationTemplate.objects.create(
             event_code="TEST_EVENT_2",
-            channel=NotificationTemplate.ChannelChoices.EMAIL,
+            channel=NotificationTemplate.ChannelChoices.WHATSAPP,
             subject_template="Test",
             body_template="Test",
             is_active=True
@@ -258,7 +258,7 @@ class TestNotificationRenderer:
         """render debe reemplazar variables del contexto"""
         template = NotificationTemplate(
             event_code="TEST",
-            channel=NotificationTemplate.ChannelChoices.EMAIL,
+            channel=NotificationTemplate.ChannelChoices.WHATSAPP,
             subject_template="Hello {{ name }}",
             body_template="Your appointment is at {{ time }}"
         )
@@ -275,7 +275,7 @@ class TestNotificationRenderer:
         """render sin subject_template debe retornar subject vacío"""
         template = NotificationTemplate(
             event_code="TEST",
-            channel=NotificationTemplate.ChannelChoices.EMAIL,
+            channel=NotificationTemplate.ChannelChoices.WHATSAPP,
             subject_template="",
             body_template="Body content"
         )
@@ -289,7 +289,7 @@ class TestNotificationRenderer:
         """render con context vacío debe funcionar"""
         template = NotificationTemplate(
             event_code="TEST",
-            channel=NotificationTemplate.ChannelChoices.EMAIL,
+            channel=NotificationTemplate.ChannelChoices.WHATSAPP,
             subject_template="Static subject",
             body_template="Static body"
         )
@@ -303,7 +303,7 @@ class TestNotificationRenderer:
         """Variables faltantes deben renderizarse como vacías"""
         template = NotificationTemplate(
             event_code="TEST",
-            channel=NotificationTemplate.ChannelChoices.EMAIL,
+            channel=NotificationTemplate.ChannelChoices.WHATSAPP,
             subject_template="Hello {{ name }}",
             body_template="Your appointment is at {{ missing_var }}"
         )
@@ -322,7 +322,7 @@ class TestNotificationRenderer:
         """Error de sintaxis debe ser manejado por Django Template"""
         template = NotificationTemplate(
             event_code="TEST",
-            channel=NotificationTemplate.ChannelChoices.EMAIL,
+            channel=NotificationTemplate.ChannelChoices.WHATSAPP,
             subject_template="Hello {{ name",  # Falta cerrar }}
             body_template="Body"
         )
@@ -351,7 +351,7 @@ class TestNotificationLog:
         log = NotificationLog.objects.create(
             user=user,
             event_code="TEST_EVENT",
-            channel=NotificationTemplate.ChannelChoices.EMAIL,
+            channel=NotificationTemplate.ChannelChoices.WHATSAPP,
             status=NotificationLog.Status.QUEUED
         )
 
@@ -370,10 +370,10 @@ class TestNotificationLog:
         log = NotificationLog.objects.create(
             user=user,
             event_code="TEST_EVENT",
-            channel=NotificationTemplate.ChannelChoices.EMAIL,
+            channel=NotificationTemplate.ChannelChoices.WHATSAPP,
             status=NotificationLog.Status.SENT
         )
 
         assert "TEST_EVENT" in str(log)
-        assert "EMAIL" in str(log)
+        assert "WHATSAPP" in str(log)
         assert "SENT" in str(log)

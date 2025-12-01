@@ -1,4 +1,5 @@
-from django.urls import path
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
 from .views import (
     ChangePasswordView,
     UserRegistrationView,
@@ -21,7 +22,11 @@ from .views import (
     TwilioWebhookView,
     EmailVerificationView,
     UserDeleteView,
+    AdminUserViewSet,
 )
+
+router = DefaultRouter()
+router.register(r'admin/users', AdminUserViewSet, basename='admin-user')
 
 
 
@@ -66,5 +71,7 @@ urlpatterns = [
     path('twilio/webhook/', TwilioWebhookView.as_view(), name='twilio-webhook'),
     path('email/verify/', EmailVerificationView.as_view(), name='email-verify'),
     path('me/delete/', UserDeleteView.as_view(), name='user-delete'),
-]
 
+    # Rutas administrativas (router)
+    path('', include(router.urls)),
+]

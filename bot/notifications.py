@@ -61,19 +61,26 @@ class HandoffNotificationService:
             score_emoji = "🟡"  # Media prioridad
 
         # Alerta de toxicidad
-        sexual_score = handoff_request.conversation_context.get('sexual_score', 0)
+        conversation_context = handoff_request.conversation_context or {}
+        sexual_score = conversation_context.get('sexual_score')
         warning_text = ""
-        if sexual_score > 0:
+        if sexual_score:
             warning_text = "⚠️ ALERTA: Cliente ha hecho comentarios inapropiados."
 
         # Preparar contexto para NotificationService
         context = {
             "score_emoji": score_emoji,
             "client_score": str(handoff_request.client_score),
-            "client_name": handoff_request.client_contact_info.get('name', 'Anónimo'),
-            "client_phone": handoff_request.client_contact_info.get('phone', 'N/A'),
-            "warning_text": warning_text,
-            "escalation_message": handoff_request.conversation_context.get('escalation_message', 'No disponible'),
+            "client_name": (
+                handoff_request.client_contact_info.get("name")
+                or "Anónimo"
+            ),
+            "client_phone": (
+                handoff_request.client_contact_info.get("phone")
+                or "No disponible"
+            ),
+            "warning_text": warning_text or "Sin alertas",
+            "escalation_message": conversation_context.get("escalation_message"),
             "admin_url": f"{settings.SITE_URL}/admin/bot/humanhandoffrequest/{handoff_request.id}/change/",
         }
 
@@ -281,8 +288,12 @@ Por favor, responde al cliente lo antes posible.
         # Preparar contexto
         context = {
             "handoff_id": str(handoff_request.id),
-            "client_name": client_info.get('name', 'No proporcionado'),
-            "created_at": handoff_request.created_at.strftime("%d/%m/%Y %H:%M:%S") if handoff_request.created_at else "Desconocido",
+            "client_name": client_info.get('name') or "No proporcionado",
+            "created_at": (
+                handoff_request.created_at.strftime("%d/%m/%Y %H:%M:%S")
+                if handoff_request.created_at
+                else "Desconocido"
+            ),
             "admin_url": f"{settings.SITE_URL}/admin/bot/humanhandoffrequest/{handoff_request.id}/change/",
         }
 

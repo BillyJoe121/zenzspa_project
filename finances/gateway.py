@@ -234,6 +234,9 @@ class WompiPaymentClient:
         payment_description: str,  # Max 30 caracteres
         redirect_url: str | None = None,
         expiration_time: str | None = None,
+        taxes: dict | None = None,
+        customer_data: dict | None = None,
+        shipping_address: dict | None = None,
     ):
         """
         Crea una transacción PSE en Wompi.
@@ -298,6 +301,21 @@ class WompiPaymentClient:
         if expiration_time:
             payload["expiration_time"] = expiration_time
 
+        if taxes:
+            tax_payload = {}
+            if taxes.get("vat") is not None:
+                tax_payload["vat"] = taxes["vat"]
+            if taxes.get("consumption") is not None:
+                tax_payload["consumption"] = taxes["consumption"]
+            if tax_payload:
+                payload["tax_in_cents"] = tax_payload
+
+        if customer_data:
+            payload["customer_data"] = {k: v for k, v in customer_data.items() if v not in (None, "")}
+
+        if shipping_address:
+            payload["shipping_address"] = {k: v for k, v in shipping_address.items() if v not in (None, "")}
+
         return self.create_transaction(payload)
 
     def get_pse_financial_institutions(self):
@@ -339,6 +357,9 @@ class WompiPaymentClient:
         phone_number: str,
         redirect_url: str | None = None,
         expiration_time: str | None = None,
+        taxes: dict | None = None,
+        customer_data: dict | None = None,
+        shipping_address: dict | None = None,
     ):
         """
         Crea una transacción Nequi en Wompi.
@@ -388,6 +409,21 @@ class WompiPaymentClient:
         if expiration_time:
             payload["expiration_time"] = expiration_time
 
+        if taxes:
+            tax_payload = {}
+            if taxes.get("vat") is not None:
+                tax_payload["vat"] = taxes["vat"]
+            if taxes.get("consumption") is not None:
+                tax_payload["consumption"] = taxes["consumption"]
+            if tax_payload:
+                payload["tax_in_cents"] = tax_payload
+
+        if customer_data:
+            payload["customer_data"] = {k: v for k, v in customer_data.items() if v not in (None, "")}
+
+        if shipping_address:
+            payload["shipping_address"] = {k: v for k, v in shipping_address.items() if v not in (None, "")}
+
         return self.create_transaction(payload)
 
     def create_daviplata_transaction(
@@ -399,6 +435,9 @@ class WompiPaymentClient:
         phone_number: str,
         redirect_url: str | None = None,
         expiration_time: str | None = None,
+        taxes: dict | None = None,
+        customer_data: dict | None = None,
+        shipping_address: dict | None = None,
     ):
         """
         Crea una transacción Daviplata en Wompi.
@@ -450,6 +489,21 @@ class WompiPaymentClient:
         if expiration_time:
             payload["expiration_time"] = expiration_time
 
+        if taxes:
+            tax_payload = {}
+            if taxes.get("vat") is not None:
+                tax_payload["vat"] = taxes["vat"]
+            if taxes.get("consumption") is not None:
+                tax_payload["consumption"] = taxes["consumption"]
+            if tax_payload:
+                payload["tax_in_cents"] = tax_payload
+
+        if customer_data:
+            payload["customer_data"] = {k: v for k, v in customer_data.items() if v not in (None, "")}
+
+        if shipping_address:
+            payload["shipping_address"] = {k: v for k, v in shipping_address.items() if v not in (None, "")}
+
         return self.create_transaction(payload)
 
     def create_bancolombia_transfer_transaction(
@@ -461,6 +515,9 @@ class WompiPaymentClient:
         payment_description: str,
         redirect_url: str | None = None,
         expiration_time: str | None = None,
+        taxes: dict | None = None,
+        customer_data: dict | None = None,
+        shipping_address: dict | None = None,
     ):
         """
         Crea una transacción Bancolombia Transfer (Botón Bancolombia).
@@ -511,6 +568,21 @@ class WompiPaymentClient:
 
         if expiration_time:
             payload["expiration_time"] = expiration_time
+
+        if taxes:
+            tax_payload = {}
+            if taxes.get("vat") is not None:
+                tax_payload["vat"] = taxes["vat"]
+            if taxes.get("consumption") is not None:
+                tax_payload["consumption"] = taxes["consumption"]
+            if tax_payload:
+                payload["tax_in_cents"] = tax_payload
+
+        if customer_data:
+            payload["customer_data"] = {k: v for k, v in customer_data.items() if v not in (None, "")}
+
+        if shipping_address:
+            payload["shipping_address"] = {k: v for k, v in shipping_address.items() if v not in (None, "")}
 
         return self.create_transaction(payload)
 

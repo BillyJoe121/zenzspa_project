@@ -9,23 +9,26 @@ Incluye endpoints de:
 """
 import uuid
 from decimal import Decimal
+import requests
 
 from django.conf import settings
 from django.db import transaction
-from rest_framework import generics, status
+from django.utils import timezone
+from rest_framework import generics, status, viewsets
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from users.permissions import IsStaffOrAdmin, IsVerified
-from core.models import GlobalSettings
+from users.permissions import IsAdminUser, IsStaffOrAdmin, IsVerified
+from core.models import AuditLog, GlobalSettings
 from spa.models import Appointment
 from .services import DeveloperCommissionService, WompiDisbursementClient
-from .models import CommissionLedger, Payment, WebhookEvent
-from .serializers import CommissionLedgerSerializer
+from .models import ClientCredit, CommissionLedger, Payment, WebhookEvent
+from .serializers import ClientCreditAdminSerializer, CommissionLedgerSerializer
 from .gateway import WompiPaymentClient, build_integrity_signature
 from .webhooks import WompiWebhookService
 from spa.serializers import PackagePurchaseCreateSerializer
+from .payments import PaymentService
 
 
 class CommissionLedgerListView(generics.ListAPIView):
@@ -101,7 +104,14 @@ class PSEFinancialInstitutionsView(APIView):
     def get(self, request):
         client = WompiPaymentClient()
         try:
-            institutions_data, status_code = client.get_pse_financial_institutions()
+            result = client.get_pse_financial_institutions()
+
+            # La función de gateway devuelve actualmente solo la lista; soporta tuplas por si cambia.
+            if isinstance(result, tuple) and len(result) == 2:
+                institutions_data, status_code = result
+            else:
+                institutions_data = result
+                status_code = 200
 
             if status_code == 200:
                 return Response(institutions_data, status=200)
@@ -110,10 +120,16 @@ class PSEFinancialInstitutionsView(APIView):
                     {"error": "No se pudieron obtener los bancos PSE"},
                     status=status_code
                 )
+        except requests.HTTPError as exc:
+            status_code = exc.response.status_code if exc.response else 502
+            return Response(
+                {"error": "Error al consultar bancos PSE", "detail": str(exc)},
+                status=status_code,
+            )
         except Exception as e:
             return Response(
                 {"error": f"Error al consultar bancos PSE: {str(e)}"},
-                status=500
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
             )
 
 
@@ -181,6 +197,12 @@ class WompiWebhookView(generics.GenericAPIView):
         try:
             if event_type == "transaction.updated":
                 result = webhook_service.process_transaction_update()
+                return Response({"status": "webhook processed", "result": result}, status=status.HTTP_200_OK)
+            if event_type in {"nequi_token.updated", "bancolombia_transfer_token.updated"}:
+                result = webhook_service.process_token_update()
+                return Response({"status": "webhook processed", "result": result}, status=status.HTTP_200_OK)
+            if event_type in {"transfer.updated", "payout.updated"}:
+                result = webhook_service.process_payout_update()
                 return Response({"status": "webhook processed", "result": result}, status=status.HTTP_200_OK)
             webhook_service._update_event_status(WebhookEvent.Status.IGNORED, "Evento no manejado.")
             return Response({"status": "event_type_not_handled"}, status=status.HTTP_200_OK)
@@ -280,3 +302,168 @@ class InitiatePackagePurchaseView(generics.CreateAPIView):
             'redirectUrl': settings.WOMPI_REDIRECT_URL
         }
         return Response(payment_data, status=status.HTTP_200_OK)
+
+
+class BasePaymentCreationView(APIView):
+    """Helper base class para crear transacciones Wompi a partir de un Payment existente."""
+
+    permission_classes = [IsAuthenticated, IsVerified]
+    payment_method = None  # override
+
+    def get_payment(self, request, pk):
+        try:
+            return Payment.objects.get(pk=pk, user=request.user, status=Payment.PaymentStatus.PENDING)
+        except Payment.DoesNotExist:
+            return None
+
+    def bad_request(self, message):
+        return Response({"error": message}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CreatePSEPaymentView(BasePaymentCreationView):
+    """Crea transacción PSE server-side."""
+    payment_method = "PSE"
+
+    def post(self, request, pk):
+        payment = self.get_payment(request, pk)
+        if not payment:
+            return Response({"error": "Pago no encontrado o no está pendiente."}, status=status.HTTP_404_NOT_FOUND)
+
+        data = request.data or {}
+        required_fields = [
+            "user_type",
+            "user_legal_id",
+            "user_legal_id_type",
+            "financial_institution_code",
+            "payment_description",
+        ]
+        for field in required_fields:
+            if not data.get(field):
+                return self.bad_request(f"Falta el campo requerido: {field}")
+
+        response_data, status_code = PaymentService.create_pse_payment(
+            payment=payment,
+            user_type=int(data["user_type"]),
+            user_legal_id=str(data["user_legal_id"]),
+            user_legal_id_type=str(data["user_legal_id_type"]),
+            financial_institution_code=str(data["financial_institution_code"]),
+            payment_description=str(data["payment_description"]),
+            redirect_url=data.get("redirect_url"),
+            expiration_time=data.get("expiration_time"),
+        )
+        return Response(response_data, status=status_code)
+
+
+class CreateNequiPaymentView(BasePaymentCreationView):
+    """Crea transacción Nequi server-side."""
+    payment_method = "NEQUI"
+
+    def post(self, request, pk):
+        payment = self.get_payment(request, pk)
+        if not payment:
+            return Response({"error": "Pago no encontrado o no está pendiente."}, status=status.HTTP_404_NOT_FOUND)
+
+        data = request.data or {}
+        phone_number = data.get("phone_number")
+        if not phone_number:
+            return self.bad_request("Falta el campo requerido: phone_number")
+
+        response_data, status_code = PaymentService.create_nequi_payment(
+            payment=payment,
+            phone_number=str(phone_number),
+            redirect_url=data.get("redirect_url"),
+            expiration_time=data.get("expiration_time"),
+        )
+        return Response(response_data, status=status_code)
+
+
+class CreateDaviplataPaymentView(BasePaymentCreationView):
+    """Crea transacción Daviplata server-side."""
+    payment_method = "DAVIPLATA"
+
+    def post(self, request, pk):
+        payment = self.get_payment(request, pk)
+        if not payment:
+            return Response({"error": "Pago no encontrado o no está pendiente."}, status=status.HTTP_404_NOT_FOUND)
+
+        data = request.data or {}
+        phone_number = data.get("phone_number")
+        if not phone_number:
+            return self.bad_request("Falta el campo requerido: phone_number")
+
+        response_data, status_code = PaymentService.create_daviplata_payment(
+            payment=payment,
+            phone_number=str(phone_number),
+            redirect_url=data.get("redirect_url"),
+            expiration_time=data.get("expiration_time"),
+        )
+        return Response(response_data, status=status_code)
+
+
+class CreateBancolombiaTransferPaymentView(BasePaymentCreationView):
+    """Crea transacción Bancolombia Transfer server-side (botón)."""
+    payment_method = "BANCOLOMBIA_TRANSFER"
+
+    def post(self, request, pk):
+        payment = self.get_payment(request, pk)
+        if not payment:
+            return Response({"error": "Pago no encontrado o no está pendiente."}, status=status.HTTP_404_NOT_FOUND)
+
+        data = request.data or {}
+        payment_description = data.get("payment_description")
+        if not payment_description:
+            return self.bad_request("Falta el campo requerido: payment_description")
+
+        response_data, status_code = PaymentService.create_bancolombia_transfer_payment(
+            payment=payment,
+            payment_description=str(payment_description),
+            redirect_url=data.get("redirect_url"),
+            expiration_time=data.get("expiration_time"),
+        )
+        return Response(response_data, status=status_code)
+
+
+class ClientCreditAdminViewSet(viewsets.ModelViewSet):
+    """
+    CRUD administrativo para créditos de clientes.
+    Permite ajustar saldo disponible tras reembolsos en efectivo u otros casos.
+    """
+    permission_classes = [IsAuthenticated, IsAdminUser]
+    serializer_class = ClientCreditAdminSerializer
+    queryset = ClientCredit.objects.select_related("user", "originating_payment").order_by("-created_at")
+
+    def _compute_status(self, credit: ClientCredit) -> str:
+        # Marcar expirado si la fecha ya pasó
+        if credit.expires_at and credit.expires_at < timezone.now().date():
+            return ClientCredit.CreditStatus.EXPIRED
+        if credit.remaining_amount == 0:
+            return ClientCredit.CreditStatus.USED
+        if credit.remaining_amount < credit.initial_amount:
+            return ClientCredit.CreditStatus.PARTIALLY_USED
+        return ClientCredit.CreditStatus.AVAILABLE
+
+    def perform_create(self, serializer):
+        credit = serializer.save()
+        credit.status = self._compute_status(credit)
+        credit.save(update_fields=["status"])
+        AuditLog.objects.create(
+            admin_user=self.request.user,
+            target_user=credit.user,
+            action=AuditLog.Action.FINANCIAL_ADJUSTMENT_CREATED,
+            details=f"Crédito manual creado: {credit.remaining_amount} - expira {credit.expires_at or 'sin expiración'}",
+        )
+        return credit
+
+    def perform_update(self, serializer):
+        credit = serializer.save()
+        new_status = self._compute_status(credit)
+        if credit.status != new_status:
+            credit.status = new_status
+            credit.save(update_fields=["status"])
+        AuditLog.objects.create(
+            admin_user=self.request.user,
+            target_user=credit.user,
+            action=AuditLog.Action.FINANCIAL_ADJUSTMENT_CREATED,
+            details=f"Crédito actualizado: saldo {credit.remaining_amount} / inicial {credit.initial_amount}, estado {credit.status}",
+        )
+        return credit

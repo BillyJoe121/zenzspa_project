@@ -400,13 +400,10 @@ class TestTasks:
             tracking_number="TRACK123"
         )
         
-        notify_order_status_change(order.id, Order.OrderStatus.SHIPPED)
+        result = notify_order_status_change(order.id, Order.OrderStatus.SHIPPED)
         
-        mock_notification.send_notification.assert_called_once()
-        call_args = mock_notification.send_notification.call_args[1]
-        assert call_args['user'] == user
-        assert call_args['event_code'] == "ORDER_SHIPPED"
-        assert call_args['context']['tracking_number'] == "TRACK123"
+        assert result == "no_event"
+        mock_notification.send_notification.assert_not_called()
 
     def test_release_expired_order_reservations(self, user, variant):
         order = Order.objects.create(
@@ -517,3 +514,117 @@ class TestViews:
         assert response.status_code == 200
         order.refresh_from_db()
         assert order.status == Order.OrderStatus.RETURN_REQUESTED
+
+
+@pytest.mark.django_db
+class TestMarketplaceSecurityAndAdminEndpoints:
+    def test_anonymous_product_list_masks_sensitive_fields(self, api_client, product, variant):
+        variant.vip_price = Decimal('90.00')
+        variant.save()
+        response = api_client.get('/api/v1/marketplace/products/')
+        assert response.status_code == status.HTTP_200_OK
+        first = response.data['results'][0] if isinstance(response.data, dict) else response.data[0]
+        assert first['vip_price'] is None
+        assert first['stock'] is None
+
+    def test_authenticated_user_sees_sensitive_fields(self, api_client, user, product, variant):
+        variant.vip_price = Decimal('90.00')
+        variant.save()
+        api_client.force_authenticate(user=user)
+        response = api_client.get('/api/v1/marketplace/products/')
+        assert response.status_code == status.HTTP_200_OK
+        data = response.data['results'][0] if isinstance(response.data, dict) else response.data[0]
+        assert data['vip_price'] == "90.00"
+        assert data['stock'] == variant.stock
+
+    def test_cart_my_cart_endpoint_returns_payload(self, api_client, user, cart, variant):
+        api_client.force_authenticate(user=user)
+        CartItem.objects.create(cart=cart, variant=variant, quantity=3)
+        response = api_client.get('/api/v1/marketplace/cart/my-cart/')
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data['items'][0]['quantity'] == 3
+
+    def test_staff_order_list_is_restricted(self, api_client):
+        staff = CustomUser.objects.create_user(
+            phone_number="+573009991111",
+            password="pass",
+            role=CustomUser.Role.STAFF,
+            is_staff=True,
+            is_verified=True,
+        )
+        user_one = CustomUser.objects.create_user(
+            phone_number="+573009992222",
+            password="pass",
+            role=CustomUser.Role.CLIENT,
+        )
+        user_two = CustomUser.objects.create_user(
+            phone_number="+573009993333",
+            password="pass",
+            role=CustomUser.Role.CLIENT,
+        )
+        active_order = Order.objects.create(
+            user=user_one,
+            total_amount=Decimal('25.00'),
+            delivery_option=Order.DeliveryOptions.PICKUP,
+            status=Order.OrderStatus.PREPARING,
+        )
+        recent_cancelled = Order.objects.create(
+            user=user_two,
+            total_amount=Decimal('50.00'),
+            delivery_option=Order.DeliveryOptions.PICKUP,
+            status=Order.OrderStatus.CANCELLED,
+        )
+        stale_order = Order.objects.create(
+            user=user_two,
+            total_amount=Decimal('75.00'),
+            delivery_option=Order.DeliveryOptions.PICKUP,
+            status=Order.OrderStatus.CANCELLED,
+        )
+        Order.objects.filter(pk=stale_order.pk).update(created_at=timezone.now() - timedelta(days=60))
+
+        api_client.force_authenticate(user=staff)
+        response = api_client.get('/api/v1/marketplace/orders/')
+        assert response.status_code == status.HTTP_200_OK
+        ids = {row['id'] for row in (response.data['results'] if isinstance(response.data, dict) else response.data)}
+        assert str(active_order.id) in ids
+        assert str(recent_cancelled.id) in ids
+        assert str(stale_order.id) not in ids
+
+    def test_admin_product_crud_endpoint(self, api_client, category):
+        admin = CustomUser.objects.create_user(
+            phone_number="+573009994444",
+            password="pass",
+            role=CustomUser.Role.ADMIN,
+            is_staff=True,
+            is_verified=True,
+        )
+        api_client.force_authenticate(user=admin)
+        payload = {
+            'name': 'API Product',
+            'description': 'Descripción',
+            'is_active': True,
+            'category': str(category.id),
+            'preparation_days': 3,
+        }
+        response = api_client.post('/api/v1/marketplace/admin/products/', payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        assert Product.objects.filter(name='API Product').exists()
+
+    def test_inventory_movement_endpoint_updates_stock(self, api_client, variant):
+        admin = CustomUser.objects.create_user(
+            phone_number="+573009995555",
+            password="pass",
+            role=CustomUser.Role.ADMIN,
+            is_staff=True,
+            is_verified=True,
+        )
+        api_client.force_authenticate(user=admin)
+        payload = {
+            'variant': str(variant.id),
+            'quantity': 5,
+            'movement_type': InventoryMovement.MovementType.RESTOCK,
+        }
+        response = api_client.post('/api/v1/marketplace/admin/inventory-movements/', payload, format='json')
+        assert response.status_code == status.HTTP_201_CREATED
+        variant.refresh_from_db()
+        assert variant.stock == 55

@@ -169,6 +169,7 @@ INSTALLED_APPS = [
     "analytics",
     "bot",
     "finances",
+    "legal",
 ]
 
 MIDDLEWARE = [

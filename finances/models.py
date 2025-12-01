@@ -303,6 +303,47 @@ class WebhookEvent(BaseModel):
         return f"WebhookEvent {self.id} - {self.event_type} - {self.status}"
 
 
+class PaymentToken(BaseModel):
+    """Estado de tokens de pago devueltos por Wompi (Nequi, Bancolombia, etc.)."""
+
+    class TokenStatus(models.TextChoices):
+        PENDING = "PENDING", "Pendiente"
+        APPROVED = "APPROVED", "Aprobado"
+        DECLINED = "DECLINED", "Declinado"
+        ERROR = "ERROR", "Error"
+
+    # Override BaseModel UUID to mantener compatibilidad con la migración inicial (BigAutoField)
+    id = models.BigAutoField(primary_key=True)
+    token_id = models.CharField(max_length=255, unique=True, db_index=True)
+    token_type = models.CharField(max_length=50, blank=True, default="")
+    status = models.CharField(
+        max_length=20,
+        choices=TokenStatus.choices,
+        default=TokenStatus.PENDING,
+    )
+    customer_email = models.EmailField(blank=True, default="")
+    phone_number = models.CharField(max_length=30, blank=True, default="")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="payment_tokens",
+        null=True,
+        blank=True,
+    )
+    raw_payload = models.JSONField(default=dict, blank=True)
+    error_message = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["status"], name="payment_token_status_idx"),
+            models.Index(fields=["token_type"], name="payment_token_type_idx"),
+        ]
+
+    def __str__(self):
+        return f"PaymentToken {self.token_id} ({self.status})"
+
+
 class CommissionLedger(BaseModel):
     """Comisiones adeudadas al desarrollador por pagos exitosos."""
 

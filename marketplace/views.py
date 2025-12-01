@@ -1,20 +1,37 @@
 # marketplace/views.py
 from django.conf import settings
-from rest_framework import permissions, status, viewsets
-from rest_framework.response import Response
+from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
+from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.response import Response
+from datetime import timedelta
 
 from spa.models import Appointment
+from legal.models import LegalDocument, UserConsent
+from legal.permissions import consent_required_permission
 from finances.payments import PaymentService
 from users.models import CustomUser
-from users.permissions import IsAdminUser as DomainIsAdminUser
+from users.permissions import (
+    IsAdminUser as DomainIsAdminUser,
+    IsStaffOrAdmin as DomainIsStaffOrAdmin,
+)
 from core.decorators import idempotent_view
-from django.db import transaction
 import logging
 
 logger = logging.getLogger(__name__)
 
-from .models import Product, Cart, CartItem, Order, ProductReview
+from .models import (
+    Cart,
+    CartItem,
+    InventoryMovement,
+    Order,
+    Product,
+    ProductImage,
+    ProductReview,
+    ProductVariant,
+)
 from .serializers import (
     ProductListSerializer,
     ProductDetailSerializer,
@@ -29,6 +46,11 @@ from .serializers import (
     ProductReviewCreateSerializer,
     ProductReviewUpdateSerializer,
     AdminReviewResponseSerializer,
+    AdminInventoryMovementSerializer,
+    AdminProductImageSerializer,
+    AdminProductSerializer,
+    AdminProductVariantSerializer,
+    AdminOrderSerializer,
 )
 from .services import OrderCreationService, ReturnService
 
@@ -44,7 +66,7 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     - ?max_price=500 : Precio máximo
     - ?in_stock=true : Solo productos con stock disponible
     """
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     queryset = (
         Product.objects.filter(is_active=True)
         .prefetch_related('images', 'variants')
@@ -110,7 +132,11 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
         GET /api/v1/products/{id}/variants/
         """
         product = self.get_object()
-        serializer = ProductVariantSerializer(product.variants.all(), many=True)
+        serializer = ProductVariantSerializer(
+            product.variants.all(),
+            many=True,
+            context=self.get_serializer_context(),
+        )
         return Response(serializer.data)
 
     @action(detail=True, methods=['get'])
@@ -148,6 +174,12 @@ class CartViewSet(viewsets.GenericViewSet):
         Obtiene el contenido del carrito de compras del usuario actual.
         GET /api/v1/marketplace/cart/my-cart/
         """
+        cart = self.get_cart()
+        serializer = CartSerializer(
+            cart,
+            context={'request': request, 'view': self}
+        )
+        return Response(serializer.data)
 
 
     @action(detail=False, methods=['post'], url_path='add-item')
@@ -265,7 +297,18 @@ class CartViewSet(viewsets.GenericViewSet):
         except CartItem.DoesNotExist:
             return Response({"error": "Ítem de carrito no encontrado."}, status=status.HTTP_404_NOT_FOUND)
         
-    @action(detail=False, methods=['post'], url_path='checkout')
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='checkout',
+        permission_classes=[
+            permissions.IsAuthenticated,
+            consent_required_permission(
+                LegalDocument.DocumentType.PURCHASE,
+                context_type=UserConsent.ContextType.ORDER,
+            ),
+        ],
+    )
     @idempotent_view(timeout=60)
     def checkout(self, request):
         """
@@ -326,13 +369,30 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
     """
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = OrderSerializer
+    STAFF_VISIBLE_STATUSES = {
+        Order.OrderStatus.PENDING_PAYMENT,
+        Order.OrderStatus.PAID,
+        Order.OrderStatus.PREPARING,
+        Order.OrderStatus.SHIPPED,
+        Order.OrderStatus.RETURN_REQUESTED,
+        Order.OrderStatus.RETURN_APPROVED,
+        Order.OrderStatus.RETURN_REJECTED,
+        Order.OrderStatus.FRAUD_ALERT,
+    }
+    STAFF_LOOKBACK_DAYS = 30
 
     def get_queryset(self):
         """Asegura que cada usuario solo pueda ver sus propias órdenes."""
         queryset = Order.objects.prefetch_related('items__variant__product')
         user = self.request.user
-        if getattr(user, 'role', None) in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
+        if getattr(user, 'role', None) == CustomUser.Role.ADMIN:
             return queryset
+        if getattr(user, 'role', None) == CustomUser.Role.STAFF:
+            recent_threshold = timezone.now() - timedelta(days=self.STAFF_LOOKBACK_DAYS)
+            return queryset.filter(
+                Q(status__in=self.STAFF_VISIBLE_STATUSES)
+                | Q(created_at__gte=recent_threshold)
+            )
         return queryset.filter(user=user)
 
     @action(detail=True, methods=['post'], url_path='request-return')
@@ -458,3 +518,77 @@ class ProductReviewViewSet(viewsets.ModelViewSet):
         reviews = ProductReview.objects.filter(user=request.user).select_related('product')
         serializer = self.get_serializer(reviews, many=True)
         return Response(serializer.data)
+
+
+class AdminProductViewSet(viewsets.ModelViewSet):
+    """CRUD administrativo para productos."""
+    permission_classes = [DomainIsStaffOrAdmin]
+    queryset = Product.objects.all().prefetch_related('variants', 'images')
+    serializer_class = AdminProductSerializer
+
+
+class AdminProductVariantViewSet(viewsets.ModelViewSet):
+    """CRUD administrativo para variantes de producto."""
+    permission_classes = [DomainIsStaffOrAdmin]
+    queryset = ProductVariant.objects.select_related('product')
+    serializer_class = AdminProductVariantSerializer
+
+
+class AdminProductImageViewSet(viewsets.ModelViewSet):
+    """CRUD administrativo para imágenes de producto."""
+    permission_classes = [DomainIsStaffOrAdmin]
+    queryset = ProductImage.objects.select_related('product')
+    serializer_class = AdminProductImageSerializer
+    http_method_names = ['get', 'post', 'put', 'patch', 'delete']
+
+
+class AdminInventoryMovementViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.CreateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Permite registrar movimientos de inventario y consultarlos."""
+    permission_classes = [DomainIsStaffOrAdmin]
+    queryset = InventoryMovement.objects.select_related(
+        'variant__product',
+        'reference_order',
+        'created_by',
+    )
+    serializer_class = AdminInventoryMovementSerializer
+    http_method_names = ['get', 'post']
+
+    def perform_create(self, serializer):
+        with transaction.atomic():
+            movement = serializer.save(created_by=self.request.user)
+            self._apply_inventory_effect(movement)
+            return movement
+
+    def _apply_inventory_effect(self, movement):
+        variant = ProductVariant.objects.select_for_update().get(pk=movement.variant_id)
+        delta_stock, delta_reserved = AdminInventoryMovementSerializer.compute_deltas(
+            movement.movement_type,
+            movement.quantity,
+        )
+        update_fields = []
+        if delta_stock:
+            variant.stock = variant.stock + delta_stock
+            update_fields.append('stock')
+        if delta_reserved:
+            variant.reserved_stock = variant.reserved_stock + delta_reserved
+            update_fields.append('reserved_stock')
+        if update_fields:
+            variant.save(update_fields=update_fields)
+
+
+class AdminOrderViewSet(viewsets.ModelViewSet):
+    """CRUD administrativo para órdenes."""
+    permission_classes = [DomainIsAdminUser]
+    serializer_class = AdminOrderSerializer
+    queryset = Order.objects.select_related('user').prefetch_related('items__variant__product').order_by('-created_at')
+
+    http_method_names = ['get', 'put', 'patch', 'delete']
+
+    def perform_update(self, serializer):
+        order = serializer.save()
+        return order

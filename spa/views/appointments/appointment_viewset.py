@@ -21,6 +21,8 @@ from core.models import AuditLog, GlobalSettings
 from profiles.permissions import IsStaffOrAdmin
 from users.models import CustomUser
 from users.permissions import IsVerified, IsAdminUser
+from legal.models import LegalDocument, UserConsent
+from legal.permissions import consent_required_permission
 
 from ...models import Appointment, Service, WaitlistEntry
 from ...serializers import (
@@ -47,6 +49,17 @@ class AppointmentViewSet(viewsets.ModelViewSet):
     """ViewSet para gestión completa de citas."""
     queryset = Appointment.objects.all()
     permission_classes = [IsAuthenticated, IsVerified]
+
+    def get_permissions(self):
+        base = super().get_permissions()
+        if self.action in ['create', 'reschedule', 'suggestions']:
+            base.append(
+                consent_required_permission(
+                    LegalDocument.DocumentType.PROFILE,
+                    context_type=UserConsent.ContextType.APPOINTMENT,
+                )()
+            )
+        return base
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -454,7 +467,14 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             details=f"Staff '{request.user.first_name}' marked appointment ID {appointment.id} as NO SHOW."
         )
 
+        start_time_local = timezone.localtime(appointment.start_time)
         notification_context = {
+            "user_name": (
+                appointment.user.get_full_name()
+                or appointment.user.first_name
+                or "Cliente"
+            ),
+            "start_date": start_time_local.strftime("%d de %B %Y"),
             "appointment_id": str(appointment.id),
             "start_time": appointment.start_time.isoformat(),
             "credit_amount": str(credit_generated),

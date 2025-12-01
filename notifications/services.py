@@ -63,9 +63,8 @@ class NotificationRenderer:
 
 class NotificationService:
     CHANNEL_PRIORITY = [
-        NotificationTemplate.ChannelChoices.WHATSAPP,  # Primero WhatsApp
-        NotificationTemplate.ChannelChoices.EMAIL,      # Fallback a Email
-        # SMS y PUSH deshabilitados
+        NotificationTemplate.ChannelChoices.WHATSAPP,  # Único canal permitido
+        # SMS, EMAIL y PUSH deshabilitados por política
     ]
     MAX_DELIVERY_ATTEMPTS = 3
 
@@ -98,7 +97,7 @@ class NotificationService:
             NotificationLog.objects.create(
                 user=user,
                 event_code=event_code,
-                channel=NotificationTemplate.ChannelChoices.EMAIL,
+                channel=NotificationTemplate.ChannelChoices.WHATSAPP,
                 status=NotificationLog.Status.FAILED,
                 error_message="No existe plantilla activa para el evento.",
                 priority=priority,

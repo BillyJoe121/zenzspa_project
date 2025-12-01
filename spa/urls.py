@@ -6,8 +6,10 @@ from .views import (
     StaffAvailabilityViewSet,
     UserPackageViewSet,
     VoucherViewSet,
+    AdminPackageViewSet,
     CancelVipSubscriptionView,
     FinancialAdjustmentView,
+    AdminVoucherViewSet,
 )
 from .views.history import ClientAppointmentHistoryView
 
@@ -16,6 +18,8 @@ router.register(r'appointments', AppointmentViewSet, basename='appointment')
 router.register(r'staff-availability', StaffAvailabilityViewSet, basename='staff-availability')
 router.register(r'my-packages', UserPackageViewSet, basename='my-package')
 router.register(r'my-vouchers', VoucherViewSet, basename='my-voucher')
+router.register(r'admin/vouchers', AdminVoucherViewSet, basename='admin-voucher')
+router.register(r'admin/packages', AdminPackageViewSet, basename='admin-package')
 
 
 urlpatterns = [

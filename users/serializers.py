@@ -18,6 +18,7 @@ from profiles.models import ClinicalProfile # Se actualiza la importación
 from core.serializers import DataMaskingMixin, DynamicFieldsModelSerializer
 from .utils import register_user_session
 from .services import verify_recaptcha
+from django.utils.crypto import get_random_string
 
 
 CustomUser = get_user_model()
@@ -146,6 +147,51 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         if value and CustomUser.objects.filter(email=value).exists():
             raise serializers.ValidationError("Este correo electrónico ya está registrado.")
         return value
+
+
+class AdminUserSerializer(serializers.ModelSerializer):
+    """
+    Serializer para CRUD administrativo de usuarios.
+    Permite crear usuarios y asignar roles/estado.
+    """
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    class Meta:
+        model = CustomUser
+        fields = [
+            'id',
+            'phone_number',
+            'email',
+            'first_name',
+            'last_name',
+            'role',
+            'is_active',
+            'is_verified',
+            'is_persona_non_grata',
+            'vip_auto_renew',
+            'password',
+        ]
+        read_only_fields = ['id']
+
+    def create(self, validated_data):
+        password = validated_data.pop('password', None) or get_random_string(12)
+        user = CustomUser.objects.create_user(
+            phone_number=validated_data.pop('phone_number'),
+            email=validated_data.pop('email', None),
+            first_name=validated_data.pop('first_name', ''),
+            password=password,
+            **validated_data,
+        )
+        return user
+
+    def update(self, instance, validated_data):
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        instance.save()
+        return instance
 
     class Meta:
         model = CustomUser
@@ -303,4 +349,3 @@ class UserExportSerializer(serializers.ModelSerializer):
         if not obj.is_active:
             return "Inactivo"
         return "Activo"
-

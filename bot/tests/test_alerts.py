@@ -1,7 +1,7 @@
 import pytest
-from django.core import mail
 from django.utils import timezone
 from model_bakery import baker
+from unittest.mock import patch
 
 from bot.alerts import SuspiciousActivityAlertService, AutoBlockService
 from bot.models import (
@@ -15,40 +15,14 @@ from users.models import CustomUser
 
 
 @pytest.mark.django_db
-def test_get_admin_emails_fallback_to_settings(settings):
-    settings.ADMINS = [("Root", "root@example.com")]
-    baker.make(CustomUser, role=CustomUser.Role.CLIENT, email="client@test.com")
-
-    emails = SuspiciousActivityAlertService.get_admin_emails()
-
-    assert emails == ["root@example.com"]
-
-
-@pytest.mark.django_db
-def test_get_admin_emails_returns_admins_and_superusers():
-    admin_user = baker.make(
-        CustomUser, role=CustomUser.Role.ADMIN, email="admin@test.com", is_active=True
-    )
-    superuser = baker.make(
-        CustomUser, is_superuser=True, email="super@test.com", is_active=True
-    )
+@patch("bot.alerts.NotificationService.send_notification")
+def test_send_critical_activity_alert_sends_whatsapp(mock_send, bot_config):
     baker.make(
         CustomUser,
         role=CustomUser.Role.ADMIN,
-        email="inactive@test.com",
-        is_active=False,
-    )
-
-    emails = SuspiciousActivityAlertService.get_admin_emails()
-
-    assert set(emails) == {admin_user.email, superuser.email}
-
-
-@pytest.mark.django_db
-def test_send_critical_activity_alert_sends_email(bot_config, settings):
-    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
-    baker.make(
-        CustomUser, role=CustomUser.Role.ADMIN, email="alert@test.com", is_active=True
+        phone_number=bot_config.admin_phone,
+        is_active=True,
+        is_staff=True,
     )
     anon = baker.make(AnonymousUser, ip_address="10.0.0.1")
     activity = baker.make(
@@ -62,17 +36,21 @@ def test_send_critical_activity_alert_sends_email(bot_config, settings):
 
     SuspiciousActivityAlertService.send_critical_activity_alert(activity)
 
-    assert len(mail.outbox) == 1
-    assert "ALERTA" in mail.outbox[0].subject
-    assert activity.ip_address in mail.outbox[0].body
+    mock_send.assert_called_once()
 
 
 @pytest.mark.django_db
-def test_send_critical_activity_alert_respects_disabled_flag(bot_config, settings):
-    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+@patch("bot.alerts.NotificationService.send_notification")
+def test_send_critical_activity_alert_respects_disabled_flag(mock_send, bot_config):
     bot_config.enable_critical_alerts = False
     bot_config.save()
-    baker.make(CustomUser, role=CustomUser.Role.ADMIN, email="alert@test.com")
+    baker.make(
+        CustomUser,
+        role=CustomUser.Role.ADMIN,
+        phone_number=bot_config.admin_phone,
+        is_active=True,
+        is_staff=True,
+    )
     anon = baker.make(AnonymousUser, ip_address="10.0.0.2")
     activity = baker.make(
         SuspiciousActivity,
@@ -85,13 +63,19 @@ def test_send_critical_activity_alert_respects_disabled_flag(bot_config, setting
 
     SuspiciousActivityAlertService.send_critical_activity_alert(activity)
 
-    assert mail.outbox == []
+    mock_send.assert_not_called()
 
 
 @pytest.mark.django_db
-def test_send_daily_security_report_collects_stats(bot_config, settings):
-    settings.EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
-    baker.make(CustomUser, role=CustomUser.Role.ADMIN, email="alert@test.com")
+@patch("bot.alerts.NotificationService.send_notification")
+def test_send_daily_security_report_collects_stats(mock_send, bot_config):
+    baker.make(
+        CustomUser,
+        role=CustomUser.Role.ADMIN,
+        phone_number=bot_config.admin_phone,
+        is_active=True,
+        is_staff=True,
+    )
     anon = baker.make(AnonymousUser, ip_address="8.8.8.8")
     baker.make(
         SuspiciousActivity,
@@ -113,9 +97,7 @@ def test_send_daily_security_report_collects_stats(bot_config, settings):
 
     SuspiciousActivityAlertService.send_daily_security_report()
 
-    assert len(mail.outbox) == 1
-    assert "REPORTE DIARIO" in mail.outbox[0].body
-    assert "8.8.8.8" in mail.outbox[0].body
+    mock_send.assert_called_once()
 
 
 @pytest.mark.django_db

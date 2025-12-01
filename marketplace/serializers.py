@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
+from users.models import CustomUser
 from .models import (
     Product,
     ProductImage,
@@ -11,7 +12,15 @@ from .models import (
     Order,
     OrderItem,
     ProductReview,
+    InventoryMovement,
 )
+
+
+def _show_sensitive_data(context):
+    """Determina si el usuario autenticado puede ver campos sensibles."""
+    request = context.get('request') if context else None
+    user = getattr(request, 'user', None)
+    return bool(user and getattr(user, 'is_authenticated', False))
 
 # --- Serializadores de Lectura (Para mostrar datos) ---
 
@@ -27,6 +36,13 @@ class ProductVariantSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductVariant
         fields = ['id', 'sku', 'name', 'price', 'vip_price', 'stock']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not _show_sensitive_data(self.context):
+            data.pop('vip_price', None)
+            data.pop('stock', None)
+        return data
 
 
 class ProductListSerializer(serializers.ModelSerializer):
@@ -64,9 +80,13 @@ class ProductListSerializer(serializers.ModelSerializer):
         return self._get_price_candidate(obj, 'price')
 
     def get_vip_price(self, obj):
+        if not _show_sensitive_data(self.context):
+            return None
         return self._get_price_candidate(obj, 'vip_price')
 
     def get_stock(self, obj):
+        if not _show_sensitive_data(self.context):
+            return None
         return sum(variant.stock for variant in obj.variants.all())
 
 class ProductDetailSerializer(ProductListSerializer):
@@ -244,6 +264,31 @@ class OrderSerializer(serializers.ModelSerializer):
             'return_reason', 'return_requested_at',
             'created_at', 'items'
         ]
+
+
+class AdminOrderSerializer(serializers.ModelSerializer):
+    """Serializer para gestión administrativa de órdenes."""
+    items = OrderItemSerializer(many=True, read_only=True)
+    user = serializers.PrimaryKeyRelatedField(queryset=CustomUser.objects.all())
+
+    class Meta:
+        model = Order
+        fields = [
+            'id',
+            'user',
+            'status',
+            'total_amount',
+            'delivery_option',
+            'delivery_address',
+            'associated_appointment',
+            'tracking_number',
+            'return_reason',
+            'return_requested_at',
+            'created_at',
+            'updated_at',
+            'items',
+        ]
+        read_only_fields = ['created_at', 'updated_at', 'return_requested_at']
 
 
 class CheckoutSerializer(serializers.Serializer):
@@ -467,3 +512,129 @@ class AdminReviewResponseSerializer(serializers.Serializer):
     """
     admin_response = serializers.CharField(required=True, allow_blank=False)
     is_approved = serializers.BooleanField(required=False)
+
+
+# --- Serializadores Administrativos del Marketplace ---
+
+class AdminProductSerializer(serializers.ModelSerializer):
+    """CRUD de productos para panel administrativo."""
+
+    class Meta:
+        model = Product
+        fields = [
+            'id',
+            'name',
+            'description',
+            'is_active',
+            'category',
+            'preparation_days',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class AdminProductVariantSerializer(serializers.ModelSerializer):
+    """Gestiona variantes desde la API administrativa."""
+
+    class Meta:
+        model = ProductVariant
+        fields = [
+            'id',
+            'product',
+            'name',
+            'sku',
+            'price',
+            'vip_price',
+            'stock',
+            'reserved_stock',
+            'low_stock_threshold',
+            'min_order_quantity',
+            'max_order_quantity',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'reserved_stock', 'created_at', 'updated_at']
+
+
+class AdminProductImageSerializer(serializers.ModelSerializer):
+    """Permite gestionar imágenes de productos."""
+
+    class Meta:
+        model = ProductImage
+        fields = ['id', 'product', 'image', 'is_primary', 'alt_text', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class AdminInventoryMovementSerializer(serializers.ModelSerializer):
+    """Serializador para movimientos de inventario manuales."""
+    created_by = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = InventoryMovement
+        fields = [
+            'id',
+            'variant',
+            'quantity',
+            'movement_type',
+            'reference_order',
+            'description',
+            'created_by',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'created_by', 'created_at']
+
+    @staticmethod
+    def compute_deltas(movement_type, quantity):
+        """Retorna (delta_stock, delta_reserved)."""
+        if movement_type in {
+            InventoryMovement.MovementType.RESTOCK,
+            InventoryMovement.MovementType.RETURN,
+        }:
+            return quantity, 0
+        if movement_type == InventoryMovement.MovementType.SALE:
+            return -quantity, 0
+        if movement_type == InventoryMovement.MovementType.ADJUSTMENT:
+            return quantity, 0
+        if movement_type == InventoryMovement.MovementType.RESERVATION:
+            return 0, quantity
+        if movement_type in {
+            InventoryMovement.MovementType.RESERVATION_RELEASE,
+            InventoryMovement.MovementType.EXPIRED_RESERVATION,
+        }:
+            return 0, -quantity
+        return 0, 0
+
+    def validate_quantity(self, value):
+        if value == 0:
+            raise serializers.ValidationError("La cantidad no puede ser cero.")
+        return value
+
+    def validate(self, attrs):
+        movement_type = attrs.get('movement_type')
+        quantity = attrs.get('quantity')
+        variant = attrs.get('variant') or getattr(self.instance, 'variant', None)
+
+        positive_only = {
+            InventoryMovement.MovementType.SALE,
+            InventoryMovement.MovementType.RETURN,
+            InventoryMovement.MovementType.RESERVATION,
+            InventoryMovement.MovementType.RESERVATION_RELEASE,
+            InventoryMovement.MovementType.RESTOCK,
+            InventoryMovement.MovementType.EXPIRED_RESERVATION,
+        }
+        if movement_type in positive_only and quantity < 0:
+            raise serializers.ValidationError("La cantidad debe ser positiva para este tipo de movimiento.")
+
+        delta_stock, delta_reserved = self.compute_deltas(movement_type, quantity)
+
+        if not variant:
+            return attrs
+
+        if delta_stock and variant.stock + delta_stock < 0:
+            raise serializers.ValidationError("El stock no puede quedar negativo.")
+
+        if delta_reserved and variant.reserved_stock + delta_reserved < 0:
+            raise serializers.ValidationError("El stock reservado no puede quedar negativo.")
+
+        return attrs

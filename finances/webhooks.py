@@ -13,8 +13,11 @@ from finances.models import (
     ClientCredit,
     Payment,
     WebhookEvent,
+    PaymentToken,
+    CommissionLedger,
 )
 from marketplace.models import Order
+from users.models import CustomUser
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +75,23 @@ class WompiWebhookService:
                 "[PAYMENT-ALERT] Webhook Error: Firma o properties ausentes (event=%s)", self.event_type
             )
             raise ValueError("Firma del webhook incompleta.")
+
+        # Validar frescura del timestamp para prevenir replays
+        try:
+            event_ts = int(self.timestamp)
+        except (TypeError, ValueError):
+            logger.error("[PAYMENT-ALERT] Webhook Error: Timestamp inválido (event=%s)", self.event_type)
+            raise ValueError("Timestamp inválido en webhook.")
+
+        now_ts = int(timezone.now().timestamp())
+        if abs(now_ts - event_ts) > 300:
+            logger.error(
+                "[PAYMENT-ALERT] Webhook Error: Timestamp fuera de ventana (event=%s, ts=%s, now=%s)",
+                self.event_type,
+                self.timestamp,
+                now_ts,
+            )
+            raise ValueError("Webhook demasiado antiguo o en el futuro.")
 
         # Paso 1: Concatenar valores según properties del evento
         # Ej: properties=["transaction.id", "transaction.status"] -> extraer esos valores
@@ -268,4 +288,89 @@ class WompiWebhookService:
             self._update_event_status(WebhookEvent.Status.FAILED, str(exc))
             logger.error("[PAYMENT-ALERT] Webhook Error: %s",
                          exc, exc_info=True)
+            raise
+
+    def process_token_update(self):
+        """
+        Procesa eventos de tokenización (nequi_token.updated, bancolombia_transfer_token.updated).
+        Valida la firma y marca el evento como procesado para evitar reintentos.
+        """
+        try:
+            self._validate_signature()
+            token_data = self.data.get("token") or self.data.get("data") or {}
+            token_id = token_data.get("id") or token_data.get("token")
+            token_status = (token_data.get("status") or "").upper() or PaymentToken.TokenStatus.PENDING
+            token_type = token_data.get("type") or token_data.get("payment_method_type") or ""
+            phone_number = token_data.get("phone_number") or token_data.get("phone") or ""
+            customer_email = token_data.get("customer_email") or self.data.get("customer_email") or ""
+
+            linked_user = None
+            if customer_email:
+                linked_user = CustomUser.objects.filter(email__iexact=customer_email).first()
+            if not linked_user and phone_number:
+                linked_user = CustomUser.objects.filter(phone_number=phone_number).first()
+
+            if not token_id:
+                raise ValueError("No se encontró token_id en el evento de token.")
+
+            PaymentToken.objects.update_or_create(
+                token_id=token_id,
+                defaults={
+                    "status": token_status,
+                    "token_type": token_type,
+                    "phone_number": phone_number or "",
+                    "customer_email": customer_email or "",
+                    "raw_payload": self.data,
+                    "user": linked_user,
+                },
+            )
+
+            self._update_event_status(WebhookEvent.Status.PROCESSED)
+            logger.info("[PAYMENT-SUCCESS] Evento de token procesado (event=%s, token=%s, status=%s)", self.event_type, token_id, token_status)
+            return {"status": "token_event_processed", "token_id": token_id, "token_status": token_status}
+        except Exception as exc:
+            self._update_event_status(WebhookEvent.Status.FAILED, str(exc))
+            logger.error("[PAYMENT-ALERT] Webhook Token Error: %s", exc, exc_info=True)
+            raise
+
+    @transaction.atomic
+    def process_payout_update(self):
+        """
+        Procesa eventos de payout/transfer (dispersión) para reflejar estado final.
+        """
+        try:
+            self._validate_signature()
+
+            transfer_data = self.data.get("transfer") or self.data.get("data") or {}
+            transfer_id = transfer_data.get("id") or transfer_data.get("transfer_id")
+            status = (transfer_data.get("status") or "").upper()
+
+            if not transfer_id or not status:
+                raise ValueError("transfer_id o status no presentes en el webhook de payout.")
+
+            # Actualizar las comisiones asociadas al transfer_id
+            entries = CommissionLedger.objects.select_for_update().filter(wompi_transfer_id=transfer_id)
+            updated = 0
+            now = timezone.now()
+            for entry in entries:
+                previous_status = entry.status
+                if status == "APPROVED":
+                    entry.status = CommissionLedger.Status.PAID
+                    entry.paid_at = entry.paid_at or now
+                elif status in {"DECLINED", "ERROR"}:
+                    entry.status = CommissionLedger.Status.FAILED_NSF
+                entry.save(update_fields=["status", "paid_at", "updated_at"])
+                updated += 1
+
+            self._update_event_status(WebhookEvent.Status.PROCESSED)
+            logger.info(
+                "[PAYMENT-SUCCESS] Evento de payout procesado (transfer_id=%s, status=%s, entries_updated=%s)",
+                transfer_id,
+                status,
+                updated,
+            )
+            return {"status": "payout_event_processed", "transfer_id": transfer_id, "transfer_status": status, "entries_updated": updated}
+        except Exception as exc:
+            self._update_event_status(WebhookEvent.Status.FAILED, str(exc))
+            logger.error("[PAYMENT-ALERT] Webhook Payout Error: %s", exc, exc_info=True)
             raise

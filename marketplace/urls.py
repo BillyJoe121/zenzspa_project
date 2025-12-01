@@ -1,6 +1,16 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import ProductViewSet, CartViewSet, OrderViewSet, ProductReviewViewSet
+from .views import (
+    ProductViewSet,
+    CartViewSet,
+    OrderViewSet,
+    ProductReviewViewSet,
+    AdminProductViewSet,
+    AdminProductVariantViewSet,
+    AdminProductImageViewSet,
+    AdminInventoryMovementViewSet,
+    AdminOrderViewSet,
+)
 
 router = DefaultRouter()
 
@@ -15,6 +25,13 @@ router.register(r'orders', OrderViewSet, basename='order')
 
 # Endpoints para reseñas de productos
 router.register(r'reviews', ProductReviewViewSet, basename='review')
+
+# Endpoints administrativos
+router.register(r'admin/products', AdminProductViewSet, basename='admin-product')
+router.register(r'admin/variants', AdminProductVariantViewSet, basename='admin-product-variant')
+router.register(r'admin/product-images', AdminProductImageViewSet, basename='admin-product-image')
+router.register(r'admin/inventory-movements', AdminInventoryMovementViewSet, basename='admin-inventory-movement')
+router.register(r'admin/orders', AdminOrderViewSet, basename='admin-order')
 
 
 urlpatterns = [

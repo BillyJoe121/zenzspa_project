@@ -48,6 +48,13 @@ class ServiceViewSet(viewsets.ModelViewSet):
     serializer_class = ServiceSerializer
     permission_classes = [IsAdminOrReadOnly]
 
+    def get_queryset(self):
+        base = Service.objects.all()
+        user = getattr(self.request, "user", None)
+        if user and getattr(user, "role", None) == CustomUser.Role.ADMIN:
+            return base
+        return base.filter(is_active=True)
+
 
 class PackageViewSet(viewsets.ReadOnlyModelViewSet):
     """ViewSet de solo lectura para paquetes."""

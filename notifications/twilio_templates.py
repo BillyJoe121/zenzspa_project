@@ -19,8 +19,7 @@ TWILIO_TEMPLATE_MAP = {
         "description": "Recordatorio de cita 24 horas antes",
     },
     "APPOINTMENT_REMINDER_2H": {
-        # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000002",
+        "content_sid": "HX7c977d8ead9bac2813a66b58754cc917",
         "variables": ["user_name", "start_time", "services"],
         "description": "Recordatorio de cita 2 horas antes",
     },
@@ -28,16 +27,16 @@ TWILIO_TEMPLATE_MAP = {
     # ===== CANCELACIONES DE CITAS =====
     "APPOINTMENT_CANCELLED_AUTO": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000003",
-        "variables": ["user_name", "start_time"],
+        "content_sid": "HXe844ba79509ef289a45b656072505712",
+        "variables": ["user_name", "start_date"],
         "description": "Cita cancelada automáticamente por falta de pago",
     },
 
     # ===== NO-SHOW =====
     "APPOINTMENT_NO_SHOW_CREDIT": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000004",
-        "variables": ["user_name", "start_time", "credit_amount"],
+        "content_sid": "HXa84b86ef7d24a921a4f417a2896f5fe8",
+        "variables": ["user_name", "start_date", "credit_amount"],
         "description": "No-show con crédito generado",
     },
 
@@ -45,7 +44,7 @@ TWILIO_TEMPLATE_MAP = {
     # ===== LISTA DE ESPERA =====
     "APPOINTMENT_WAITLIST_AVAILABLE": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000006",
+        "content_sid": "HX83da0026a8d25244d52af581c5c9c88a",
         "variables": ["user_name", "date", "time", "service"],
         "description": "Espacio disponible en lista de espera",
     },
@@ -53,19 +52,19 @@ TWILIO_TEMPLATE_MAP = {
     # ===== VIP MEMBERSHIP =====
     "VIP_RENEWAL_FAILED": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000007",
-        "variables": ["user_name", "failure_reason", "expiry_date"],
+        "content_sid": "HX977e936c1816bbc8e8c664c057f9cf0f",
+        "variables": ["user_name", "status"],
         "description": "Error en renovación VIP",
     },
     "VIP_MEMBERSHIP_EXPIRED": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000008",
+        "content_sid": "HX15513e163d033c4187b8f6ac45ba1157",
         "variables": ["user_name"],
         "description": "Membresía VIP expirada",
     },
     "VIP_LOYALTY_MILESTONE": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000009",
+        "content_sid": "HX7ebb5c819f7ececf516dcf868115f3e6",
         "variables": ["user_name", "visits_count", "reward_description"],
         "description": "Logro VIP alcanzado",
     },
@@ -73,7 +72,7 @@ TWILIO_TEMPLATE_MAP = {
     # ===== VOUCHERS =====
     "VOUCHER_EXPIRING_SOON": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000010",
+        "content_sid": "HXd19b5ed150271059aa325e3b713a9902",
         "variables": ["user_name", "amount", "expiry_date", "voucher_code"],
         "description": "Voucher próximo a expirar",
     },
@@ -81,13 +80,13 @@ TWILIO_TEMPLATE_MAP = {
     # ===== PAGOS =====
     "PAYMENT_STATUS_APPROVED": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000011",
-        "variables": ["user_name", "amount", "reference", "concept", "extra_info"],
+        "content_sid": "HX275a2651d43ef940785ec9f0ee6c6048",
+        "variables": ["user_name", "amount", "reference", "service"],
         "description": "Pago aprobado exitosamente",
     },
     "PAYMENT_STATUS_DECLINED": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000012",
+        "content_sid": "HX479d05d331cc6fa1180b9882a1c14d3c",
         "variables": ["user_name", "amount", "reference", "decline_reason"],
         "description": "Pago rechazado",
     },
@@ -102,30 +101,23 @@ TWILIO_TEMPLATE_MAP = {
 
     "ORDER_CANCELLED": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000016",
-        "variables": ["user_name", "order_id", "cancellation_reason", "refund_info"],
+        "content_sid": "HXb77855705838ad99168a533ddeaffe21",
+        "variables": ["user_name", "order_id", "cancellation_reason"],
         "description": "Orden cancelada",
     },
     "ORDER_READY_FOR_PICKUP": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000017",
-        "variables": ["user_name", "order_id", "store_address", "store_hours", "pickup_code"],
+        "content_sid": "HX41bc72cadf2fb9cd1d35fb4f7516c11a",
+        "variables": ["user_name", "order_id", "store_address", "pickup_code"],
         "description": "Orden lista para recoger",
     },
 
     # ===== DEVOLUCIONES =====
 
-    "ORDER_CREDIT_ISSUED": {
-        # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000020",
-        "variables": ["user_name", "credit_amount", "reason", "order_id"],
-        "description": "Créditos abonados",
-    },
-
     # ===== ALERTAS DE STOCK (Admin) =====
     "STOCK_LOW_ALERT": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000021",
+        "content_sid": "HX4e19875e73ed3868f168273c685be119",
         "variables": ["items_list"],
         "description": "Alerta de stock bajo",
     },
@@ -133,7 +125,7 @@ TWILIO_TEMPLATE_MAP = {
     # ===== USUARIO PERSONA NON GRATA (Admin) =====
     "USER_FLAGGED_NON_GRATA": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000022",
+        "content_sid": "HX4d172a0c984db30535bab2128b6f8605",
         "variables": ["user_name", "user_email", "user_phone", "flag_reason", "action_taken", "admin_url"],
         "description": "Usuario marcado como non grata",
     },
@@ -141,13 +133,13 @@ TWILIO_TEMPLATE_MAP = {
     # ===== BOT HANDOFF (Staff/Admin) =====
     "BOT_HANDOFF_CREATED": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000023",
+        "content_sid": "HXfd587bceb76f122a320498ae163efe44",
         "variables": ["score_emoji", "client_score", "client_name", "client_phone", "warning_text", "escalation_message", "admin_url"],
         "description": "Nueva solicitud de atención humana",
     },
     "BOT_HANDOFF_EXPIRED": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000024",
+        "content_sid": "HXbf912e3b5e79b78c13f3219ffbc6d695",
         "variables": ["handoff_id", "client_name", "created_at", "admin_url"],
         "description": "Handoff sin atender expirado",
     },
@@ -155,7 +147,7 @@ TWILIO_TEMPLATE_MAP = {
     # ===== BOT SECURITY (Admin) =====
     "BOT_SECURITY_ALERT": {
         # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000025",
+        "content_sid": "HX74e229b3d46184160fdd310955c47354",
         "variables": ["alert_type", "user_identifier", "alert_detail", "timestamp"],
         "description": "Alerta de seguridad del bot",
     },

@@ -2,7 +2,6 @@ import logging
 from datetime import timedelta
 
 from celery import shared_task
-from django.core.mail import send_mail
 from django.utils import timezone
 
 from notifications.models import NotificationLog, NotificationTemplate
@@ -87,19 +86,7 @@ def _dispatch_channel(log):
     subject = payload.get("subject", "")
     body = payload.get("body", "")
 
-    if channel == NotificationTemplate.ChannelChoices.EMAIL:
-        recipient = getattr(user, "email", None)
-        if not recipient:
-            raise ValueError("El usuario no tiene email.")
-        send_mail(
-            subject or f"[StudioZens] {log.event_code.replace('_', ' ').title()}",
-            body,
-            None,
-            [recipient],
-            fail_silently=False,
-        )
-
-    elif channel == NotificationTemplate.ChannelChoices.WHATSAPP:
+    if channel == NotificationTemplate.ChannelChoices.WHATSAPP:
         from notifications.whatsapp_service import WhatsAppService
         from notifications.twilio_templates import get_template_config, is_template_configured
 
@@ -213,7 +200,16 @@ def check_upcoming_appointments_2h():
     )
     count = 0
     for appointment in appointments:
+        user = appointment.user
+        if not user:
+            logger.warning(
+                "La cita %s no tiene usuario asignado; se omite recordatorio 2h",
+                appointment.id,
+            )
+            continue
+
         context = {
+            "user_name": user.get_full_name() or user.first_name or "Cliente",
             "appointment_id": str(appointment.id),
             "start_time": appointment.start_time.isoformat(),
             "services": appointment.get_service_names(),

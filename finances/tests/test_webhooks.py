@@ -64,3 +64,35 @@ class WompiWebhookServiceTest(TestCase):
         payment.refresh_from_db()
         self.assertEqual(result["status"], "amount_mismatch")
         self.assertEqual(payment.status, Payment.PaymentStatus.ERROR)
+
+    @override_settings(WOMPI_EVENT_SECRET="testsecret")
+    def test_webhook_rejects_stale_timestamp(self):
+        payment = baker.make(
+            Payment,
+            amount=100,
+            status=Payment.PaymentStatus.PENDING,
+            payment_type=Payment.PaymentType.ADVANCE,
+            transaction_id="REF-123",
+        )
+        transaction = {
+            "id": "trans-123",
+            "reference": "REF-123",
+            "status": "APPROVED",
+            "amount_in_cents": 10000,
+        }
+        old_timestamp = int(timezone.now().timestamp()) - 10000  # fuera de ventana
+        data = {"transaction": transaction}
+        properties = ["transaction.id", "transaction.status", "transaction.amount_in_cents"]
+        signature = self._build_signature(data, old_timestamp, "testsecret", properties)
+        payload = {
+            "data": data,
+            "event": "transaction.updated",
+            "signature": {
+                "checksum": signature,
+                "properties": properties
+            },
+            "timestamp": old_timestamp,
+        }
+        service = WompiWebhookService(payload, headers={})
+        with self.assertRaises(ValueError):
+            service.process_transaction_update()

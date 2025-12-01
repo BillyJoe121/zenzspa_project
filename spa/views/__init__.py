@@ -12,6 +12,8 @@ from .packages import (
     CancelVipSubscriptionView,
     FinancialAdjustmentView,
 )
+from .admin_packages import AdminPackageViewSet
+from .voucher_admin import AdminVoucherViewSet
 from .reports import *  # noqa: F401,F403
 from .waitlist import *  # noqa: F401,F403
 
@@ -24,6 +26,8 @@ __all__ = [
     "StaffAvailabilityViewSet",
     "UserPackageViewSet",
     "VoucherViewSet",
+    "AdminPackageViewSet",
+    "AdminVoucherViewSet",
     "CancelVipSubscriptionView",
     "FinancialAdjustmentView",
 ]

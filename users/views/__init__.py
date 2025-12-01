@@ -4,6 +4,7 @@ Módulo de vistas de usuarios.
 Exporta todas las vistas para mantener compatibilidad con imports existentes.
 """
 from .admin_views import (
+    AdminUserViewSet,
     BlockIPView,
     FlagNonGrataView,
     StaffListView,
@@ -68,6 +69,7 @@ __all__ = [
     'FlagNonGrataView',
     'StaffListView',
     'BlockIPView',
+    'AdminUserViewSet',
     'UserExportView',
     # Webhooks
     'TwilioWebhookView',

@@ -1,5 +1,6 @@
 # Tests criticos para profiles module con 90%+ cobertura
 import pytest
+from decimal import Decimal
 from datetime import timedelta
 from django.test import TestCase
 from django.utils import timezone
@@ -14,6 +15,7 @@ from profiles.models import (
     DoshaOption, ConsentTemplate, ConsentDocument, KioskSession, ClientDoshaAnswer
 )
 from users.models import CustomUser
+from spa.models import Appointment
 from core.models import AuditLog
 
 
@@ -1204,3 +1206,45 @@ class TestDoshaCalculationEdgeCases(TestCase):
         self.profile.calculate_dominant_dosha()
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.dosha, ClinicalProfile.Dosha.PITTA)
+
+
+@pytest.mark.django_db
+class TestClinicalProfileNeedToKnowAccess(TestCase):
+    """Valida que el staff solo acceda a perfiles necesarios."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.staff = baker.make(
+            CustomUser,
+            role=CustomUser.Role.STAFF,
+            is_staff=True,
+            is_verified=True,
+        )
+        self.user_assigned = baker.make(CustomUser, role=CustomUser.Role.CLIENT, phone_number="+573004001111")
+        self.user_unassigned = baker.make(CustomUser, role=CustomUser.Role.CLIENT, phone_number="+573004002222")
+        self.assigned_profile = ClinicalProfile.objects.create(user=self.user_assigned)
+        self.unassigned_profile = ClinicalProfile.objects.create(user=self.user_unassigned)
+        start = timezone.now() + timedelta(days=1)
+        Appointment.objects.create(
+            user=self.user_assigned,
+            staff_member=self.staff,
+            start_time=start,
+            end_time=start + timedelta(hours=1),
+            status=Appointment.AppointmentStatus.CONFIRMED,
+            price_at_purchase=Decimal('120.00'),
+        )
+
+    def test_staff_list_only_returns_assigned_profiles(self):
+        self.client.force_authenticate(user=self.staff)
+        response = self.client.get('/api/v1/users/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        payload = response.data['results'] if isinstance(response.data, dict) else response.data
+        phone_numbers = {entry['user']['phone_number'] for entry in payload}
+        self.assertIn(self.user_assigned.phone_number, phone_numbers)
+        self.assertNotIn(self.user_unassigned.phone_number, phone_numbers)
+
+    def test_staff_cannot_retrieve_unassigned_profile(self):
+        self.client.force_authenticate(user=self.staff)
+        url = f'/api/v1/users/{self.user_unassigned.phone_number}/'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

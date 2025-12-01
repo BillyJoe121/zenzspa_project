@@ -32,8 +32,6 @@ class OrderService:
     }
 
     STATE_NOTIFICATION_EVENTS = {
-        Order.OrderStatus.SHIPPED: "ORDER_SHIPPED",
-        Order.OrderStatus.DELIVERED: "ORDER_DELIVERED",
         Order.OrderStatus.CANCELLED: "ORDER_CANCELLED",
     }
     READY_FOR_PICKUP_STATUS = getattr(Order.OrderStatus, "READY_FOR_PICKUP", None)

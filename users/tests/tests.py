@@ -486,8 +486,8 @@ class SignalTests(TestCase):
 
 @override_settings(DEFAULT_FROM_EMAIL="alerts@example.com")
 class TaskTests(TestCase):
-    @patch("users.tasks.send_mail")
-    def test_send_non_grata_alert_sends_email(self, mock_send_mail):
+    @patch("users.tasks.NotificationService.send_notification")
+    def test_send_non_grata_alert_uses_notification_service(self, mock_send_notification):
         CustomUser.objects.create_user(
             phone_number="+573004300000",
             email="admin@example.com",
@@ -499,7 +499,7 @@ class TaskTests(TestCase):
         )
         result = send_non_grata_alert_to_admins("+573004300001")
         self.assertIn("+573004300001", result)
-        mock_send_mail.assert_called_once()
+        mock_send_notification.assert_called_once()
 
 
 class UtilsTests(TestCase):

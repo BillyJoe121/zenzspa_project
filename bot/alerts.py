@@ -7,9 +7,6 @@ import logging
 from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
-from django.core.mail import send_mail
-from django.template.loader import render_to_string
-from django.utils.html import strip_tags
 from django.db import models
 from notifications.services import NotificationService
 
@@ -20,28 +17,6 @@ class SuspiciousActivityAlertService:
     """
     Servicio para enviar alertas cuando se detectan actividades sospechosas críticas.
     """
-
-    @staticmethod
-    def get_admin_emails():
-        """
-        Obtiene la lista de emails de administradores que deben recibir alertas.
-        """
-        from users.models import CustomUser
-
-        # Obtener todos los ADMIN y SUPERUSERS
-        admins = CustomUser.objects.filter(
-            is_active=True
-        ).filter(
-            models.Q(is_superuser=True) | models.Q(role=CustomUser.Role.ADMIN)
-        )
-
-        emails = [admin.email for admin in admins if admin.email]
-
-        # Si no hay emails configurados, usar el DEFAULT_FROM_EMAIL de settings
-        if not emails and hasattr(settings, 'ADMINS'):
-            emails = [email for name, email in settings.ADMINS]
-
-        return emails
 
     @staticmethod
     def send_critical_activity_alert(suspicious_activity):
@@ -103,24 +78,6 @@ class SuspiciousActivityAlertService:
                 priority="critical"  # Critical para ignorar quiet hours
             )
 
-            # Enviar email a administradores (mantener compatibilidad con pruebas)
-            admin_emails = SuspiciousActivityAlertService.get_admin_emails()
-            if admin_emails:
-                subject = f"[ALERTA] Actividad crítica detectada - {suspicious_activity.ip_address}"
-                body = (
-                    f"Se detectó una actividad crítica del tipo: {context['alert_type']}\n"
-                    f"Usuario/IP: {context['user_identifier']}\n"
-                    f"Detalle: {context['alert_detail']}\n"
-                    f"Fecha: {context['timestamp']}\n"
-                )
-                send_mail(
-                    subject=subject,
-                    message=body,
-                    from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
-                    recipient_list=admin_emails,
-                    fail_silently=True,
-                )
-
             logger.info(
                 "Alerta de seguridad enviada para actividad %d (IP: %s)",
                 suspicious_activity.id, suspicious_activity.ip_address
@@ -174,10 +131,10 @@ class SuspiciousActivityAlertService:
 
             # Preparar contexto
             context = {
-                "user_identifier": ip_address,
-                "block_reason": reason,
-                "timestamp": timezone.now().strftime("%d/%m/%Y %H:%M:%S"),
-                "admin_url": f"{settings.SITE_URL}/admin/bot/ipblocklist/{block_id}/change/",
+                "user_identifier": ip_address or "IP desconocida",
+                "block_reason": reason or "Actividades sospechosas",
+                "timestamp": timezone.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "admin_url": f"{settings.SITE_URL.rstrip('/')}/admin/bot/ipblocklist/{block_id}/change/",
             }
 
             # Enviar notificación usando el sistema centralizado
@@ -199,86 +156,78 @@ class SuspiciousActivityAlertService:
     @staticmethod
     def send_daily_security_report():
         """
-        Envía un reporte diario de seguridad con estadísticas.
-        Este método puede ser llamado por un Celery task diario.
+        Envía un reporte diario de seguridad con estadísticas via WhatsApp.
         """
-        from .models import SuspiciousActivity, IPBlocklist, BotConversationLog
+        from .models import SuspiciousActivity, IPBlocklist, BotConversationLog, BotConfiguration
         from django.db.models import Count, Q
+        from users.models import CustomUser
 
         try:
-            admin_emails = SuspiciousActivityAlertService.get_admin_emails()
+            config = BotConfiguration.objects.filter(is_active=True).first()
+            admin_phone = config.admin_phone if config else None
 
-            if not admin_emails:
+            if not admin_phone:
+                logger.warning("No hay teléfono de admin configurado para el reporte diario de seguridad")
                 return
 
-            # Estadísticas de las últimas 24 horas
+            admin_user = CustomUser.objects.filter(
+                phone_number=admin_phone,
+                is_staff=True,
+                is_active=True
+            ).first()
+
+            if not admin_user:
+                admin_user = CustomUser.objects.filter(
+                    models.Q(is_superuser=True) | models.Q(role=CustomUser.Role.ADMIN),
+                    is_active=True
+                ).first()
+
+            if not admin_user:
+                logger.warning("No se encontró usuario admin para enviar el reporte diario de seguridad")
+                return
+
             yesterday = timezone.now() - timedelta(hours=24)
 
-            # Actividades sospechosas
             activities = SuspiciousActivity.objects.filter(created_at__gte=yesterday)
             total_activities = activities.count()
             critical_activities = activities.filter(severity=SuspiciousActivity.SeverityLevel.CRITICAL).count()
             high_activities = activities.filter(severity=SuspiciousActivity.SeverityLevel.HIGH).count()
 
-            # IPs bloqueadas
             new_blocks = IPBlocklist.objects.filter(created_at__gte=yesterday).count()
 
-            # Conversaciones
             conversations = BotConversationLog.objects.filter(created_at__gte=yesterday)
             total_conversations = conversations.count()
             blocked_conversations = conversations.filter(was_blocked=True).count()
 
-            # Top 5 IPs con más actividad sospechosa
             top_ips = activities.values('ip_address').annotate(
                 count=Count('id')
             ).order_by('-count')[:5]
 
-            subject = f"[Reporte Diario] Seguridad del Bot - {timezone.now().strftime('%Y-%m-%d')}"
-
-            message = f"""
-📊 REPORTE DIARIO DE SEGURIDAD - STUDIOZENS BOT 📊
-Período: {yesterday.strftime('%Y-%m-%d %H:%M')} - {timezone.now().strftime('%Y-%m-%d %H:%M')}
-
-═══════════════════════════════════════════════════
-
-📈 CONVERSACIONES:
-- Total de conversaciones: {total_conversations}
-- Conversaciones bloqueadas: {blocked_conversations}
-- Tasa de bloqueo: {(blocked_conversations/total_conversations*100) if total_conversations > 0 else 0:.2f}%
-
-⚠️ ACTIVIDADES SOSPECHOSAS:
-- Total detectadas: {total_activities}
-- Críticas: {critical_activities}
-- Altas: {high_activities}
-
-🚫 BLOQUEOS:
-- Nuevas IPs bloqueadas: {new_blocks}
-
-🔝 TOP 5 IPs CON MÁS ACTIVIDAD SOSPECHOSA:
-"""
+            report_lines = [
+                f"Período: {yesterday.strftime('%Y-%m-%d %H:%M')} - {timezone.now().strftime('%Y-%m-%d %H:%M')}",
+                f"Conversaciones: {total_conversations} (bloqueadas {blocked_conversations})",
+                f"Actividades sospechosas: {total_activities} (críticas {critical_activities}, altas {high_activities})",
+                f"Nuevas IPs bloqueadas: {new_blocks}",
+                "Top IPs:",
+            ]
             for idx, ip_data in enumerate(top_ips, 1):
-                message += f"{idx}. {ip_data['ip_address']}: {ip_data['count']} actividades\n"
+                report_lines.append(f"{idx}. {ip_data['ip_address']}: {ip_data['count']} eventos")
 
-            message += f"""
+            alert_detail = "\n".join(report_lines)
 
-═══════════════════════════════════════════════════
-
-Ver panel de administración:
-{settings.SITE_URL}/admin/bot/suspiciousactivity/
-
----
-Este es un reporte automático del sistema de seguridad.
-            """
-
-            send_mail(
-                subject=subject,
-                message=message,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=admin_emails,
-                fail_silently=False,
+            NotificationService.send_notification(
+                user=admin_user,
+                event_code="BOT_SECURITY_ALERT",
+                context={
+                    "alert_type": "Reporte diario de seguridad",
+                    "user_identifier": admin_user.phone_number or admin_user.email or "admin",
+                    "alert_detail": alert_detail,
+                    "timestamp": timezone.now().strftime("%d/%m/%Y %H:%M:%S"),
+                },
+                priority="high",
             )
 
-            logger.info("Reporte diario de seguridad enviado a %d administrador(es)", len(admin_emails))
+            logger.info("Reporte diario de seguridad enviado vía WhatsApp")
 
         except Exception as e:
             logger.error("Error enviando reporte diario de seguridad: %s", e, exc_info=True)

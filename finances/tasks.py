@@ -139,12 +139,14 @@ def process_recurring_subscriptions():
         user.save(update_fields=['vip_failed_payments',
                   'vip_auto_renew', 'updated_at'])
         try:
+            user_name = user.get_full_name() or user.first_name or "Cliente"
             NotificationService.send_notification(
                 user=user,
                 event_code="VIP_RENEWAL_FAILED",
                 context={
-                    "failed_attempts": user.vip_failed_payments,
+                    "user_name": user_name,
                     "status": subscription_status,
+                    "failed_attempts": user.vip_failed_payments,
                 },
             )
         except Exception:
@@ -181,10 +183,12 @@ def downgrade_expired_vips():
             details=f"Usuario {user.id} degradado a CLIENT por expiración VIP.",
         )
         try:
+            user_name = user.get_full_name() or user.first_name or "Cliente"
             NotificationService.send_notification(
                 user=user,
                 event_code="VIP_MEMBERSHIP_EXPIRED",
                 context={
+                    "user_name": user_name,
                     "expired_at": expired_at.isoformat() if expired_at else None,
                 },
             )

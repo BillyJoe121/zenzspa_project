@@ -13,6 +13,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import ClinicalProfile, ConsentTemplate, ConsentDocument, DoshaQuestion, ClientDoshaAnswer, KioskSession
+from spa.models import Appointment
 from .permissions import (
     ClinicalProfileAccessPermission,
     IsKioskSession,
@@ -43,6 +44,14 @@ class ClinicalProfileViewSet(viewsets.ModelViewSet):
     queryset = ClinicalProfile.objects.select_related('user').prefetch_related('pains', 'dosha_answers')
     serializer_class = ClinicalProfileSerializer
     permission_classes = [IsVerifiedUserOrKioskSession, ClinicalProfileAccessPermission]
+    STAFF_LOOKBACK_DAYS = 30
+    STAFF_ALLOWED_STATUSES = {
+        Appointment.AppointmentStatus.PENDING_PAYMENT,
+        Appointment.AppointmentStatus.PAID,
+        Appointment.AppointmentStatus.CONFIRMED,
+        Appointment.AppointmentStatus.RESCHEDULED,
+        Appointment.AppointmentStatus.COMPLETED,
+    }
     
     lookup_field = 'user__phone_number'
     lookup_url_kwarg = 'phone_number'
@@ -55,9 +64,25 @@ class ClinicalProfileViewSet(viewsets.ModelViewSet):
         user = getattr(self.request, 'user', None)
         if not user or not user.is_authenticated:
             return base_queryset.none()
-        if user.role in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
+        if user.role == CustomUser.Role.ADMIN:
             return base_queryset
+        if user.role == CustomUser.Role.STAFF:
+            allowed_user_ids = self._get_staff_allowed_users(user)
+            if not allowed_user_ids:
+                return base_queryset.none()
+            return base_queryset.filter(user_id__in=allowed_user_ids)
         return base_queryset.filter(user=user)
+
+    def _get_staff_allowed_users(self, staff_user):
+        """Restringe acceso a perfiles de pacientes asignados a citas recientes o próximas."""
+        now = timezone.now()
+        window_start = now - timedelta(days=self.STAFF_LOOKBACK_DAYS)
+        window_end = now + timedelta(days=self.STAFF_LOOKBACK_DAYS)
+        return Appointment.objects.filter(
+            staff_member=staff_user,
+            start_time__range=(window_start, window_end),
+            status__in=self.STAFF_ALLOWED_STATUSES,
+        ).values_list('user_id', flat=True).distinct()
 
 
     def retrieve(self, request, *args, **kwargs):

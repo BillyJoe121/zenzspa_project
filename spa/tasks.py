@@ -4,7 +4,6 @@ from datetime import timedelta
 
 from celery import shared_task
 from django.utils import timezone
-from django.core.mail import send_mail
 
 from core.models import GlobalSettings, AuditLog
 from users.models import CustomUser
@@ -156,10 +155,17 @@ def cancel_unpaid_appointments():
             details="Cancelación automática por falta de pago.",
         )
         try:
+            start_time_local = timezone.localtime(appt.start_time)
             NotificationService.send_notification(
                 user=appt.user,
                 event_code="APPOINTMENT_CANCELLED_AUTO",
                 context={
+                    "user_name": (
+                        appt.user.get_full_name()
+                        or appt.user.first_name
+                        or "Cliente"
+                    ),
+                    "start_date": start_time_local.strftime("%d de %B %Y"),
                     "appointment_id": str(appt.id),
                     "start_time": appt.start_time.isoformat(),
                 },
@@ -266,10 +272,33 @@ def notify_expiring_vouchers():
     )
     notified = 0
     for voucher in vouchers:
+        user = voucher.user
+        if not user:
+            logger.warning(
+                "Voucher %s no tiene usuario asociado; se omite notificación de expiración",
+                voucher.code,
+            )
+            continue
+
+        user_name = user.get_full_name() or user.first_name or "Cliente"
+        service_name = voucher.service.name if voucher.service else "tu beneficio"
+        service_price = getattr(voucher.service, "price", None)
+        formatted_amount = (
+            f"{service_price:,.0f}" if service_price is not None else "0"
+        )
+        expiry_display = (
+            voucher.expires_at.strftime("%d de %B %Y")
+            if voucher.expires_at
+            else "próximamente"
+        )
+
         context = {
+            "user_name": user_name,
+            "amount": formatted_amount,
+            "expiry_date": expiry_display,
             "voucher_code": voucher.code,
-            "service_name": voucher.service.name,
             "expires_at": voucher.expires_at.isoformat() if voucher.expires_at else None,
+            "service_name": service_name,
         }
         try:
             NotificationService.send_notification(

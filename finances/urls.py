@@ -1,9 +1,11 @@
 """
 URLs para el módulo finances.
 """
-from django.urls import path
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
 
 from .views import (
+    ClientCreditAdminViewSet,
     CommissionLedgerListView,
     DeveloperCommissionStatusView,
     PSEFinancialInstitutionsView,
@@ -11,7 +13,14 @@ from .views import (
     WompiWebhookView,
     InitiateVipSubscriptionView,
     InitiatePackagePurchaseView,
+    CreatePSEPaymentView,
+    CreateNequiPaymentView,
+    CreateDaviplataPaymentView,
+    CreateBancolombiaTransferPaymentView,
 )
+
+router = DefaultRouter()
+router.register(r"admin/credits", ClientCreditAdminViewSet, basename="admin-client-credit")
 
 urlpatterns = [
     # Comisiones del desarrollador
@@ -30,4 +39,13 @@ urlpatterns = [
 
     # Compra de paquetes (migrado desde spa.views.packages)
     path("payments/package/initiate/", InitiatePackagePurchaseView.as_view(), name="initiate-package-purchase"),
+
+    # Creación de transacciones server-side por método
+    path("payments/<uuid:pk>/pse/", CreatePSEPaymentView.as_view(), name="create-pse-payment"),
+    path("payments/<uuid:pk>/nequi/", CreateNequiPaymentView.as_view(), name="create-nequi-payment"),
+    path("payments/<uuid:pk>/daviplata/", CreateDaviplataPaymentView.as_view(), name="create-daviplata-payment"),
+    path("payments/<uuid:pk>/bancolombia-transfer/", CreateBancolombiaTransferPaymentView.as_view(), name="create-bancolombia-transfer-payment"),
+
+    # Rutas administrativas
+    path("", include(router.urls)),
 ]
