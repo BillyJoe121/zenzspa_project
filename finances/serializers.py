@@ -115,6 +115,9 @@ class ClientCreditAdminSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
         read_only_fields = ["created_at", "updated_at"]
+        extra_kwargs = {
+            "remaining_amount": {"required": False},
+        }
 
     def validate(self, attrs):
         initial = attrs.get("initial_amount", getattr(self.instance, "initial_amount", None))

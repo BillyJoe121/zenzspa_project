@@ -4,6 +4,19 @@ from model_bakery import baker
 from bot.models import BotConfiguration
 from rest_framework.test import APIClient
 
+# Limpiar el registro de Prometheus antes de importar cualquier módulo
+try:
+    from prometheus_client import REGISTRY, CollectorRegistry
+    # Limpiar todos los collectors existentes para evitar duplicados
+    collectors_to_remove = list(REGISTRY._collector_to_names.keys())
+    for collector in collectors_to_remove:
+        try:
+            REGISTRY.unregister(collector)
+        except Exception:
+            pass
+except ImportError:
+    pass
+
 @pytest.fixture(autouse=True)
 def clear_cache():
     """Limpia la caché de Redis antes y después de cada test."""

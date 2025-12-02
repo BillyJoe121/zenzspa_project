@@ -191,10 +191,10 @@ class WompiWebhookView(generics.GenericAPIView):
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs):
-        webhook_service = WompiWebhookService(request.data, headers=request.headers)
-        event_type = webhook_service.event_type
-
         try:
+            webhook_service = WompiWebhookService(request.data, headers=request.headers)
+            event_type = webhook_service.event_type
+
             if event_type == "transaction.updated":
                 result = webhook_service.process_transaction_update()
                 return Response({"status": "webhook processed", "result": result}, status=status.HTTP_200_OK)

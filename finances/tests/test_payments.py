@@ -1,3 +1,4 @@
+
 from datetime import timedelta
 from unittest import mock
 
@@ -8,7 +9,6 @@ from model_bakery import baker
 
 from finances.payments import PaymentService
 from finances.models import Payment
-
 
 class PaymentServiceTest(TestCase):
     @override_settings(WOMPI_PRIVATE_KEY="pk_test", WOMPI_BASE_URL="https://example.com", WOMPI_CURRENCY="COP")
@@ -54,3 +54,41 @@ class PaymentServiceTest(TestCase):
         self.assertIsInstance(called_payload.get("signature"), dict)
         self.assertIn("integrity", called_payload["signature"])
         self.assertEqual(status, Payment.PaymentStatus.APPROVED)
+
+    @mock.patch("finances.payments.WompiPaymentClient.create_transaction")
+    def test_charge_recurrence_token_declined(self, mock_create_transaction):
+        cache.delete("wompi:payments:circuit")
+        user = baker.make("users.CustomUser", email="user@test.com")
+
+        mock_create_transaction.return_value = (
+            {"data": {"status": "DECLINED", "id": "txn-123", "status_message": "Insufficient funds"}},
+            201,
+        )
+
+        status, payload, reference = PaymentService.charge_recurrence_token(
+            user=user,
+            amount=100,
+            token="123",
+        )
+
+        self.assertEqual(status, Payment.PaymentStatus.DECLINED)
+        self.assertEqual(payload["status"], "DECLINED")
+
+    @mock.patch("finances.payments.WompiPaymentClient.create_transaction")
+    def test_charge_recurrence_token_error(self, mock_create_transaction):
+        cache.delete("wompi:payments:circuit")
+        user = baker.make("users.CustomUser", email="user@test.com")
+
+        mock_create_transaction.return_value = (
+            {"error": "Gateway error"},
+            500,
+        )
+
+        status, payload, reference = PaymentService.charge_recurrence_token(
+            user=user,
+            amount=100,
+            token="123",
+        )
+
+        self.assertEqual(status, Payment.PaymentStatus.DECLINED)
+        self.assertIn("error", payload)

@@ -37,22 +37,25 @@ class LegalDocument(BaseModel):
         is_new_version = False
         if self.pk:
             old = type(self).objects.filter(pk=self.pk).first()
-            if old and old.version != self.version:
+            if not old:
+                # Documento nuevo con UUID pre-generado
+                is_new_version = True
+            elif old.version != self.version:
                 is_new_version = True
         else:
-            # Documento nuevo cuenta como nueva versión
+            # Documento nuevo sin PK (raro con UUIDField pero posible)
             is_new_version = True
+
         result = super().save(*args, **kwargs)
         if is_new_version:
             # Invalidar consentimientos de versiones anteriores del mismo slug
-            try:
-                from .models import UserConsent  # import local para evitar ciclos al importar
-                UserConsent.objects.filter(
-                    document__slug=self.slug,
-                    document_version__lt=self.version,
-                ).update(is_valid=False)
-            except Exception:
-                pass
+            from django.apps import apps
+            UserConsent = apps.get_model("legal", "UserConsent")
+            
+            UserConsent.objects.filter(
+                document__slug=self.slug,
+                document_version__lt=self.version,
+            ).update(is_valid=False)
         return result
 
 

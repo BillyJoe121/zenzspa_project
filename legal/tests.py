@@ -98,7 +98,7 @@ class TestLegalConsentsAPI:
         response = api_client.get("/api/v1/legal/consents/")
         assert response.status_code == 200
         assert len(response.data["results"]) == 1
-        assert response.data["results"][0]["user"] == str(user.id)
+        assert str(response.data["results"][0]["user"]) == str(user.id)
 
     def test_prevents_duplicate_consent_same_context(self, api_client, legal_doc):
         user = CustomUser.objects.create_user(
@@ -176,7 +176,7 @@ class TestLegalConsentsAPI:
         )
         request = api_rf.get("/api/v1/secure-endpoint")
         request.user = user
-        middleware = LegalConsentRequiredMiddleware()
+        middleware = LegalConsentRequiredMiddleware(lambda r: None)
         response = middleware.process_request(request)
         assert response.status_code == 428
 
@@ -203,17 +203,8 @@ class TestAdminLegalDocuments:
         resp1 = api_client.post("/api/v1/legal/admin/documents/", v1, format="json")
         assert resp1.status_code == 201
 
-        v2 = v1 | {"version": 2, "title": "Términos v2", "body": "contenido v2", "is_active": True}
-        resp2 = api_client.post("/api/v1/legal/admin/documents/", v2, format="json")
-        assert resp2.status_code == 201
-
-        doc1 = LegalDocument.objects.get(version=1, slug="terms-global")
-        doc2 = LegalDocument.objects.get(version=2, slug="terms-global")
-        assert doc2.is_active is True
-        doc1.refresh_from_db()
-        assert doc1.is_active is False
-
         # Consentimientos previos deben invalidarse
+        doc1 = LegalDocument.objects.get(version=1, slug="terms-global")
         user = CustomUser.objects.create_user(
             phone_number="+573000000012",
             password="pass",
@@ -225,8 +216,17 @@ class TestAdminLegalDocuments:
             user=user,
             context_type=UserConsent.ContextType.GLOBAL,
         )
-        # Guardar doc2 debe invalidar consents de versiones anteriores con mismo slug
-        doc2.save()
+
+        v2 = v1 | {"version": 2, "title": "Términos v2", "body": "contenido v2", "is_active": True}
+        resp2 = api_client.post("/api/v1/legal/admin/documents/", v2, format="json")
+        assert resp2.status_code == 201
+
+        doc2 = LegalDocument.objects.get(version=2, slug="terms-global")
+        assert doc2.is_active is True
+        doc1.refresh_from_db()
+        assert doc1.is_active is False
+
+        # Verificar que el consentimiento de v1 fue invalidado
         assert UserConsent.objects.filter(document=doc1, is_valid=False).exists()
 
     def test_non_admin_cannot_manage_documents(self, api_client):

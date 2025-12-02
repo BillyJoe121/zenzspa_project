@@ -131,6 +131,7 @@ class TestCartExpiration:
         factory = APIRequestFactory()
         request = factory.get("/api/v1/marketplace/cart/my-cart/")
         force_authenticate(request, user=user)
+        request.user = user
 
         view = CartViewSet()
         view.request = request
@@ -157,6 +158,7 @@ class TestCartExpiration:
             format="json",
         )
         force_authenticate(request, user=user)
+        request.user = user
 
         view = CartViewSet()
         view.request = request
@@ -416,7 +418,14 @@ class TestReturnService:
 class TestSerializers:
     def test_product_list_serializer(self, product, variant):
         ProductImage.objects.create(product=product, image="test.jpg", is_primary=True)
-        serializer = ProductListSerializer(product)
+        
+        # Mock request with authenticated user to see sensitive fields
+        request = MagicMock()
+        user = MagicMock()
+        user.is_authenticated = True
+        request.user = user
+        
+        serializer = ProductListSerializer(product, context={'request': request})
         data = serializer.data
         assert data['name'] == "Test Product"
         assert data['price'] == Decimal('100.00')
@@ -549,6 +558,8 @@ class TestViews:
         # Mock Wompi helpers
         mock_payment_service._resolve_acceptance_token.return_value = "token_123"
         mock_payment_service._build_integrity_signature.return_value = "sig_123"
+        # Mock create_order_payment to return tuple
+        mock_payment_service.create_order_payment.return_value = (MagicMock(), {"reference": "ORDER-123", "integrity_signature": "sig"})
         
         url = '/api/v1/marketplace/cart/checkout/'
         data = {
@@ -613,7 +624,7 @@ class TestMarketplaceSecurityAndAdminEndpoints:
         response = api_client.get('/api/v1/marketplace/products/')
         assert response.status_code == status.HTTP_200_OK
         data = response.data['results'][0] if isinstance(response.data, dict) else response.data[0]
-        assert data['vip_price'] == "90.00"
+        assert data['vip_price'] == Decimal("90.00")
         assert data['stock'] == variant.stock
 
     def test_cart_my_cart_endpoint_returns_payload(self, api_client, user, cart, variant):

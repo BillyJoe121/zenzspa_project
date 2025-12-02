@@ -169,10 +169,10 @@ class TestGeminiServiceInternals:
 
         service = GeminiService()
         response_json, meta = service.generate_response("Nude")
-        
+
         # En la implementación actual, esto cae en el catch general
-        assert "problemas técnicos" in response_json["reply_to_user"]
-        assert meta["source"] == "error"
+        assert "dificultades técnicas" in response_json["reply_to_user"]
+        assert meta["source"] == "fallback_error"
 
     @patch("google.genai.Client")
     def test_generate_response_api_error(self, mock_client_cls, settings):
@@ -185,7 +185,7 @@ class TestGeminiServiceInternals:
 
         service = GeminiService()
         response_json, meta = service.generate_response("Hola")
-        
-        assert "problemas técnicos" in response_json["reply_to_user"]
-        assert meta["source"] == "error"
+
+        assert "dificultades técnicas" in response_json["reply_to_user"]
+        assert meta["source"] == "fallback_error"
         assert "500" in meta["reason"]

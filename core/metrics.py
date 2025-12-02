@@ -30,7 +30,19 @@ def get_counter(name: str, doc: str, labelnames: Iterable[str] = ()) -> object:
     if key in _counter_cache:
         return _counter_cache[key]
     if Counter:
-        metric = Counter(name, doc, list(labelnames))
+        try:
+            metric = Counter(name, doc, list(labelnames))
+        except ValueError:
+            # La métrica ya existe en el registro (común en tests)
+            # Intentar obtenerla del registro
+            from prometheus_client import REGISTRY
+            for collector in REGISTRY._collector_to_names.keys():
+                if hasattr(collector, '_name') and collector._name == name:
+                    metric = collector
+                    break
+            else:
+                # Si no se encuentra, usar un no-op
+                metric = _NoOpMetric()
     else:
         metric = _NoOpMetric()
     _counter_cache[key] = metric
@@ -42,10 +54,22 @@ def get_histogram(name: str, doc: str, labelnames: Iterable[str] = (), buckets: 
     if key in _hist_cache:
         return _hist_cache[key]
     if Histogram:
-        if buckets:
-            metric = Histogram(name, doc, list(labelnames), buckets=buckets)
-        else:
-            metric = Histogram(name, doc, list(labelnames))
+        try:
+            if buckets:
+                metric = Histogram(name, doc, list(labelnames), buckets=buckets)
+            else:
+                metric = Histogram(name, doc, list(labelnames))
+        except ValueError:
+            # La métrica ya existe en el registro (común en tests)
+            # Intentar obtenerla del registro
+            from prometheus_client import REGISTRY
+            for collector in REGISTRY._collector_to_names.keys():
+                if hasattr(collector, '_name') and collector._name == name:
+                    metric = collector
+                    break
+            else:
+                # Si no se encuentra, usar un no-op
+                metric = _NoOpMetric()
     else:
         metric = _NoOpMetric()
     _hist_cache[key] = metric

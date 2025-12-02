@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 
 from .models import GlobalSettings
 from .serializers import GlobalSettingsSerializer
+from django.shortcuts import render
 
 
 class HealthCheckView(View):

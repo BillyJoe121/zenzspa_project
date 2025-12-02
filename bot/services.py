@@ -392,7 +392,6 @@ class GeminiService:
         for attempt in range(max_retries + 1):
             try:
                 from google.genai import types
-                import time
 
                 # Configuración para forzar JSON
                 config = types.GenerateContentConfig(

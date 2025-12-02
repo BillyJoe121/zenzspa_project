@@ -20,7 +20,8 @@
       "Bash(pytest:*)",
       "Bash(python -m pytest:*)",
       "Bash(python manage.py test:*)",
-      "Bash(del botteststest_views_extended.py botteststest_tasks_extended.py)"
+      "Bash(del botteststest_views_extended.py botteststest_tasks_extended.py)",
+      "Bash(Select-String -Pattern \"whatsapp_webhook|health_check|process_message|cleanup|notifications|TOTAL\")"
     ],
     "deny": [],
     "ask": []
