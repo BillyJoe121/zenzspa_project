@@ -25,6 +25,8 @@ from ..serializers import (
 )
 from ..services import TwilioService, verify_recaptcha
 from ..utils import get_client_ip, register_user_session
+from profiles.models import ClinicalProfile
+from notifications.models import NotificationPreference
 from .utils import (
     log_otp_attempt,
     requires_recaptcha,
@@ -56,6 +58,9 @@ class UserRegistrationView(generics.CreateAPIView):
                 raise ValidationError({"recaptcha_token": "Se requiere verificación adicional para continuar."})
 
         user = serializer.save()
+        # Garantiza recursos dependientes desde el registro (idempotente por modelos OneToOne)
+        ClinicalProfile.objects.get_or_create(user=user)
+        NotificationPreference.for_user(user)
         try:
             twilio_service = TwilioService()
             twilio_service.send_verification_code(user.phone_number)
@@ -161,6 +166,9 @@ class VerifySMSView(views.APIView):
                 if not user.is_verified:
                     user.is_verified = True
                     user.save(update_fields=['is_verified'])
+                # Aseguramos recursos dependientes creados en caso de registros previos incompletos
+                ClinicalProfile.objects.get_or_create(user=user)
+                NotificationPreference.for_user(user)
 
                 log_otp_attempt(phone_number, OTPAttempt.AttemptType.VERIFY, True, request)
 

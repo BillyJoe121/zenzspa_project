@@ -4,3 +4,4 @@ Got an error creating the test database: database "test_studiozens" already exis
 
 
 Found 3 test(s).
+Type 'yes' if you would like to try deleting the test database 'test_studiozens', or 'no' to cancel: 
