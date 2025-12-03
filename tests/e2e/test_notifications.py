@@ -89,6 +89,16 @@ def test_notification_respects_quiet_hours(client_user, monkeypatch):
     pref.save()
 
     monkeypatch.setattr(timezone, "now", staticmethod(lambda: datetime(2024, 1, 1, 23, 0, tzinfo=dt_timezone.utc)))
+    monkeypatch.setattr(
+        NotificationPreference,
+        "is_quiet_now",
+        lambda self, moment=None: True,
+    )
+    monkeypatch.setattr(
+        NotificationPreference,
+        "next_quiet_end",
+        lambda self, moment=None: datetime(2024, 1, 2, 8, 0, tzinfo=dt_timezone.utc),
+    )
 
     log = NotificationService.send_notification(
         user=client_user,

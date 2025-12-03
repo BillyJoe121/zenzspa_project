@@ -14,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db.models import Sum, Q
 from django.db.models.functions import Coalesce
+from uuid import UUID
 
 from spa.models import Appointment, Payment, ClientCredit
 from marketplace.models import Order
@@ -111,13 +112,13 @@ class DateFilterMixin:
         staff_id = request.query_params.get("staff_id")
         service_category_id = request.query_params.get("service_category_id")
         try:
-            staff_id = int(staff_id) if staff_id else None
+            staff_id = UUID(str(staff_id)) if staff_id else None
         except ValueError:
-            raise ValueError("staff_id debe ser numérico.")
+            raise ValueError("staff_id debe ser un UUID válido.")
         try:
-            service_category_id = int(service_category_id) if service_category_id else None
+            service_category_id = UUID(str(service_category_id)) if service_category_id else None
         except ValueError:
-            raise ValueError("service_category_id debe ser numérico.")
+            raise ValueError("service_category_id debe ser un UUID válido.")
         return staff_id, service_category_id
 
     def _cache_key(self, request, prefix, start_date, end_date, staff_id, service_category_id):
