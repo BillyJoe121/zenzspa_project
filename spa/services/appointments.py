@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 
 from django.db import transaction
@@ -322,7 +322,7 @@ class AppointmentService:
         self._validate_appointment_rules()
         lock_key = None
         if self.staff_member:
-            lock_key = f"appt:staff:{self.staff_member_id}:{self.start_time.isoformat()}"
+            lock_key = f"appt:staff:{self.staff_member.id}:{self.start_time.isoformat()}"
         else:
             lock_key = f"appt:low_supervision:{self.start_time.isoformat()}"
         # Fallback a SELECT FOR UPDATE en staff, pero intentamos lock distribuido para nodos múltiples.
@@ -562,11 +562,11 @@ class AppointmentService:
         """
         Construye un payload iCal simple para la cita.
         """
-        dtstamp = timezone.now().astimezone(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+        dtstamp = timezone.now().astimezone(dt_timezone.utc).strftime('%Y%m%dT%H%M%SZ')
         dtstart = appointment.start_time.astimezone(
-            timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+            dt_timezone.utc).strftime('%Y%m%dT%H%M%SZ')
         dtend = appointment.end_time.astimezone(
-            timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+            dt_timezone.utc).strftime('%Y%m%dT%H%M%SZ')
         summary = appointment.get_service_names() or "Cita StudioZens"
         description = f"Cita #{appointment.id}"
 

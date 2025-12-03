@@ -12,12 +12,12 @@ from unittest.mock import patch
 
 from profiles.models import (
     ClinicalProfile, LocalizedPain, DoshaQuestion,
-    DoshaOption, ConsentTemplate, ConsentDocument, KioskSession, ClientDoshaAnswer
+    DoshaOption, ConsentTemplate, ConsentDocument, KioskSession, ClientDoshaAnswer,
+    Dosha
 )
 from users.models import CustomUser
 from spa.models import Appointment
 from core.models import AuditLog
-
 
 @pytest.mark.django_db
 class TestEncryptedFields(TestCase):
@@ -95,7 +95,7 @@ class TestProfileAnonymization(TestCase):
     def test_anonymize_deletes_history(self):
         """Test que la anonimización elimina el historial versionado"""
         # Crear historial modificando el perfil
-        self.profile.dosha = ClinicalProfile.Dosha.VATA
+        self.profile.dosha = Dosha.VATA
         self.profile.save()
 
         initial_count = self.profile.history.count()
@@ -114,7 +114,7 @@ class TestProfileAnonymization(TestCase):
         self.assertEqual(self.profile.medical_conditions, '')
         self.assertEqual(self.profile.allergies, '')
         self.assertEqual(self.profile.contraindications, '')
-        self.assertEqual(self.profile.dosha, ClinicalProfile.Dosha.UNKNOWN)
+        self.assertEqual(self.profile.dosha, Dosha.UNKNOWN)
 
     def test_anonymize_clears_user_data(self):
         """Test que la anonimización limpia los datos del usuario"""
@@ -181,6 +181,15 @@ class TestAuditLogging(TestCase):
         self.staff = baker.make(CustomUser, role=CustomUser.Role.STAFF, is_staff=True, is_verified=True)
         self.user = baker.make(CustomUser, phone_number="+573001111111", email="test@test.com", is_verified=True)
         self.profile = ClinicalProfile.objects.create(user=self.user)
+        # Crear cita para permitir acceso al staff
+        Appointment.objects.create(
+            user=self.user,
+            staff_member=self.staff,
+            start_time=timezone.now() + timedelta(hours=1),
+            end_time=timezone.now() + timedelta(hours=2),
+            status=Appointment.AppointmentStatus.CONFIRMED,
+            price_at_purchase=Decimal('100.00')
+        )
 
     def test_retrieve_creates_audit_log(self):
         """Test que obtener un perfil crea un log de auditoría"""
@@ -394,7 +403,7 @@ class TestGDPRDataExport(TestCase):
         )
         self.profile = ClinicalProfile.objects.create(
             user=self.user,
-            dosha=ClinicalProfile.Dosha.VATA,
+            dosha=Dosha.VATA,
             medical_conditions="Diabetes"
         )
 
@@ -413,7 +422,7 @@ class TestGDPRDataExport(TestCase):
 
         # Verificar que contiene datos del perfil (nota: el campo es 'profile', no 'clinical_profile')
         self.assertIn('profile', data)
-        self.assertEqual(data['profile']['dosha'], ClinicalProfile.Dosha.VATA)
+        self.assertEqual(data['profile']['dosha'], Dosha.VATA)
 
     def test_export_includes_related_data(self):
         """Test que la exportación incluye datos relacionados"""
@@ -472,14 +481,14 @@ class TestDoshaCalculation(TestCase):
         self.profile.calculate_dominant_dosha()
         self.profile.refresh_from_db()
 
-        self.assertEqual(self.profile.dosha, ClinicalProfile.Dosha.VATA)
+        self.assertEqual(self.profile.dosha, Dosha.VATA)
 
     def test_calculate_dosha_no_answers_sets_unknown(self):
         """Test que sin respuestas el Dosha es UNKNOWN"""
         self.profile.calculate_dominant_dosha()
         self.profile.refresh_from_db()
 
-        self.assertEqual(self.profile.dosha, ClinicalProfile.Dosha.UNKNOWN)
+        self.assertEqual(self.profile.dosha, Dosha.UNKNOWN)
 
 
 # ==================== SAD PATH TESTS ====================
@@ -877,6 +886,15 @@ class TestClinicalProfileAPISadPaths(TestCase):
         self.admin = baker.make(CustomUser, role=CustomUser.Role.ADMIN, is_staff=True, is_verified=True)
         self.user = baker.make(CustomUser, phone_number="+573001111111", is_verified=True)
         self.profile = ClinicalProfile.objects.create(user=self.user)
+        # Crear cita para permitir acceso al staff
+        Appointment.objects.create(
+            user=self.user,
+            staff_member=self.staff,
+            start_time=timezone.now() + timedelta(hours=1),
+            end_time=timezone.now() + timedelta(hours=2),
+            status=Appointment.AppointmentStatus.CONFIRMED,
+            price_at_purchase=Decimal('100.00')
+        )
 
     def test_retrieve_profile_without_authentication(self):
         """Test que obtener perfil sin autenticación falla"""
@@ -1160,8 +1178,8 @@ class TestDoshaCalculationEdgeCases(TestCase):
 
         # Debería ser uno de los dos
         self.assertIn(self.profile.dosha, [
-            ClinicalProfile.Dosha.VATA,
-            ClinicalProfile.Dosha.PITTA
+            Dosha.VATA,
+            Dosha.PITTA
         ])
 
     def test_calculate_dosha_with_single_answer(self):
@@ -1178,7 +1196,7 @@ class TestDoshaCalculationEdgeCases(TestCase):
         self.profile.calculate_dominant_dosha()
         self.profile.refresh_from_db()
 
-        self.assertEqual(self.profile.dosha, ClinicalProfile.Dosha.KAPHA)
+        self.assertEqual(self.profile.dosha, Dosha.KAPHA)
 
     def test_recalculate_dosha_updates_correctly(self):
         """Test que re-calcular Dosha actualiza correctamente"""
@@ -1196,7 +1214,7 @@ class TestDoshaCalculationEdgeCases(TestCase):
         )
         self.profile.calculate_dominant_dosha()
         self.profile.refresh_from_db()
-        self.assertEqual(self.profile.dosha, ClinicalProfile.Dosha.VATA)
+        self.assertEqual(self.profile.dosha, Dosha.VATA)
 
         # Cambiar respuesta
         answer.selected_option = opt_pitta
@@ -1205,7 +1223,7 @@ class TestDoshaCalculationEdgeCases(TestCase):
         # Re-calcular
         self.profile.calculate_dominant_dosha()
         self.profile.refresh_from_db()
-        self.assertEqual(self.profile.dosha, ClinicalProfile.Dosha.PITTA)
+        self.assertEqual(self.profile.dosha, Dosha.PITTA)
 
 
 @pytest.mark.django_db

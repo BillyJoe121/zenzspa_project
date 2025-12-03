@@ -113,8 +113,7 @@ class TwilioService:
             # Timeout explícito configurado en el cliente HTTP de Twilio
             verification = self.client.verify.v2.services(verify_service_sid).verifications.create(
                 to=phone_number,
-                channel='sms',
-                timeout=self.REQUEST_TIMEOUT
+                channel='sms'
             )
             logger.info("OTP sent via Twilio", extra={"phone": phone_number[-4:], "context": "send_verification"})
             return verification.status
@@ -150,8 +149,7 @@ class TwilioService:
             # Timeout explícito configurado en el cliente HTTP de Twilio
             verification_check = self.client.verify.v2.services(verify_service_sid).verification_checks.create(
                 to=phone_number,
-                code=code,
-                timeout=self.REQUEST_TIMEOUT
+                code=code
             )
             logger.info("OTP verification checked", extra={"phone": phone_number[-4:], "context": "check_verification"})
             return verification_check.status == 'approved'

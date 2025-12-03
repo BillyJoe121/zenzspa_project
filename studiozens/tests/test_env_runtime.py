@@ -1,10 +1,14 @@
 import os
 import runpy
+import sys
 from pathlib import Path
 
 import pytest
 
-SETTINGS_FILE = Path(__file__).resolve().parent.parent / "settings.py"
+# Para poder importar el módulo de settings necesitamos asegurarnos de que el parent esté en el path
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
 TRACKED_ENV_KEYS = {
     "SECRET_KEY",
@@ -59,6 +63,9 @@ def _prod_env(**overrides):
         WOMPI_INTEGRITY_SECRET="integrity",
         WOMPI_INTEGRITY_KEY="integrity",
         WOMPI_EVENT_SECRET="event-secret",
+        WOMPI_PAYOUT_PRIVATE_KEY="prv_test_payout_key_123",
+        WOMPI_PAYOUT_BASE_URL="https://payout-sandbox.wompi.co",
+        WOMPI_DEVELOPER_DESTINATION="dev-destination-123",
         GEMINI_API_KEY="gemini-123",
         CORS_ALLOWED_ORIGINS="https://app.studiozens.com",
         CSRF_TRUSTED_ORIGINS="https://app.studiozens.com",
@@ -79,7 +86,23 @@ def _run_settings(monkeypatch, env):
         monkeypatch.delenv(key, raising=False)
     for key, value in env.items():
         monkeypatch.setenv(key, value)
-    return runpy.run_path(str(SETTINGS_FILE))
+    # Limpiar el módulo de settings del caché si ya fue importado
+    import importlib
+    import sys
+    if "studiozens.settings" in sys.modules:
+        del sys.modules["studiozens.settings"]
+    if "studiozens.settings.base" in sys.modules:
+        del sys.modules["studiozens.settings.base"]
+    if "studiozens.settings.security" in sys.modules:
+        del sys.modules["studiozens.settings.security"]
+    if "studiozens.settings.celery" in sys.modules:
+        del sys.modules["studiozens.settings.celery"]
+    if "studiozens.settings.logging" in sys.modules:
+        del sys.modules["studiozens.settings.logging"]
+    # Importar el módulo para que se ejecute con las nuevas variables de entorno
+    import studiozens.settings as settings_module
+    # Retornar un dict con todos los atributos del módulo (similar a lo que devuelve runpy.run_path)
+    return {k: getattr(settings_module, k) for k in dir(settings_module) if not k.startswith('_')}
 
 
 def _set_env(monkeypatch, env):

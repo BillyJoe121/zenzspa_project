@@ -99,7 +99,7 @@ class SimpleUserSerializerMaskingTests(TestCase):
 
     def test_client_sees_masked_data(self):
         data = self._serialize(self.other_client)
-        self.assertEqual(data["phone_number"], "+57****67")
+        self.assertEqual(data["phone_number"], "+57****48")
         self.assertEqual(data["email"], "t***t@example.com")
 
     def test_own_profile_is_not_masked(self):
@@ -109,7 +109,7 @@ class SimpleUserSerializerMaskingTests(TestCase):
 
     def test_anonymous_user_is_masked(self):
         data = self._serialize(AnonymousUser())
-        self.assertEqual(data["phone_number"], "+57****67")
+        self.assertEqual(data["phone_number"], "+57****48")
         self.assertEqual(data["email"], "t***t@example.com")
 
 
@@ -177,15 +177,15 @@ class UserRegistrationViewTests(TestCase):
             "password": "Secret123!",
         }
 
-    @patch("users.views._requires_recaptcha", return_value=True)
-    @patch("users.views.verify_recaptcha", return_value=False)
+    @patch("users.views.auth.requires_recaptcha", return_value=True)
+    @patch("users.views.auth.verify_recaptcha", return_value=False)
     def test_registration_requires_recaptcha(self, mock_recaptcha, mock_requires):
         request = self.factory.post("/register/", self.payload, format="json")
         response = self.view(request)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(CustomUser.objects.filter(phone_number=self.payload["phone_number"]).exists())
 
-    @patch("users.views.TwilioService")
+    @patch("users.views.auth.TwilioService")
     @patch("users.views._requires_recaptcha", return_value=False)
     def test_registration_twilio_failure_rolls_back(self, mock_requires, mock_twilio):
         mock_twilio.return_value.send_verification_code.side_effect = BusinessLogicError("Twilio down")
@@ -209,11 +209,17 @@ class VerifySMSRateLimitTests(TestCase):
         self.original_ip_limit = VerifySMSView.MAX_IP_ATTEMPTS
         self.original_global_limit = VerifySMSView.MAX_GLOBAL_ATTEMPTS
         cache.clear()
+        # Reset circuit breaker
+        from users.services import twilio_breaker
+        twilio_breaker.record_success()
 
     def tearDown(self):
         VerifySMSView.MAX_IP_ATTEMPTS = self.original_ip_limit
         VerifySMSView.MAX_GLOBAL_ATTEMPTS = self.original_global_limit
         cache.clear()
+        # Reset circuit breaker
+        from users.services import twilio_breaker
+        twilio_breaker.record_success()
 
     def _perform_request(self):
         payload = {"phone_number": self.user.phone_number, "code": "000000"}
@@ -221,7 +227,7 @@ class VerifySMSRateLimitTests(TestCase):
         request.META["REMOTE_ADDR"] = "8.8.8.8"
         return self.view(request)
 
-    @patch("users.views.TwilioService")
+    @patch("users.views.auth.TwilioService")
     def test_ip_rate_limit_blocks_after_threshold(self, mock_twilio):
         mock_twilio.return_value.check_verification_code.return_value = False
         VerifySMSView.MAX_IP_ATTEMPTS = 1
@@ -233,7 +239,7 @@ class VerifySMSRateLimitTests(TestCase):
         self.assertEqual(response2.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
         self.assertEqual(response2.data["code"], "OTP_IP_LOCKED")
 
-    @patch("users.views.TwilioService")
+    @patch("users.views.auth.TwilioService")
     def test_global_rate_limit_blocks_service(self, mock_twilio):
         mock_twilio.return_value.check_verification_code.return_value = False
         VerifySMSView.MAX_GLOBAL_ATTEMPTS = 1
@@ -246,7 +252,7 @@ class VerifySMSRateLimitTests(TestCase):
         self.assertEqual(response2.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
         self.assertEqual(response2.data["code"], "OTP_GLOBAL_LIMIT")
 
-    @patch("users.views.TwilioService")
+    @patch("users.views.auth.TwilioService")
     def test_verify_sms_success_returns_tokens(self, mock_twilio):
         mock_twilio.return_value.check_verification_code.return_value = True
         VerifySMSView.MAX_IP_ATTEMPTS = 999
@@ -274,9 +280,15 @@ class VerifySMSAdditionalTests(TestCase):
             password="Secret123!",
             is_verified=False,
         )
+        # Reset circuit breaker
+        from users.services import twilio_breaker
+        twilio_breaker.record_success()
 
     def tearDown(self):
         cache.clear()
+        # Reset circuit breaker
+        from users.services import twilio_breaker
+        twilio_breaker.record_success()
 
     def _post(self, extra=None):
         payload = {"phone_number": self.user.phone_number, "code": "000000"}
@@ -296,7 +308,7 @@ class VerifySMSAdditionalTests(TestCase):
         response = self._post()
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("users.views.TwilioService")
+    @patch("users.views.auth.TwilioService")
     def test_invalid_code_increments_attempts(self, mock_twilio):
         mock_twilio.return_value.check_verification_code.return_value = False
         response = self._post()
@@ -319,6 +331,9 @@ class TwilioCircuitBreakerTests(TestCase):
         self.mock_client = MagicMock()
         self.mock_client_cls.return_value = self.mock_client
         self.service = TwilioService()
+        # Reset circuit breaker
+        from users.services import twilio_breaker
+        twilio_breaker.record_success()
 
     def _build_dummy_client(self, side_effect=None):
         class DummyVerifications:
@@ -372,6 +387,9 @@ class TwilioServiceSuccessTests(TestCase):
         client_patcher = patch("users.services.Client")
         self.mock_client_cls = client_patcher.start()
         self.addCleanup(client_patcher.stop)
+        # Reset circuit breaker
+        from users.services import twilio_breaker
+        twilio_breaker.record_success()
 
     def test_send_and_check_verification_code(self):
         service = TwilioService()
@@ -488,7 +506,8 @@ class SignalTests(TestCase):
 class TaskTests(TestCase):
     @patch("users.tasks.NotificationService.send_notification")
     def test_send_non_grata_alert_uses_notification_service(self, mock_send_notification):
-        CustomUser.objects.create_user(
+        from bot.models import BotConfiguration
+        admin = CustomUser.objects.create_user(
             phone_number="+573004300000",
             email="admin@example.com",
             first_name="Admin",
@@ -497,6 +516,8 @@ class TaskTests(TestCase):
             is_staff=True,
             is_active=True,
         )
+        BotConfiguration.objects.create(admin_phone=admin.phone_number, is_active=True)
+        
         result = send_non_grata_alert_to_admins("+573004300001")
         self.assertIn("+573004300001", result)
         mock_send_notification.assert_called_once()
@@ -575,8 +596,8 @@ class ViewsTests(TestCase):
             is_verified=True,
         )
 
-    @patch("users.views._requires_recaptcha", return_value=False)
-    @patch("users.views.TwilioService")
+    @patch("users.views.password.requires_recaptcha", return_value=False)
+    @patch("users.views.password.TwilioService")
     def test_password_reset_request_sends_code(self, mock_twilio, mock_requires):
         view = PasswordResetRequestView.as_view()
         request = self.factory.post("/password-reset/request/", {"phone_number": self.user.phone_number}, format="json")
@@ -584,15 +605,15 @@ class ViewsTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         mock_twilio.return_value.send_verification_code.assert_called_once_with(self.user.phone_number)
 
-    @patch("users.views._requires_recaptcha", return_value=True)
-    @patch("users.views.verify_recaptcha", return_value=False)
+    @patch("users.views.password.requires_recaptcha", return_value=True)
+    @patch("users.views.password.verify_recaptcha", return_value=False)
     def test_password_reset_request_requires_recaptcha(self, mock_verify, mock_requires):
         view = PasswordResetRequestView.as_view()
         request = self.factory.post("/password-reset/request/", {"phone_number": self.user.phone_number}, format="json")
         response = view(request)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("users.views.TwilioService")
+    @patch("users.views.password.TwilioService")
     def test_password_reset_confirm_updates_password(self, mock_twilio):
         mock_twilio.return_value.check_verification_code.return_value = True
         view = PasswordResetConfirmView.as_view()
@@ -602,7 +623,7 @@ class ViewsTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(CustomUser.objects.get(pk=self.user.pk).check_password("NewSecret123!"))
 
-    @patch("users.views.TwilioService")
+    @patch("users.views.password.TwilioService")
     def test_password_reset_confirm_rejects_invalid_code(self, mock_twilio):
         mock_twilio.return_value.check_verification_code.return_value = False
         view = PasswordResetConfirmView.as_view()
@@ -611,7 +632,7 @@ class ViewsTests(TestCase):
         response = view(request)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch("users.views.TwilioService")
+    @patch("users.views.password.TwilioService")
     def test_password_reset_confirm_user_not_found(self, mock_twilio):
         mock_twilio.return_value.check_verification_code.return_value = True
         view = PasswordResetConfirmView.as_view()
@@ -652,7 +673,7 @@ class ViewsTests(TestCase):
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password("NewSecret123!"))
 
-    @patch("users.views._revoke_all_sessions")
+    @patch("users.views.sessions.revoke_all_sessions")
     def test_logout_all_view(self, mock_revoke):
         view = LogoutAllView.as_view()
         request = self.factory.post("/logout_all/", {}, format="json")

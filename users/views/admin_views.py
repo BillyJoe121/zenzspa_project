@@ -164,7 +164,7 @@ class BlockIPView(views.APIView):
         return Response({"detail": f"IP {ip} bloqueada por {ttl} segundos."}, status=status.HTTP_200_OK)
 
 
-class UserExportView(generics.ListAPIView):
+class UserExportView(generics.GenericAPIView):
     """Exporta usuarios en formato JSON o CSV."""
     permission_classes = [IsAdminUser]
     throttle_classes = [AdminRateThrottle]
@@ -172,7 +172,9 @@ class UserExportView(generics.ListAPIView):
     serializer_class = UserExportSerializer
 
     def get(self, request, *args, **kwargs):
-        if request.query_params.get('format') == 'csv':
+        format_param = request.query_params.get('format', None)
+
+        if format_param == 'csv':
             response = HttpResponse(content_type='text/csv')
             response['Content-Disposition'] = 'attachment; filename="users_export.csv"'
 
@@ -188,7 +190,11 @@ class UserExportView(generics.ListAPIView):
                     user.role, status_label, user.created_at
                 ])
             return response
-        return super().get(request, *args, **kwargs)
+
+        # Return JSON for non-CSV requests
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
 
 class AdminUserViewSet(viewsets.ModelViewSet):

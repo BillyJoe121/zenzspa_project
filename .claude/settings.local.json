@@ -21,7 +21,13 @@
       "Bash(python -m pytest:*)",
       "Bash(python manage.py test:*)",
       "Bash(del botteststest_views_extended.py botteststest_tasks_extended.py)",
-      "Bash(Select-String -Pattern \"whatsapp_webhook|health_check|process_message|cleanup|notifications|TOTAL\")"
+      "Bash(Select-String -Pattern \"whatsapp_webhook|health_check|process_message|cleanup|notifications|TOTAL\")",
+      "Bash(Select-String \"export\")",
+      "Bash(find:*)",
+      "Bash(del test_export_direct.py)",
+      "Bash(rm:*)",
+      "Bash(Select-String -Pattern \"Status:|Response|AssertionError\" -Context 0,2)",
+      "Bash(Select-String -Pattern \"page_size|results|count\" -Context 2)"
     ],
     "deny": [],
     "ask": []

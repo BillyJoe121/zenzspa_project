@@ -106,7 +106,10 @@ class ClinicalProfileViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     def get_object(self):
-        phone_number = self.kwargs.get(self.lookup_url_kwarg)
+        # El router puede usar 'pk' o 'phone_number' dependiendo de la configuración.
+        # Intentamos obtener el valor de lookup de ambos lugares.
+        phone_number = self.kwargs.get(self.lookup_url_kwarg) or self.kwargs.get('pk')
+        
         queryset = self.get_queryset()
         filter_kwargs = {self.lookup_field: phone_number}
         obj = get_object_or_404(queryset, **filter_kwargs)
@@ -114,7 +117,6 @@ class ClinicalProfileViewSet(viewsets.ModelViewSet):
         if kiosk_client and obj.user != kiosk_client:
             raise PermissionDenied("La sesión de quiosco no puede acceder a este perfil.")
         return obj
-
 
     def update(self, request, *args, **kwargs):
         """Sobrescribir para auditar modificaciones a datos médicos"""
@@ -371,7 +373,7 @@ class KioskSessionStatusView(generics.GenericAPIView):
 
 
 class KioskSessionHeartbeatView(generics.GenericAPIView):
-    permission_classes = [IsKioskSession]
+    permission_classes = [IsKioskSessionAllowExpired]
 
     def post(self, request, *args, **kwargs):
         session = request.kiosk_session

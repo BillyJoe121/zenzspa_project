@@ -1,4 +1,4 @@
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone as py_timezone
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -73,7 +73,7 @@ class NotificationPreference(BaseModel):
                 end_dt = end_dt + timedelta(days=1)
         if local_moment >= end_dt:
             end_dt = end_dt + timedelta(days=1)
-        return end_dt.astimezone(timezone.utc)
+        return end_dt.astimezone(py_timezone.utc)
 
     @classmethod
     def for_user(cls, user):

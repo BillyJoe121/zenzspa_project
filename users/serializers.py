@@ -143,10 +143,35 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         write_only=True, style={'input_type': 'password'})
     email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
 
+    class Meta:
+        model = CustomUser
+        fields = ['phone_number', 'password', 'email', 'first_name', 'last_name', 'role']
+        extra_kwargs = {
+            'phone_number': {'validators': []},
+        }
+
     def validate_email(self, value):
         if value and CustomUser.objects.filter(email=value).exists():
             raise serializers.ValidationError("Este correo electrónico ya está registrado.")
         return value
+
+    def validate_phone_number(self, value):
+        if BlockedPhoneNumber.objects.filter(phone_number=value).exists():
+            send_non_grata_alert_to_admins.delay(value)
+            raise serializers.ValidationError(
+                "Este número de teléfono está bloqueado. Contacte al administrador."
+            )
+        try:
+            existing_user = CustomUser.objects.get(phone_number=value)
+        except CustomUser.DoesNotExist:
+            return value
+        if existing_user.is_persona_non_grata:
+            send_non_grata_alert_to_admins.delay(value)
+            raise serializers.ValidationError(
+                "Este número de teléfono está bloqueado. Contacte al administrador."
+            )
+        raise serializers.ValidationError(
+            "Un usuario con este número de teléfono ya existe.")
 
 
 class AdminUserSerializer(serializers.ModelSerializer):

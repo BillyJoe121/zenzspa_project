@@ -15,10 +15,12 @@ from users.models import CustomUser
 
 
 class LocalizedPainSerializer(serializers.ModelSerializer):
+    id = serializers.UUIDField(required=False)
+
     class Meta:
         model = LocalizedPain
         fields = ['id', 'body_part', 'pain_level', 'periodicity', 'notes']
-        read_only_fields = ['id']
+        read_only_fields = []
 
     def validate_body_part(self, value):
         valid_choices = [choice[0] for choice in LocalizedPain.BodyPart.choices]

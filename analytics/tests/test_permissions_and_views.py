@@ -99,7 +99,8 @@ class AnalyticsViewsTests(TestCase):
         AnalyticsExportView.versioning_class = None
         self.kpi_view = KpiView.as_view()
         self.timeseries_view = TimeSeriesView.as_view()
-        self.export_view = AnalyticsExportView.as_view()
+        # Para AnalyticsExportView usamos la instancia directamente porque as_view() no funciona bien con API views
+        self.export_view_instance = AnalyticsExportView()
         self.cache_clear_view = CacheClearView.as_view()
         cache.clear()
 
@@ -164,8 +165,12 @@ class AnalyticsViewsTests(TestCase):
         mock_service.get_sales_details.return_value = []
         mock_service.get_debt_rows.return_value = []
 
+        # Usar APIView directamente requiere método GET HTTP
         request = self._auth_get("/api/v1/analytics/kpis/export/", {"format": "xlsx"})
-        response = self.export_view(request)
+        # Necesitamos inicializar la vista con el request para que DRF lo convierta apropiadamente
+        self.export_view_instance.initialize_request(request)
+        self.export_view_instance.request = self.export_view_instance.initialize_request(request)
+        response = self.export_view_instance.get(self.export_view_instance.request)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -186,12 +191,14 @@ class AnalyticsViewsTests(TestCase):
         mock_service.get_debt_rows.return_value = []
 
         first_request = self._auth_get("/api/v1/analytics/kpis/export/", {"format": "csv"})
-        first_response = self.export_view(first_request)
+        self.export_view_instance.request = self.export_view_instance.initialize_request(first_request)
+        first_response = self.export_view_instance.get(self.export_view_instance.request)
         self.assertEqual(first_response.status_code, 200)
         self.assertEqual(first_response["Content-Type"], "text/csv")
 
         second_request = self._auth_get("/api/v1/analytics/kpis/export/", {"format": "csv"})
-        second_response = self.export_view(second_request)
+        self.export_view_instance.request = self.export_view_instance.initialize_request(second_request)
+        second_response = self.export_view_instance.get(self.export_view_instance.request)
         self.assertEqual(second_response.status_code, 200)
 
         self.assertEqual(mock_service.get_business_kpis.call_count, 1)

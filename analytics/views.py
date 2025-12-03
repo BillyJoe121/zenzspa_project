@@ -9,6 +9,7 @@ from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.db.models import Sum, Q
@@ -398,8 +399,15 @@ class CacheClearView(APIView):
             )
 
 
+class DashboardPagination(PageNumberPagination):
+    """Paginación para el dashboard con page_size de 50"""
+    page_size = 50
+    max_page_size = 100
+
+
 class DashboardViewSet(viewsets.ViewSet):
     permission_classes = [CanViewAnalytics]
+    pagination_class = DashboardPagination
     CACHE_TTL = 300  # Aumentado a 5 minutos
 
     def list(self, request):
@@ -440,14 +448,9 @@ class DashboardViewSet(viewsets.ViewSet):
             )
             # Si está cacheado, asumimos que es la lista completa de dicts
             # Necesitamos re-hidratar o paginar la lista de dicts
-            from rest_framework.pagination import PageNumberPagination
-            class DashboardPagination(PageNumberPagination):
-                page_size = 50
-                max_page_size = 100
-            
-            paginator = DashboardPagination()
+            paginator = self.pagination_class()
             # Paginator espera un queryset o lista
-            page = paginator.paginate_queryset(cached, request)
+            page = paginator.paginate_queryset(cached, request, view=self)
             return paginator.get_paginated_response(page)
 
         appointments = (
@@ -475,15 +478,10 @@ class DashboardViewSet(viewsets.ViewSet):
             "dashboard_agenda_today",
             {"date": today.isoformat(), "cache": "miss"},
         )
-        
+
         # Paginación
-        from rest_framework.pagination import PageNumberPagination
-        class DashboardPagination(PageNumberPagination):
-            page_size = 50
-            max_page_size = 100
-            
-        paginator = DashboardPagination()
-        page = paginator.paginate_queryset(data, request)
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(data, request, view=self)
         return paginator.get_paginated_response(page)
 
     @action(detail=False, methods=["get"], url_path="pending-payments")

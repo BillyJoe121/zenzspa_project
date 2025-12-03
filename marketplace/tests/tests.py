@@ -147,26 +147,17 @@ class TestCartExpiration:
         assert new_cart.is_active
         assert new_cart.expires_at > timezone.now()
 
-    def test_add_item_extends_cart_expiry(self, user, cart, variant):
+    def test_add_item_extends_cart_expiry(self, user, cart, variant, api_client):
         cart.expires_at = timezone.now() + timedelta(hours=1)
         cart.save(update_fields=["expires_at"])
 
-        factory = APIRequestFactory()
-        request = factory.post(
+        api_client.force_authenticate(user=user)
+        response = api_client.post(
             "/api/v1/marketplace/cart/add-item/",
             {"variant_id": str(variant.id), "quantity": 1},
             format="json",
         )
-        force_authenticate(request, user=user)
-        request.user = user
-
-        view = CartViewSet()
-        view.request = request
-        view.args = ()
-        view.kwargs = {}
-        view.action = "add_item"
-
-        response = view.add_item(request)
+        
         assert response.status_code == status.HTTP_201_CREATED
 
         cart.refresh_from_db()
@@ -604,6 +595,43 @@ class TestViews:
         assert response.status_code == 200
         order.refresh_from_db()
         assert order.status == Order.OrderStatus.RETURN_REQUESTED
+
+    def test_product_retrieve_view(self, api_client, product):
+        api_client.force_authenticate(user=None) # Public access
+        url = f'/api/v1/marketplace/products/{product.id}/'
+        response = api_client.get(url)
+        assert response.status_code == 200
+        assert response.data['name'] == product.name
+
+    def test_product_variants_action(self, api_client, product, variant):
+        url = f'/api/v1/marketplace/products/{product.id}/variants/'
+        response = api_client.get(url)
+        assert response.status_code == 200
+        assert len(response.data) >= 1
+        assert response.data[0]['id'] == str(variant.id)
+
+    def test_cart_update_item_view(self, api_client, user, cart, variant):
+        api_client.force_authenticate(user=user)
+        item = CartItem.objects.create(cart=cart, variant=variant, quantity=1)
+        
+        url = f'/api/v1/marketplace/cart/{item.id}/update-item/'
+        data = {'quantity': 5}
+        response = api_client.put(url, data)
+        
+        assert response.status_code == 200
+        item.refresh_from_db()
+        assert item.quantity == 5
+
+    def test_cart_remove_item_view(self, api_client, user, cart, variant):
+        api_client.force_authenticate(user=user)
+        item = CartItem.objects.create(cart=cart, variant=variant, quantity=1)
+        
+        url = f'/api/v1/marketplace/cart/{item.id}/remove-item/'
+        response = api_client.delete(url)
+        
+        assert response.status_code == 204
+        assert not CartItem.objects.filter(id=item.id).exists()
+
 
 
 @pytest.mark.django_db

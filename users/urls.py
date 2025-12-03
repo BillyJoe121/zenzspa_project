@@ -32,6 +32,7 @@ router.register(r'admin/users', AdminUserViewSet, basename='admin-user')
 
 urlpatterns = [
     # OTP + Session flows
+    path('admin/export/', UserExportView.as_view(), name='user-export'),
     path('otp/request/', UserRegistrationView.as_view(), name='otp-request'),
     path('otp/confirm/', VerifySMSView.as_view(), name='otp-confirm'),
     path('token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
@@ -67,7 +68,6 @@ urlpatterns = [
     # New Features
     path('totp/setup/', TOTPSetupView.as_view(), name='totp-setup'),
     path('totp/verify/', TOTPVerifyView.as_view(), name='totp-verify'),
-    path('admin/export/', UserExportView.as_view(), name='user-export'),
     path('twilio/webhook/', TwilioWebhookView.as_view(), name='twilio-webhook'),
     path('email/verify/', EmailVerificationView.as_view(), name='email-verify'),
     path('me/delete/', UserDeleteView.as_view(), name='user-delete'),
