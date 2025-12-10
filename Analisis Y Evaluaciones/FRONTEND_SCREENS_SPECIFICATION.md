@@ -870,6 +870,12 @@
 
 ---
 
+
+
+
+
+
+
 ### SCREEN-026: Mis Consentimientos
 
 **Ruta Frontend:** `/profile/consents`

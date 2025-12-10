@@ -173,6 +173,17 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         raise serializers.ValidationError(
             "Un usuario con este número de teléfono ya existe.")
 
+    def create(self, validated_data):
+        """Crea el usuario usando create_user para hashear la contraseña correctamente."""
+        return CustomUser.objects.create_user(
+            phone_number=validated_data['phone_number'],
+            password=validated_data['password'],
+            email=validated_data.get('email'),
+            first_name=validated_data.get('first_name', ''),
+            last_name=validated_data.get('last_name', ''),
+            role=validated_data.get('role', CustomUser.Role.CLIENT),
+        )
+
 
 class AdminUserSerializer(serializers.ModelSerializer):
     """

@@ -124,7 +124,7 @@ def _parse_action_scores(raw: str) -> Dict[str, float]:
     return mapping
 
 
-ALLOWED_HOSTS = _split_env("ALLOWED_HOSTS", "localhost 127.0.0.1 testserver")
+ALLOWED_HOSTS = _split_env("ALLOWED_HOSTS", "localhost 127.0.0.1 testserver web")
 CSRF_TRUSTED_ORIGINS = _split_env(
     "CSRF_TRUSTED_ORIGINS",
     "http://localhost http://127.0.0.1 http://localhost:3000 http://127.0.0.1:3000 http://localhost:8000 http://127.0.0.1:8000",
@@ -296,9 +296,9 @@ REST_FRAMEWORK = {
         "payments": os.getenv("THROTTLE_PAYMENTS", "30/min"),
 
         # Bot
-        "bot": os.getenv("THROTTLE_BOT", "5/min"),
+        "bot": os.getenv("THROTTLE_BOT", "15/min"),
         "bot_daily": os.getenv("THROTTLE_BOT_DAILY", "100/day"),
-        "bot_ip": os.getenv("THROTTLE_BOT_IP", "20/hour"),
+        "bot_ip": os.getenv("THROTTLE_BOT_IP", "60/hour"),
 
         # Admin (NUEVO)
         "admin": os.getenv("THROTTLE_ADMIN", "1000/hour"),

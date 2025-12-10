@@ -162,6 +162,37 @@ class ClinicalProfileViewSet(viewsets.ModelViewSet):
             kiosk_session.clear_pending_changes()
         return instance
 
+    # AÑADIR ESTE MÉTODO
+    def create(self, request, *args, **kwargs):
+        """
+        Crear un nuevo perfil clínico para el usuario autenticado.
+        Si ya existe, devuelve error 400.
+        """
+        # Verificar si ya existe un perfil
+        if ClinicalProfile.objects.filter(user=request.user).exists():
+            return Response(
+                {'detail': 'El usuario ya tiene un perfil clínico.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        # Crear el perfil con valores por defecto
+        # Use defaults compatible with the model.
+        # Assuming defaults are empty strings as per user instruction.
+        profile = ClinicalProfile.objects.create(
+            user=request.user,
+            dosha='UNKNOWN',
+            element='',
+            diet_type='',
+            sleep_quality='',
+            activity_level='',
+            medical_conditions='',
+            allergies='',
+            contraindications='',
+            accidents_notes='',
+            general_notes=''
+        )
+        serializer = self.get_serializer(profile)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
     # Se añade una acción personalizada para el endpoint /me/
     @action(detail=False, methods=['get', 'put', 'patch'], url_path='me')
     def me(self, request, *args, **kwargs):
@@ -197,9 +228,14 @@ class ConsentTemplateViewSet(viewsets.ModelViewSet):
 
 
 class DoshaQuestionListView(generics.ListAPIView):
-    queryset = DoshaQuestion.objects.all().prefetch_related('options').order_by('category', 'created_at')
+    """
+    GET /api/v1/profiles/dosha-questions/
+    Lista todas las preguntas del cuestionario Dosha con sus opciones.
+    """
+    queryset = DoshaQuestion.objects.filter(is_active=True).prefetch_related('options').order_by('order')
     serializer_class = DoshaQuestionSerializer
-    permission_classes = [IsVerified]
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
 
 # --- INICIO DE LA MODIFICACIÓN ---
 # Se modifica la vista para que acepte tanto sesiones de usuario como de quiosco.

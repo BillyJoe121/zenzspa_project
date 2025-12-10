@@ -100,7 +100,7 @@ class DoshaQuestionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DoshaQuestion
-        fields = ['id', 'text', 'category', 'options']
+        fields = ['id', 'text', 'category', 'order', 'options']
         read_only_fields = ['id']
 
     def create(self, validated_data):

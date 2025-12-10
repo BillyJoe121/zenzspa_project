@@ -256,6 +256,8 @@ class LocalizedPain(BaseModel):
 
 class DoshaQuestion(BaseModel):
     text = models.TextField(unique=True, verbose_name="Texto de la Pregunta")
+    order = models.IntegerField(default=0, verbose_name="Orden")
+    is_active = models.BooleanField(default=True, verbose_name="Activa")
     category = models.CharField(max_length=50, verbose_name="Categoría (ej. Físico, Mental)", default="General")
     
     def __str__(self):

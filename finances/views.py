@@ -151,16 +151,45 @@ class InitiateAppointmentPaymentView(generics.GenericAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Obtener el tipo de pago desde query params (deposit o full)
+        payment_type = request.query_params.get('payment_type', 'deposit')
+        
+        # Calcular el monto según el tipo de pago
+        total_price = appointment.price_at_purchase
+        
+        if payment_type == 'full':
+            # Pago total
+            amount = total_price
+            payment_type_enum = Payment.PaymentType.FINAL
+        else:
+            # Pago de anticipo (40% por defecto)
+            global_settings = GlobalSettings.load()
+            advance_percentage = Decimal(global_settings.advance_payment_percentage / 100)
+            amount = total_price * advance_percentage
+            payment_type_enum = Payment.PaymentType.ADVANCE
+
+        # Buscar o crear el pago pendiente
         try:
-            payment = appointment.payments.get(status=Payment.PaymentStatus.PENDING)
+            payment = appointment.payments.get(
+                status=Payment.PaymentStatus.PENDING,
+                payment_type=payment_type_enum
+            )
+            # Actualizar el monto si cambió
+            payment.amount = amount
+            payment.save()
         except Payment.DoesNotExist:
-             return Response(
-                {"error": "No se encontró un registro de pago pendiente para esta cita."},
-                status=status.HTTP_404_NOT_FOUND
+            # Crear nuevo pago con el tipo correcto
+            payment = Payment.objects.create(
+                user=request.user,
+                appointment=appointment,
+                amount=amount,
+                payment_type=payment_type_enum,
+                status=Payment.PaymentStatus.PENDING
             )
 
         amount_in_cents = int(payment.amount * 100)
-        reference = f"APPOINTMENT-{appointment.id}-PAYMENT-{payment.id}"
+        # Acortar referencia para evitar truncamiento en URL de Wompi
+        reference = f"PAY-{str(payment.id)[-12:]}"
         payment.transaction_id = reference
         payment.save()
 
@@ -175,7 +204,7 @@ class InitiateAppointmentPaymentView(generics.GenericAPIView):
             'currency': "COP",
             'amountInCents': amount_in_cents,
             'reference': reference,
-            'signature:integrity': signature,
+            'signatureIntegrity': signature,  # Frontend debe usar esto para construir signature:integrity
             'redirectUrl': settings.WOMPI_REDIRECT_URL
         }
         return Response(payment_data, status=status.HTTP_200_OK)
@@ -256,7 +285,7 @@ class InitiateVipSubscriptionView(generics.GenericAPIView):
             'currency': "COP",
             'amountInCents': amount_in_cents,
             'reference': reference,
-            'signature:integrity': signature,
+            'signatureIntegrity': signature,  # Frontend debe usar esto para construir signature:integrity
             'redirectUrl': settings.WOMPI_REDIRECT_URL
         }
         return Response(payment_data, status=status.HTTP_200_OK)
@@ -298,7 +327,7 @@ class InitiatePackagePurchaseView(generics.CreateAPIView):
             'currency': "COP",
             'amountInCents': amount_in_cents,
             'reference': reference,
-            'signature:integrity': signature,
+            'signatureIntegrity': signature,  # Frontend debe usar esto para construir signature:integrity
             'redirectUrl': settings.WOMPI_REDIRECT_URL
         }
         return Response(payment_data, status=status.HTTP_200_OK)

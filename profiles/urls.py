@@ -28,7 +28,7 @@ from .views import (
 
 router = DefaultRouter()
 
-router.register(r'users', ClinicalProfileViewSet, basename='clinical-profile')
+router.register(r'profiles', ClinicalProfileViewSet, basename='clinicalprofile')
 router.register(r'clinical-history', ClinicalProfileHistoryViewSet, basename='clinical-profile-history')
 
 router.register(r'dosha-questions-admin', DoshaQuestionViewSet, basename='dosha-question-admin')
@@ -41,6 +41,10 @@ urlpatterns = [
     # Se mantienen las rutas que no forman parte de un ViewSet estándar.
     path('dosha-quiz/', DoshaQuestionListView.as_view(), name='dosha-quiz-list'),
     path('dosha-quiz/submit/', DoshaQuizSubmitView.as_view(), name='dosha-quiz-submit'),
+    
+    # New endpoints requested
+    path('profiles/dosha-questions/', DoshaQuestionListView.as_view(), name='dosha-questions'),
+    path('profiles/dosha-quiz/submit/', DoshaQuizSubmitView.as_view(), name='dosha-quiz-submit-v2'),
     path('kiosk/start/', KioskStartSessionView.as_view(), name='kiosk-start-session'),
     path('kiosk/status/', KioskSessionStatusView.as_view(), name='kiosk-status'),
     path('kiosk/heartbeat/', KioskSessionHeartbeatView.as_view(), name='kiosk-heartbeat'),

@@ -54,7 +54,7 @@ class GlobalSettings(BaseModel):
         help_text="Número máximo de citas de baja supervisión que pueden ocurrir simultáneamente.",
     )
     advance_payment_percentage = models.PositiveIntegerField(
-        default=20,
+        default=40,
         verbose_name="Porcentaje de Anticipo Requerido (%)",
         help_text="Porcentaje del costo total de la cita que se debe pagar como anticipo.",
     )

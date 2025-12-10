@@ -56,8 +56,19 @@ def calculate_dominant_dosha_and_element(profile_id: str):
         profile.element = dominant_element
     profile.save(update_fields=['dosha', 'element'])
 
+    # 5. Calcular porcentajes y preparar respuesta
+    total_score = sum(scores.values())
+    percentages = {
+        k.lower(): (v / total_score * 100) if total_score > 0 else 0
+        for k, v in scores.items()
+    }
+    
+    # Convertir scores a minúsculas
+    scores_lower = {k.lower(): v for k, v in scores.items()}
+
     return {
-        "dominant_dosha": dominant_dosha,
-        "dominant_element": dominant_element,
-        "scores": scores
+        "dosha": dominant_dosha,
+        "element": dominant_element,
+        "scores": scores_lower,
+        "percentages": percentages
     }

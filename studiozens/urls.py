@@ -10,6 +10,7 @@ api_patterns = [
     path('', include('spa.urls')),
     path('', include('profiles.urls')),
     path('notifications/', include('notifications.urls')),
+    path('', include('core.urls')),
 ]
 
 urlpatterns = [

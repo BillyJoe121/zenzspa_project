@@ -68,7 +68,7 @@ class BotSecurityService:
 
     # Configuración Anti-Spam Avanzada
     SIMILARITY_THRESHOLD = 0.85  # 85% de similitud se considera repetición
-    MAX_VELOCITY = 4  # Máximo 4 mensajes...
+    MAX_VELOCITY = 10  # Máximo 10 mensajes...
     VELOCITY_WINDOW = 60  # ... en 60 segundos
 
     HISTORY_LIMIT = 5  # Solo guardamos los últimos 5 mensajes para comparar
