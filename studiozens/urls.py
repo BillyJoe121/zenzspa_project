@@ -11,6 +11,7 @@ api_patterns = [
     path('', include('profiles.urls')),
     path('notifications/', include('notifications.urls')),
     path('', include('core.urls')),
+    path('', include('finances.voucher_urls')),
 ]
 
 urlpatterns = [

@@ -15,6 +15,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import generics, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -24,7 +25,7 @@ from core.models import AuditLog, GlobalSettings
 from spa.models import Appointment
 from .services import DeveloperCommissionService, WompiDisbursementClient
 from .models import ClientCredit, CommissionLedger, Payment, WebhookEvent
-from .serializers import ClientCreditAdminSerializer, CommissionLedgerSerializer
+from .serializers import ClientCreditAdminSerializer, CommissionLedgerSerializer, ClientCreditSerializer
 from .gateway import WompiPaymentClient, build_integrity_signature
 from .webhooks import WompiWebhookService
 from spa.serializers import PackagePurchaseCreateSerializer
@@ -496,3 +497,22 @@ class ClientCreditAdminViewSet(viewsets.ModelViewSet):
             details=f"Crédito actualizado: saldo {credit.remaining_amount} / inicial {credit.initial_amount}, estado {credit.status}",
         )
         return credit
+
+
+class ClientCreditViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Vista de solo lectura para que los clientes consulten sus créditos/vouchers.
+    """
+    serializer_class = ClientCreditSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        return ClientCredit.objects.filter(user=self.request.user).order_by('-created_at')
+
+    @action(detail=False, methods=['get'], url_path='my')
+    def my_credits(self, request):
+        """
+        Endpoint de conveniencia para compatibilidad con la estructura solicitada:
+        GET /api/v1/vouchers/my/
+        """
+        return self.list(request)

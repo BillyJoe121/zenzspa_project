@@ -138,3 +138,18 @@ class ClientCreditAdminSerializer(serializers.ModelSerializer):
             validated_data["remaining_amount"] = validated_data["initial_amount"]
         # Estado se setea automáticamente según remaining_amount en el ViewSet.
         return super().create(validated_data)
+
+
+class ClientCreditSerializer(serializers.ModelSerializer):
+    """Serializer para visualización de créditos por parte del cliente."""
+    class Meta:
+        model = ClientCredit
+        fields = [
+            "id",
+            "initial_amount",
+            "remaining_amount",
+            "status",
+            "expires_at",
+            "created_at",
+        ]
+        read_only_fields = fields

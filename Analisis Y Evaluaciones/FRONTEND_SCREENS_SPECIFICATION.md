@@ -969,6 +969,16 @@
 
 ---
 
+
+
+
+
+
+
+
+
+
+
 ### SCREEN-029: Paquetes Disponibles
 
 **Ruta Frontend:** `/packages`

@@ -224,7 +224,24 @@ class DoshaQuestionViewSet(viewsets.ModelViewSet):
 class ConsentTemplateViewSet(viewsets.ModelViewSet):
     queryset = ConsentTemplate.objects.all()
     serializer_class = ConsentTemplateSerializer
-    permission_classes = [IsAdminUser]
+    
+    def get_permissions(self):
+        """
+        Permitir lectura a usuarios autenticados,
+        escritura solo a admins.
+        """
+        if self.action in ['list', 'retrieve']:
+            return [IsAuthenticated()]
+        return [IsAdminUser()]
+    
+    def get_queryset(self):
+        """
+        Usuarios regulares solo ven templates activos.
+        Admins/Staff ven todos.
+        """
+        if self.request.user.role in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
+            return ConsentTemplate.objects.all()
+        return ConsentTemplate.objects.filter(is_active=True)
 
 
 class DoshaQuestionListView(generics.ListAPIView):

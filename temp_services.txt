@@ -1,0 +1,12 @@
+2 objects could not be automatically imported:
+
+  spa.HistoricalService
+  spa.HistoricalServiceCategory
+
+69 objects imported automatically (use -v 2 for details).
+
+Masaje Deportivo de Recuperación |  | 45 min | Masajes Terapéuticos
+Masaje Descontracturante Profundo |  | 50 min | Masajes Terapéuticos
+Masaje Sueco Restaurador |  | 60 min | Masajes Relajantes
+Masaje con Aromaterapia |  | 75 min | Masajes Relajantes
+Ritual de Piedras Calientes |  | 90 min | Rituales Sensoriales
