@@ -39,8 +39,9 @@ class ProductVariantSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
+        # Solo ocultar stock para usuarios no autenticados
+        # vip_price siempre debe ser visible (es información de marketing)
         if not _show_sensitive_data(self.context):
-            data.pop('vip_price', None)
             data.pop('stock', None)
         return data
 
@@ -80,8 +81,7 @@ class ProductListSerializer(serializers.ModelSerializer):
         return self._get_price_candidate(obj, 'price')
 
     def get_vip_price(self, obj):
-        if not _show_sensitive_data(self.context):
-            return None
+        # vip_price siempre visible (información de marketing)
         return self._get_price_candidate(obj, 'vip_price')
 
     def get_stock(self, obj):

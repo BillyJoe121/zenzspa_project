@@ -25,7 +25,7 @@ from core.models import AuditLog, GlobalSettings
 from spa.models import Appointment
 from .services import DeveloperCommissionService, WompiDisbursementClient
 from .models import ClientCredit, CommissionLedger, Payment, WebhookEvent
-from .serializers import ClientCreditAdminSerializer, CommissionLedgerSerializer, ClientCreditSerializer
+from .serializers import ClientCreditAdminSerializer, CommissionLedgerSerializer, ClientCreditSerializer, PaymentSerializer
 from .gateway import WompiPaymentClient, build_integrity_signature
 from .webhooks import WompiWebhookService
 from spa.serializers import PackagePurchaseCreateSerializer
@@ -516,3 +516,18 @@ class ClientCreditViewSet(viewsets.ReadOnlyModelViewSet):
         GET /api/v1/vouchers/my/
         """
         return self.list(request)
+
+
+class PaymentHistoryView(generics.ListAPIView):
+    """
+    Lista el historial de pagos del usuario autenticado.
+    
+    GET /api/finances/payments/my/
+    """
+    serializer_class = PaymentSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+    
+    def get_queryset(self):
+        return Payment.objects.filter(user=self.request.user).order_by('-created_at')
+

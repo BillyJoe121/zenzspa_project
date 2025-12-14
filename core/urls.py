@@ -9,8 +9,6 @@ from django.urls import path
 
 from .views import GlobalSettingsView, HealthCheckView
 
-app_name = "core"
-
 urlpatterns = [
     # Health check para load balancers y monitoreo
     path("health/", HealthCheckView.as_view(), name="health"),

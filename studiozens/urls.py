@@ -1,6 +1,8 @@
 # studiozens_project/studiozens/urls.py
 from django.contrib import admin
 from django.urls import include, path
+from django.conf import settings
+from django.conf.urls.static import static
 
 from .health import health_check_view
 
@@ -21,7 +23,12 @@ urlpatterns = [
     path('api/v1/analytics/', include('analytics.urls')),
     path('api/v1/finances/', include('finances.urls')),
     path('api/v1/legal/', include('legal.urls')),
+    path('api/v1/blog/', include('blog.urls')),
     path('api/v1/', include(api_patterns)),
     path('health/', health_check_view, name='health-check'),
     path('metrics/', include('django_prometheus.urls')),
 ]
+
+# Servir archivos media en desarrollo
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

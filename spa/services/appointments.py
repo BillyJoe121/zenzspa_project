@@ -154,6 +154,9 @@ class AvailabilityService:
                 exclusion_map[staff_id].sort()
 
         slots = []
+        now = timezone.now()
+        minimum_advance = timedelta(minutes=30)
+
         for availability in availabilities:
             staff = availability.staff_member
             block_start = timezone.make_aware(
@@ -175,6 +178,12 @@ class AvailabilityService:
 
             while slot_start + self.service_duration <= block_end:
                 slot_end = slot_start + self.service_duration
+
+                # Validar anticipación mínima de 30 minutos
+                if slot_start < now + minimum_advance:
+                    slot_start += self.slot_interval
+                    continue
+
                 if slot_end + self.buffer > block_end:
                     break
 
@@ -187,7 +196,20 @@ class AvailabilityService:
 
                 slot_start += self.slot_interval
 
-        slots.sort(key=lambda slot: (slot["start_time"], slot["staff_name"]))
+        slots.sort(key=lambda slot: (slot["start_time"], slot["staff_id"]))
+
+        # Anonimizar staff creando etiquetas genéricas
+        staff_mapping = {}
+        staff_index = 1
+        for slot in slots:
+            if slot["staff_id"] not in staff_mapping:
+                staff_mapping[slot["staff_id"]] = f"Terapeuta {staff_index}"
+                staff_index += 1
+
+            slot["staff_label"] = staff_mapping[slot["staff_id"]]
+            # Remover staff_name para no exponer nombres reales
+            del slot["staff_name"]
+
         duration = (timezone.now() - start).total_seconds()
         availability_duration.labels(bool(staff_member_id)).observe(duration)
         return slots

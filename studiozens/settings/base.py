@@ -172,6 +172,7 @@ INSTALLED_APPS = [
     "corsheaders",                  # CORS
     "csp",                   # Content Security Policy
     "simple_history",
+    "django_filters",              # Django Filter para búsquedas avanzadas
     # "axes",                       # Descomenta si usas django-axes para login clásico
 
     # Tus apps
@@ -185,6 +186,7 @@ INSTALLED_APPS = [
     "bot",
     "finances",
     "legal",
+    "blog",
 ]
 
 MIDDLEWARE = [

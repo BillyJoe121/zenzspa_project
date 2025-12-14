@@ -151,74 +151,244 @@ SERVICE_CATALOG = [
     },
 ]
 
+# ============================================================================
+# CATÁLOGO DE PRODUCTOS REALES - MARKETPLACE
+# ============================================================================
+# Costos estimados incluyen: materia prima + envase + etiqueta/branding
+# Precios VIP: 15% de descuento sobre precio regular
+# ============================================================================
+
 MARKETPLACE_PRODUCTS = [
+    # ========================================================================
+    # CATEGORÍA: AROMATERAPIA Y AMBIENTACIÓN
+    # ========================================================================
     {
-        "name": "Kit de Aromaterapia Relax",
-        "category_key": "relax",
-        "description": "Colección de aceites esenciales inspirados en nuestros masajes relajantes.",
+        "name": "Aceites Esenciales Puros",
+        "category_key": "aromaterapia",
+        "description": "Aceites esenciales 100% puros de grado terapéutico. Cada gota concentra la esencia botánica más pura para transformar tu hogar en un santuario de bienestar. Úsalos en difusores, baños aromáticos o masajes.",
         "preparation_days": 1,
         "is_active": True,
         "variants": [
             {
-                "name": "3 aceites de 15ml",
-                "sku": "AROMA-KIT-03",
-                "price": "85000.00",
-                "vip_price": "78000.00",
-                "stock": 18,
+                "name": "Lavanda del Valle - 10ml",
+                "sku": "AE-LAVANDA-10",
+                "price": "42000.00",
+                "vip_price": "37000.00",  # Costo aprox: $12k-15k (aceite + frasco ámbar + etiqueta)
+                "stock": 40,
                 "min_order_quantity": 1,
-                "max_order_quantity": 3,
             },
             {
-                "name": "6 aceites de 15ml",
-                "sku": "AROMA-KIT-06",
-                "price": "155000.00",
-                "vip_price": "139000.00",
-                "stock": 10,
+                "name": "Eucalipto & Menta - 10ml",
+                "sku": "AE-EUCALIPTO-10",
+                "price": "42000.00",
+                "vip_price": "37000.00",  # Costo aprox: $12k-15k
+                "stock": 35,
                 "min_order_quantity": 1,
-                "max_order_quantity": 2,
+            },
+            {
+                "name": "Naranja Dulce - 10ml",
+                "sku": "AE-NARANJA-10",
+                "price": "39000.00",
+                "vip_price": "35000.00",  # Costo aprox: $12k-15k
+                "stock": 45,
+                "min_order_quantity": 1,
             },
         ],
     },
     {
-        "name": "Bálsamo Terapéutico de Árnica",
-        "category_key": "terapeuticos",
-        "description": "Bálsamo de uso profesional para aliviar inflamación después de masajes profundos.",
+        "name": "Velas Aromáticas de Soja",
+        "category_key": "aromaterapia",
+        "description": "Velas artesanales vertidas a mano con cera de soja 100% natural y mechas de algodón. Sin parafina ni toxinas. Duración extendida y aromas sutiles que perfuman sin saturar. Cada vela es una pieza única.",
         "preparation_days": 2,
         "is_active": True,
         "variants": [
             {
-                "name": "Tarro 60g",
-                "sku": "BAL-ARNICA-60",
-                "price": "68000.00",
-                "vip_price": "62000.00",
+                "name": "Travel - Vainilla & Coco (100g)",
+                "sku": "VL-TRAVEL-VAINILLA",
+                "price": "28000.00",
+                "vip_price": "25000.00",  # Costo aprox: $9k (cera soja + lata dorada + esencia)
+                "stock": 30,
+                "min_order_quantity": 1,
+                "max_order_quantity": 5,
+            },
+            {
+                "name": "Travel - Sándalo & Madera (100g)",
+                "sku": "VL-TRAVEL-SANDALO",
+                "price": "28000.00",
+                "vip_price": "25000.00",  # Costo aprox: $9k
+                "stock": 25,
+                "min_order_quantity": 1,
+                "max_order_quantity": 5,
+            },
+            {
+                "name": "Home - Jazmín (250g)",
+                "sku": "VL-HOME-JAZMIN",
+                "price": "75000.00",
+                "vip_price": "67000.00",  # Costo aprox: $18k-22k (vaso vidrio + tapa madera)
+                "stock": 20,
+                "min_order_quantity": 1,
+                "max_order_quantity": 3,
+            },
+            {
+                "name": "Home - Vainilla & Coco (250g)",
+                "sku": "VL-HOME-VAINILLA",
+                "price": "72000.00",
+                "vip_price": "65000.00",  # Costo aprox: $18k-22k
+                "stock": 22,
+                "min_order_quantity": 1,
+                "max_order_quantity": 3,
+            },
+        ],
+    },
+    {
+        "name": "Bruma de Almohada Deep Sleep",
+        "category_key": "aromaterapia",
+        "description": "El secreto para dormir como bebé. Fórmula botánica con lavanda francesa y manzanilla romana que calma el sistema nervioso y prepara tu mente para el descanso profundo. Spray fino que no mancha telas.",
+        "preparation_days": 1,
+        "is_active": True,
+        "variants": [
+            {
+                "name": "Bruma Deep Sleep - 60ml",
+                "sku": "BM-SLEEP-60",
+                "price": "38000.00",
+                "vip_price": "34000.00",  # Costo aprox: $10k (base líquida + esencia + botella spray)
+                "stock": 35,
+                "min_order_quantity": 1,
+                "max_order_quantity": 4,
+            },
+        ],
+    },
+    # NOTA: Kit de Sahumerio Ritual fue removido por solicitud del cliente
+
+    # ========================================================================
+    # CATEGORÍA: SPA Y CUIDADO CORPORAL
+    # ========================================================================
+    {
+        "name": "Aceite de Masaje Profesional",
+        "category_key": "spa_care",
+        "description": "La misma fórmula premium que usamos en cabina, ahora para tu hogar. Textura sedosa que se absorbe lentamente, ideal para masajes terapéuticos o hidratación post-ducha. Sin parabenos ni siliconas.",
+        "preparation_days": 2,
+        "is_active": True,
+        "variants": [
+            {
+                "name": "Relax Total - Almendras & Lavanda (120ml)",
+                "sku": "AM-RELAX-120",
+                "price": "56000.00",
+                "vip_price": "50000.00",  # Costo aprox: $14k-18k (aceite base calidad + botella pump)
                 "stock": 25,
                 "min_order_quantity": 1,
             },
             {
-                "name": "Tarro 120g",
-                "sku": "BAL-ARNICA-120",
-                "price": "98000.00",
-                "vip_price": "89000.00",
+                "name": "Alivio Muscular - Árnica & Romero (120ml)",
+                "sku": "AM-MUSCULAR-120",
+                "price": "58000.00",
+                "vip_price": "52000.00",  # Costo aprox: $14k-18k
+                "stock": 20,
+                "min_order_quantity": 1,
+            },
+        ],
+    },
+    {
+        "name": "Sales de Baño Detox",
+        "category_key": "spa_care",
+        "description": "Sales minerales que transforman tu bañera en un spa terapéutico. La combinación de sal marina, Epsom y botánicos ayuda a desinflamar músculos, eliminar toxinas y relajar profundamente. Piel suave garantizada.",
+        "preparation_days": 1,
+        "is_active": True,
+        "variants": [
+            {
+                "name": "Sales Detox - Lavanda & Eucalipto (250g)",
+                "sku": "SB-DETOX-250",
+                "price": "35000.00",
+                "vip_price": "31000.00",  # Costo aprox: $8k (sales + hierbas + frasco vidrio)
+                "stock": 30,
+                "min_order_quantity": 1,
+            },
+        ],
+    },
+
+    # ========================================================================
+    # CATEGORÍA: JOYERÍA ENERGÉTICA
+    # ========================================================================
+    {
+        "name": "Pulsera Tejida Protección",
+        "category_key": "joyeria",
+        "description": "Más que joyería, un amuleto personal. Tejida a mano por artesanos caleños, combina la nobleza de la plata 925 con el poder vibracional de cuarzos naturales certificados. Cada piedra es única. Incluye tarjeta explicativa de propiedades energéticas.",
+        "preparation_days": 3,
+        "is_active": True,
+        "variants": [
+            {
+                "name": "Protección - Ojo de Tigre & Plata 925",
+                "sku": "PJ-PROT-OJOTIGRE",
+                "price": "165000.00",
+                "vip_price": "148000.00",  # Costo aprox: $50k-65k (materiales + mano obra + empaque lujo)
+                "stock": 15,
+                "min_order_quantity": 1,
+            },
+            {
+                "name": "Protección - Turmalina Negra & Plata 925",
+                "sku": "PJ-PROT-TURMALINA",
+                "price": "175000.00",
+                "vip_price": "157000.00",  # Costo aprox: $55k-70k
+                "stock": 12,
+                "min_order_quantity": 1,
+            },
+            {
+                "name": "Protección - Onix & Plata 925",
+                "sku": "PJ-PROT-ONIX",
+                "price": "158000.00",
+                "vip_price": "142000.00",  # Costo aprox: $45k-60k
+                "stock": 18,
+                "min_order_quantity": 1,
+            },
+        ],
+    },
+    {
+        "name": "Pulsera Tejida Amor Propio",
+        "category_key": "joyeria",
+        "description": "Diseño exclusivo que celebra tu esencia. Oro laminado de 14k (gold filled) que no se oxida, combinado con cuarzos rosados que vibran en frecuencia del amor incondicional. Empaque premium en bolsa de terciopelo.",
+        "preparation_days": 3,
+        "is_active": True,
+        "variants": [
+            {
+                "name": "Amor Propio - Cuarzo Rosa & Oro 14k",
+                "sku": "PJ-AMOR-CUARZO",
+                "price": "155000.00",
+                "vip_price": "139000.00",  # Costo aprox: $45k-60k
+                "stock": 20,
+                "min_order_quantity": 1,
+            },
+            {
+                "name": "Amor Propio - Rodocrosita & Oro 14k",
+                "sku": "PJ-AMOR-RODOCROSITA",
+                "price": "168000.00",
+                "vip_price": "151000.00",  # Costo aprox: $50k-65k
                 "stock": 15,
                 "min_order_quantity": 1,
             },
         ],
     },
     {
-        "name": "Infusión Calma Nocturna",
-        "category_key": "ritual",
-        "description": "Mezcla de hierbas orgánicas para acompañar rituales de descanso y mindfulness.",
-        "preparation_days": 1,
+        "name": "Pulsera Tejida Balance",
+        "category_key": "joyeria",
+        "description": "Equilibrio entre mente, cuerpo y espíritu. Diseño versátil con herrajes mixtos (plata y oro) que combina con todo. Cuarzos de alta frecuencia seleccionados por su claridad y energía. Regalo perfecto para quien busca armonía.",
+        "preparation_days": 3,
         "is_active": True,
         "variants": [
             {
-                "name": "Caja 10 sobres",
-                "sku": "INF-CALMA-10",
-                "price": "45000.00",
-                "vip_price": "39000.00",
-                "stock": 30,
+                "name": "Balance - Amatista & Herrajes Mixtos",
+                "sku": "PJ-BAL-AMATISTA",
+                "price": "148000.00",
+                "vip_price": "133000.00",  # Costo aprox: $45k-60k
+                "stock": 22,
                 "min_order_quantity": 1,
-                "max_order_quantity": 5,
+            },
+            {
+                "name": "Balance - Aventurina Verde & Herrajes Mixtos",
+                "sku": "PJ-BAL-AVENTURINA",
+                "price": "142000.00",
+                "vip_price": "128000.00",  # Costo aprox: $40k-55k
+                "stock": 18,
+                "min_order_quantity": 1,
             },
         ],
     },
@@ -284,20 +454,24 @@ class Command(BaseCommand):
     help = "Crea data demo básica para catálogos de servicios, marketplace y usuarios autenticados."
 
     def handle(self, *args, **options):
+        # Seed de categorías de productos FUERA de la transacción para evitar problemas de isolation
+        product_category_map = self._seed_product_categories()
+
         with transaction.atomic():
-            category_map, services_stats = self._seed_service_catalog()
-            product_stats = self._seed_marketplace(category_map)
+            service_category_map, services_stats = self._seed_service_catalog()
+            product_stats = self._seed_marketplace_products(product_category_map)
             user_stats, token_table = self._seed_users()
 
         self.stdout.write(self.style.SUCCESS("Seed de datos demo completado."))
         self.stdout.write("")
         self.stdout.write("Catálogo de servicios:")
-        self.stdout.write(f"  Categorías creadas/actualizadas: {len(category_map)}")
+        self.stdout.write(f"  Categorías creadas/actualizadas: {len(service_category_map)}")
         self.stdout.write(
             f"  Servicios procesados: {services_stats['processed']} (nuevos: {services_stats['created']})"
         )
         self.stdout.write("")
         self.stdout.write("Marketplace:")
+        self.stdout.write(f"  Categorías de productos: {len(product_category_map)}")
         self.stdout.write(
             f"  Productos procesados: {product_stats['products_processed']} (nuevos: {product_stats['products_created']})"
         )
@@ -362,10 +536,70 @@ class Command(BaseCommand):
 
         return category_map, {"processed": services_processed, "created": services_created}
 
-    def _seed_marketplace(self, category_map):
+    def _seed_product_categories(self):
+        """
+        Crea las categorías de productos. Se ejecuta FUERA de transaction.atomic()
+        para evitar problemas de isolation level en Postgres.
+        """
+        PRODUCT_CATEGORIES = {
+            "aromaterapia": {
+                "name": "Aromaterapia y Ambientación",
+                "description": "Aceites esenciales, velas, brumas y productos para crear ambientes de paz y bienestar en tu hogar.",
+                "is_low_supervision": False,
+            },
+            "spa_care": {
+                "name": "Spa y Cuidado Corporal",
+                "description": "Aceites de masaje, sales, bombas de baño y productos profesionales para llevar la experiencia del spa a tu hogar.",
+                "is_low_supervision": False,
+            },
+            "joyeria": {
+                "name": "Joyería Energética",
+                "description": "Pulseras tejidas artesanalmente con metales nobles y cuarzos naturales. Más que accesorios, amuletos con intención.",
+                "is_low_supervision": False,
+            },
+        }
+
+        from django.db import IntegrityError
+
+        category_map = {}
+        for key, cat_data in PRODUCT_CATEGORIES.items():
+            try:
+                category, _ = ServiceCategory.objects.get_or_create(
+                    name=cat_data["name"],
+                    defaults={
+                        "description": cat_data["description"],
+                        "is_low_supervision": cat_data["is_low_supervision"],
+                    }
+                )
+            except IntegrityError:
+                # Si hubo un problema de concurrencia, usar raw SQL para obtener la existente
+                # Esto evita problemas de snapshot en transacciones concurrentes
+                from django.db import connection
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT id FROM spa_servicecategory WHERE name = %s",
+                        [cat_data["name"]]
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        category = ServiceCategory.objects.get(id=row[0])
+                    else:
+                        raise RuntimeError(f"Categoría {cat_data['name']} no encontrada después de IntegrityError")
+
+            # Actualizar siempre por si cambió algo
+            category.description = cat_data["description"]
+            category.is_low_supervision = cat_data["is_low_supervision"]
+            category.save(update_fields=['description', 'is_low_supervision', 'updated_at'])
+            category_map[key] = category
+
+        return category_map
+
+    def _seed_marketplace_products(self, category_map):
         """
         Registra productos y variantes usando los SKUs como identificadores idempotentes.
+        Recibe el category_map ya creado por _seed_product_categories().
         """
+
         products_processed = 0
         products_created = 0
         variants_processed = 0

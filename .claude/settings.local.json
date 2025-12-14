@@ -27,7 +27,11 @@
       "Bash(del test_export_direct.py)",
       "Bash(rm:*)",
       "Bash(Select-String -Pattern \"Status:|Response|AssertionError\" -Context 0,2)",
-      "Bash(Select-String -Pattern \"page_size|results|count\" -Context 2)"
+      "Bash(Select-String -Pattern \"page_size|results|count\" -Context 2)",
+      "Bash(del test_availability.py test_availability_today.py test_api_availability.py)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

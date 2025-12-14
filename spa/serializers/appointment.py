@@ -242,7 +242,7 @@ class AvailabilityCheckSerializer(serializers.Serializer):
             {
                 "start_time": slot['start_time'].isoformat(),
                 "staff_id": slot['staff_id'],
-                "staff_name": slot['staff_name'],
+                "staff_label": slot['staff_label'],
             }
             for slot in slots
         ]

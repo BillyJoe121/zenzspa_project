@@ -7,7 +7,9 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
 from .models import ClientCredit, CommissionLedger, Payment, FinancialAdjustment
+from .models import ClientCredit, CommissionLedger, Payment, FinancialAdjustment
 from users.serializers import SimpleUserSerializer
+from spa.serializers.appointment import AppointmentListSerializer
 
 CustomUser = get_user_model()
 
@@ -43,6 +45,8 @@ class CommissionLedgerSerializer(serializers.ModelSerializer):
 
 class PaymentSerializer(serializers.ModelSerializer):
     """Serializer completo para el modelo Payment."""
+
+    appointment = AppointmentListSerializer(read_only=True)
 
     class Meta:
         model = Payment
