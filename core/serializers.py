@@ -259,3 +259,74 @@ class GlobalSettingsSerializer(ReadOnlyModelSerializer):
                 'developer_default_since',
             ]
         }
+
+
+class GlobalSettingsUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer para actualizar GlobalSettings.
+    
+    Permite modificar todos los campos excepto los de auditoría (id, created_at, updated_at).
+    Incluye validaciones personalizadas para garantizar consistencia.
+    """
+    
+    class Meta:
+        model = GlobalSettings
+        fields = [
+            # Capacidad y programación
+            'low_supervision_capacity',
+            'appointment_buffer_time',
+            'timezone_display',
+
+            # Política de pagos y anticipos
+            'advance_payment_percentage',
+            'advance_expiration_minutes',
+
+            # Membresía VIP
+            'vip_monthly_price',
+            'loyalty_months_required',
+            'loyalty_voucher_service',
+
+            # Créditos y devoluciones
+            'credit_expiration_days',
+            'return_window_days',
+            'no_show_credit_policy',
+
+            # Lista de espera
+            'waitlist_enabled',
+            'waitlist_ttl_minutes',
+
+            # Notificaciones
+            'quiet_hours_start',
+            'quiet_hours_end',
+
+            # Comisiones del desarrollador (solo ADMIN puede modificar)
+            'developer_commission_percentage',
+            'developer_payout_threshold',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def validate(self, data):
+        """
+        Validaciones adicionales a nivel de serializer.
+        """
+        # Validar que quiet_hours_start sea menor que quiet_hours_end si ambos están presentes
+        quiet_start = data.get('quiet_hours_start')
+        quiet_end = data.get('quiet_hours_end')
+        
+        if quiet_start and quiet_end and quiet_start >= quiet_end:
+            raise serializers.ValidationError({
+                'quiet_hours_start': 'La hora de inicio debe ser menor que la hora de fin.'
+            })
+        
+        return data
+    
+    def update(self, instance, validated_data):
+        """
+        Actualiza la instancia con los datos validados.
+        El método save() del modelo se encarga de las validaciones adicionales.
+        """
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        instance.save()
+        return instance

@@ -98,7 +98,10 @@ class AppointmentCreateSerializer(serializers.Serializer):
         write_only=True,
     )
     staff_member = serializers.PrimaryKeyRelatedField(
-        queryset=CustomUser.objects.filter(role__in=[CustomUser.Role.STAFF, CustomUser.Role.ADMIN]),
+        queryset=CustomUser.objects.filter(
+            role__in=[CustomUser.Role.STAFF, CustomUser.Role.ADMIN],
+            is_active=True  # ✅ Solo permitir staff activos
+        ),
         required=False,
         allow_null=True,
     )
@@ -176,7 +179,9 @@ class StaffAvailabilitySerializer(serializers.ModelSerializer):
     staff_member_details = SimpleUserSerializer(source='staff_member', read_only=True)
     staff_member_id = serializers.PrimaryKeyRelatedField(
         queryset=CustomUser.objects.filter(
-            role__in=[CustomUser.Role.STAFF, CustomUser.Role.ADMIN]),
+            role__in=[CustomUser.Role.STAFF, CustomUser.Role.ADMIN],
+            is_active=True  # ✅ Solo permitir staff activos
+        ),
         write_only=True,
         source='staff_member',
         required=False

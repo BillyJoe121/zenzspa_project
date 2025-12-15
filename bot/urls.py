@@ -6,10 +6,12 @@ from .views import (
     BotAnalyticsView, SuspiciousUsersView, UserActivityTimelineView,
     BlockIPView, UnblockIPView, BotTaskStatusView, WhatsAppWebhookView
 )
+from .viewsets import BotConfigurationViewSet
 
 # Router para ViewSets
 router = DefaultRouter()
 router.register(r'handoffs', HumanHandoffRequestViewSet, basename='handoff')
+router.register(r'config', BotConfigurationViewSet, basename='bot-config')
 
 urlpatterns = [
     path('webhook/', BotWebhookView.as_view(), name='bot-webhook'),
@@ -26,6 +28,6 @@ urlpatterns = [
     # Endpoint para verificar estado de tareas asíncronas
     path('task-status/<str:task_id>/', BotTaskStatusView.as_view(), name='task-status'),
 
-    # Incluir rutas del router (handoffs)
+    # Incluir rutas del router (handoffs + config)
     path('', include(router.urls)),
 ]

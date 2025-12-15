@@ -12,6 +12,11 @@ from .views import (
     AdminVoucherViewSet,
 )
 from .views.history import ClientAppointmentHistoryView
+from .viewsets import (
+    ServiceViewSet,
+    ServiceCategoryViewSet,
+    AvailabilityExclusionViewSet,
+)
 
 router = DefaultRouter()
 router.register(r'appointments', AppointmentViewSet, basename='appointment')
@@ -20,6 +25,11 @@ router.register(r'my-packages', UserPackageViewSet, basename='my-package')
 router.register(r'my-vouchers', VoucherViewSet, basename='my-voucher')
 router.register(r'admin/vouchers', AdminVoucherViewSet, basename='admin-voucher')
 router.register(r'admin/packages', AdminPackageViewSet, basename='admin-package')
+
+# Nuevos endpoints de administración
+router.register(r'services', ServiceViewSet, basename='service')
+router.register(r'service-categories', ServiceCategoryViewSet, basename='service-category')
+router.register(r'availability-exclusions', AvailabilityExclusionViewSet, basename='availability-exclusion')
 
 
 urlpatterns = [

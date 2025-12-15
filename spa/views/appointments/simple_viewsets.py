@@ -71,6 +71,10 @@ class StaffAvailabilityViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         base_queryset = StaffAvailability.objects.select_related('staff_member')
+        
+        # Filtrar solo staff activos (excluir eliminados/inactivos)
+        base_queryset = base_queryset.filter(staff_member__is_active=True)
+        
         if user.role == CustomUser.Role.ADMIN:
             return base_queryset.all()
         return base_queryset.filter(staff_member=user)

@@ -11,11 +11,13 @@ from .views import (
     AdminInventoryMovementViewSet,
     AdminOrderViewSet,
 )
+from spa.views import ServiceCategoryViewSet
 
 router = DefaultRouter()
 
 # Endpoint público para ver el catálogo de productos
 router.register(r'products', ProductViewSet, basename='product')
+router.register(r'categories', ServiceCategoryViewSet, basename='product-category')
 
 # Endpoints privados para que el usuario gestione su carrito
 router.register(r'cart', CartViewSet, basename='cart')

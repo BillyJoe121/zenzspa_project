@@ -8,6 +8,7 @@ from .base import BaseModel, SoftDeleteManager, SoftDeleteModel, SoftDeleteQuery
 from .idempotency import IdempotencyKey
 from .notifications import AdminNotification
 from .settings import GLOBAL_SETTINGS_SINGLETON_UUID, GlobalSettings
+from .about import AboutPage, TeamMember, GalleryImage
 
 # Importar GLOBAL_SETTINGS_CACHE_KEY desde el módulo centralizado de caché
 from ..caching import GLOBAL_SETTINGS_CACHE_KEY
@@ -28,4 +29,8 @@ __all__ = [
     'IdempotencyKey',
     # Notifications
     'AdminNotification',
+    # About Page
+    'AboutPage',
+    'TeamMember',
+    'GalleryImage',
 ]

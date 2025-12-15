@@ -220,6 +220,7 @@ class AdminUserSerializer(serializers.ModelSerializer):
         )
         return user
 
+
     def update(self, instance, validated_data):
         password = validated_data.pop('password', None)
         for attr, value in validated_data.items():
@@ -229,14 +230,6 @@ class AdminUserSerializer(serializers.ModelSerializer):
         instance.save()
         return instance
 
-    class Meta:
-        model = CustomUser
-        fields = ['phone_number', 'first_name',
-                  'last_name', 'email', 'password', 'role']
-        extra_kwargs = {
-            'phone_number': {'validators': []},
-            'role': {'required': False},
-        }
 
     def validate_password(self, value):
         """
@@ -343,7 +336,16 @@ class FlagNonGrataSerializer(serializers.ModelSerializer):
 class StaffListSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ['id', 'first_name', 'last_name', 'role']
+        fields = [
+            'id',
+            'first_name',
+            'last_name',
+            'email',
+            'phone_number',
+            'role',
+            'is_active',
+            'is_verified',
+        ]
 
 
 class UserSessionSerializer(serializers.ModelSerializer):

@@ -86,8 +86,13 @@ class AvailabilityService:
     def _build_slots(self, staff_member_id=None):
         start = timezone.now()
         day_of_week = self.date.isoweekday()
+        
+        # Filtrar disponibilidad solo de staff activos
         availabilities = StaffAvailability.objects.filter(
-            day_of_week=day_of_week)
+            day_of_week=day_of_week,
+            staff_member__is_active=True  # ✅ CRÍTICO: Excluir staff inactivos
+        )
+        
         if staff_member_id:
             availabilities = availabilities.filter(
                 staff_member_id=staff_member_id)
@@ -131,8 +136,10 @@ class AvailabilityService:
         exclusion_map = defaultdict(list)
         tz = timezone.get_current_timezone()
         if staff_ids:
+            # Filtrar exclusiones solo de staff activos
             exclusions = AvailabilityExclusion.objects.filter(
                 staff_member_id__in=staff_ids,
+                staff_member__is_active=True  # ✅ CRÍTICO: Excluir exclusiones de staff inactivos
             ).filter(
                 Q(date=self.date) | Q(date__isnull=True, day_of_week=day_of_week)
             )

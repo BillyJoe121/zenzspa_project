@@ -102,6 +102,27 @@ CELERY_BEAT_SCHEDULE = {
         "task": "notifications.tasks.cleanup_old_notification_logs",
         "schedule": crontab(hour=2, minute=0),
     },
+    # Tareas huérfanas activadas
+    "check-upcoming-appointments-2h": {
+        "task": "notifications.tasks.check_upcoming_appointments_2h",
+        "schedule": crontab(minute="*/5"),  # Revisar cada 5 min
+    },
+    "notify-expiring-vouchers-daily": {
+        "task": "spa.tasks.notify_expiring_vouchers",
+        "schedule": crontab(hour=9, minute=0),  # 9:00 AM
+    },
+    "check-vip-loyalty-rewards": {
+        "task": "spa.tasks.check_vip_loyalty",
+        "schedule": crontab(hour=6, minute=0),  # 6:00 AM
+    },
+    "monitor-bot-health": {
+        "task": "bot.tasks.monitor_bot_health",
+        "schedule": crontab(minute="*/5"),  # Cada 5 min
+    },
+    "cleanup-expired-carts-hourly": {
+        "task": "marketplace.tasks.cleanup_expired_carts",
+        "schedule": crontab(minute=0, hour="*"),
+    },
     "cleanup-webhook-events": {
         "task": "finances.tasks.cleanup_old_webhook_events",
         "schedule": crontab(hour=3, minute=15, day_of_week=0),  # Domingos a las 3:15 AM

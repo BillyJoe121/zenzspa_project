@@ -143,10 +143,14 @@ class FlagNonGrataView(generics.UpdateAPIView):
 class StaffListView(generics.ListAPIView):
     """Lista todos los usuarios con rol de staff."""
     serializer_class = StaffListSerializer
-    permission_classes = [IsStaffOrAdmin]
+    permission_classes = [IsAuthenticated]  # Cambiado para permitir acceso a usuarios autenticados
 
     def get_queryset(self):
-        return CustomUser.objects.filter(role=CustomUser.Role.STAFF)
+        # Filtrar solo staff activos (excluir eliminados)
+        return CustomUser.objects.filter(
+            role=CustomUser.Role.STAFF,
+            is_active=True
+        )
 
 
 class BlockIPView(views.APIView):
