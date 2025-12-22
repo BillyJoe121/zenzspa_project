@@ -23,6 +23,21 @@ class Product(BaseModel):
         default=1,
         verbose_name="Días de Preparación"
     )
+    what_is_included = models.TextField(
+        blank=True,
+        verbose_name="Qué Incluye",
+        help_text="Detalle de qué incluye el producto (ingredientes, componentes, etc.)"
+    )
+    benefits = models.TextField(
+        blank=True,
+        verbose_name="Beneficios",
+        help_text="Beneficios del producto para la piel o salud."
+    )
+    how_to_use = models.TextField(
+        blank=True,
+        verbose_name="Modo de Uso",
+        help_text="Instrucciones de aplicación o uso del producto."
+    )
 
     class Meta:
         verbose_name = "Producto"
@@ -308,6 +323,12 @@ class Order(BaseModel):
     delivery_address = models.TextField(
         blank=True, null=True,
         verbose_name="Dirección de Envío"
+    )
+    shipping_cost = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        default=0,
+        verbose_name="Costo de Envío",
+        help_text="Costo de envío aplicado a esta orden"
     )
     associated_appointment = models.ForeignKey(
         Appointment,

@@ -33,8 +33,15 @@ services:
     env_file:
       - .env.docker
     environment:
-      - ALLOWED_HOSTS=localhost,127.0.0.1,web,0.0.0.0
-      - CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001
+      # Para cambiar de red WiFi, actualiza la IP aquí:
+      # Nueva WiFi (192.168.1.x): Descomenta las siguientes 3 líneas y comenta las 3 de abajo
+      # - ALLOWED_HOSTS=localhost,127.0.0.1,web,0.0.0.0,192.168.1.14
+      # - CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://192.168.1.14:3000
+      # - CSRF_TRUSTED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://192.168.1.14:3000,http://localhost:8000,http://127.0.0.1:8000,http://192.168.1.14:8000
+      # WiFi actual (192.168.40.x):
+      - ALLOWED_HOSTS=localhost,127.0.0.1,web,0.0.0.0,192.168.40.81
+      - CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://192.168.40.81:3000
+      - CSRF_TRUSTED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001,http://192.168.40.81:3000,http://localhost:8000,http://127.0.0.1:8000,http://192.168.40.81:8000
     depends_on:
       - db
       - redis

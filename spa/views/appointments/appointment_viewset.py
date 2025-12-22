@@ -69,13 +69,55 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         return AppointmentListSerializer
 
     def get_queryset(self):
+        """
+        Retorna las citas según el rol del usuario.
+        
+        Para Staff/Admin: Todas las citas, con filtros opcionales:
+        - user_id: UUID del usuario para ver sus citas
+        - status: filtrar por estado (CONFIRMED, CANCELLED, etc.)
+        - date: filtrar por fecha específica (YYYY-MM-DD)
+        - date_from: filtrar desde esta fecha
+        - date_to: filtrar hasta esta fecha
+        
+        Para clientes: Solo sus propias citas.
+        """
         queryset = Appointment.objects.select_related(
             'user', 'staff_member'
         ).prefetch_related('items__service')
         user = self.request.user
-        if user.is_staff or user.is_superuser:
-            return queryset.all()
-        return queryset.filter(user=user)
+        
+        if user.is_staff or user.is_superuser or user.role in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
+            # Admin/Staff puede ver todas las citas
+            queryset = queryset.all()
+            
+            # Filtro por usuario específico
+            user_id = self.request.query_params.get('user_id')
+            if user_id:
+                queryset = queryset.filter(user_id=user_id)
+            
+            # Filtro por estado
+            status_filter = self.request.query_params.get('status')
+            if status_filter:
+                queryset = queryset.filter(status=status_filter)
+            
+            # Filtro por fecha exacta
+            date_filter = self.request.query_params.get('date')
+            if date_filter:
+                queryset = queryset.filter(start_time__date=date_filter)
+            
+            # Filtro por rango de fechas
+            date_from = self.request.query_params.get('date_from')
+            if date_from:
+                queryset = queryset.filter(start_time__date__gte=date_from)
+            
+            date_to = self.request.query_params.get('date_to')
+            if date_to:
+                queryset = queryset.filter(start_time__date__lte=date_to)
+            
+            return queryset.order_by('-start_time')
+        
+        # Clientes solo ven sus propias citas
+        return queryset.filter(user=user).order_by('-start_time')
 
     @idempotent_view(timeout=60)
     def create(self, request, *args, **kwargs):

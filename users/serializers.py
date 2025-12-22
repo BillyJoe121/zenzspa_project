@@ -49,6 +49,15 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                  {"detail": "Tu dispositivo ha sido bloqueado por actividad sospechosa."}
              )
 
+        # Verificar si el usuario existe y está bloqueado (Persona Non Grata)
+        # Usamos all_objects para incluir usuarios soft-deleted
+        user_check = CustomUser.all_objects.filter(phone_number=phone_number).first()
+        if user_check and user_check.is_persona_non_grata:
+            raise serializers.ValidationError({
+                "detail": "Tu cuenta ha sido bloqueada. Contacta con soporte si crees que es un error.",
+                "code": "account_blocked"
+            })
+
         cache_key = f"login_attempts:{phone_number}"
         attempts = cache.get(cache_key, 0)
 
@@ -126,7 +135,7 @@ class SessionAwareTokenRefreshSerializer(TokenRefreshSerializer):
 class SimpleUserSerializer(DataMaskingMixin, DynamicFieldsModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ('id', 'phone_number', 'email', 'first_name', 'last_name', 'role')
+        fields = ('id', 'phone_number', 'email', 'first_name', 'last_name', 'role', 'is_superuser')
         mask_fields = {
             'phone_number': {'mask_with': 'phone', 'visible_for': ['STAFF']},
             'email': {'mask_with': 'email', 'visible_for': ['STAFF']},
@@ -189,8 +198,15 @@ class AdminUserSerializer(serializers.ModelSerializer):
     """
     Serializer para CRUD administrativo de usuarios.
     Permite crear usuarios y asignar roles/estado.
+    Incluye campos calculados como is_vip y datos del perfil clínico (dosha).
     """
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    
+    # Campo calculado de solo lectura (propiedad del modelo)
+    is_vip = serializers.BooleanField(read_only=True)
+    
+    # Campo del perfil clínico (dosha dominante)
+    dosha = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
@@ -201,14 +217,27 @@ class AdminUserSerializer(serializers.ModelSerializer):
             'first_name',
             'last_name',
             'role',
+            'is_superuser',  # Solo lectura, distingue superadmin de admin regular
             'is_active',
             'is_verified',
-            'is_persona_non_grata',
+            'is_vip',  # Solo lectura, calculado desde role y vip_expires_at
+            'vip_expires_at',  # Campo real para fecha de expiración VIP
             'vip_auto_renew',
+            'is_persona_non_grata',
+            'dosha',  # Dosha dominante del perfil clínico
+            'created_at',
+            'updated_at',
             'password',
         ]
-        read_only_fields = ['id']
+        read_only_fields = ['id', 'is_superuser', 'is_vip', 'dosha', 'created_at', 'updated_at']
 
+    def get_dosha(self, obj):
+        """Obtiene el dosha dominante del perfil clínico."""
+        if hasattr(obj, 'profile') and obj.profile:
+            return obj.profile.dosha
+        return None
+
+    @transaction.atomic
     def create(self, validated_data):
         password = validated_data.pop('password', None) or get_random_string(12)
         user = CustomUser.objects.create_user(
@@ -218,6 +247,11 @@ class AdminUserSerializer(serializers.ModelSerializer):
             password=password,
             **validated_data,
         )
+        
+        # Crear perfil clínico para clientes y VIPs
+        if user.role in [CustomUser.Role.CLIENT, CustomUser.Role.VIP]:
+            ClinicalProfile.objects.get_or_create(user=user)
+        
         return user
 
 
@@ -286,22 +320,6 @@ class AdminUserSerializer(serializers.ModelSerializer):
         raise serializers.ValidationError(
             "Un usuario con este número de teléfono ya existe.")
 
-    @transaction.atomic
-    def create(self, validated_data):
-        role = validated_data.pop('role', CustomUser.Role.CLIENT)
-        user = CustomUser.objects.create_user(
-            phone_number=validated_data['phone_number'],
-            password=validated_data['password'],
-            first_name=validated_data.get('first_name', ''),
-            last_name=validated_data.get('last_name', ''),
-            email=validated_data.get('email'),
-            role=role,
-        )
-        
-        if user.role in [CustomUser.Role.CLIENT, CustomUser.Role.VIP]:
-            ClinicalProfile.objects.create(user=user)
-    
-        return user
 
 
 class VerifySMSSerializer(serializers.Serializer):

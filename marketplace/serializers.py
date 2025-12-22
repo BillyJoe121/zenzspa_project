@@ -108,6 +108,9 @@ class ProductDetailSerializer(ProductListSerializer):
             'variants',
             'average_rating',
             'review_count',
+            'what_is_included',
+            'benefits',
+            'how_to_use',
         ]
 
     def get_average_rating(self, obj):
@@ -259,9 +262,9 @@ class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
         fields = [
-            'id', 'user_email', 'status', 'total_amount', 'delivery_option',
-            'delivery_address', 'associated_appointment', 'tracking_number',
-            'return_reason', 'return_requested_at',
+            'id', 'user_email', 'status', 'total_amount', 'shipping_cost',
+            'delivery_option', 'delivery_address', 'associated_appointment',
+            'tracking_number', 'return_reason', 'return_requested_at',
             'created_at', 'items'
         ]
 
@@ -278,6 +281,7 @@ class AdminOrderSerializer(serializers.ModelSerializer):
             'user',
             'status',
             'total_amount',
+            'shipping_cost',
             'delivery_option',
             'delivery_address',
             'associated_appointment',
@@ -528,6 +532,9 @@ class AdminProductSerializer(serializers.ModelSerializer):
             'is_active',
             'category',
             'preparation_days',
+            'what_is_included',
+            'benefits',
+            'how_to_use',
             'created_at',
             'updated_at',
         ]

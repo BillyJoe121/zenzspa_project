@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     ChangePasswordView,
     UserRegistrationView,
+    ResendOTPView,
     VerifySMSView,
     CustomTokenObtainPairView,
     CustomTokenRefreshView,
@@ -34,6 +35,7 @@ urlpatterns = [
     # OTP + Session flows
     path('admin/export/', UserExportView.as_view(), name='user-export'),
     path('otp/request/', UserRegistrationView.as_view(), name='otp-request'),
+    path('otp/resend/', ResendOTPView.as_view(), name='otp-resend'),
     path('otp/confirm/', VerifySMSView.as_view(), name='otp-confirm'),
     path('token/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', CustomTokenRefreshView.as_view(), name='token_refresh'),

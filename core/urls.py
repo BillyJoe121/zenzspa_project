@@ -11,7 +11,10 @@ Define los endpoints principales del núcleo del sistema:
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from .views import HealthCheckView
+from .views import (
+    HealthCheckView, 
+    GlobalSettingsView
+)
 from .viewsets import (
     GlobalSettingsViewSet,
     AboutPageViewSet,
@@ -20,7 +23,7 @@ from .viewsets import (
 )
 
 router = DefaultRouter()
-router.register(r'settings', GlobalSettingsViewSet, basename='settings')
+# router.register(r'settings', GlobalSettingsViewSet, basename='settings') # Replaced by GlobalSettingsView
 router.register(r'about', AboutPageViewSet, basename='about')
 router.register(r'team-members', TeamMemberViewSet, basename='team-member')
 router.register(r'gallery-images', GalleryImageViewSet, basename='gallery-image')
@@ -29,6 +32,9 @@ urlpatterns = [
     # Health check para load balancers y monitoreo
     path("health/", HealthCheckView.as_view(), name="health"),
     
+    # Singleton endpoint for Global Settings
+    path("settings/", GlobalSettingsView.as_view(), name="global-settings"),
+
     # Router para ViewSets
     path('', include(router.urls)),
 ]

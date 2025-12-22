@@ -9,10 +9,17 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
+from decimal import Decimal
+
+from django.conf import settings
+
 from core.exceptions import BusinessLogicError
 from ..models import InventoryMovement, Order, OrderItem, ProductVariant
 
 logger = logging.getLogger(__name__)
+
+# Costo de envío a domicilio (configurable via settings)
+SHIPPING_COST = Decimal(getattr(settings, 'SHIPPING_COST', '6500'))
 
 
 class OrderCreationService:
@@ -116,9 +123,21 @@ class OrderCreationService:
 
         # 4. Crear todos los OrderItem en una sola consulta y actualizar el total
         OrderItem.objects.bulk_create(items_to_create)
+        
+        # 5. Agregar costo de envío si es entrega a domicilio
+        shipping_cost = Decimal('0')
+        if self.data.get('delivery_option') == Order.DeliveryOptions.DELIVERY:
+            shipping_cost = SHIPPING_COST
+            total_amount += shipping_cost
+            logger.info(
+                "Costo de envío agregado: order_id=%s, shipping=%s",
+                order.id, shipping_cost
+            )
+        
         order.total_amount = total_amount
+        order.shipping_cost = shipping_cost
         order.reservation_expires_at = timezone.now() + timedelta(minutes=30)
-        order.save(update_fields=['total_amount', 'reservation_expires_at', 'updated_at'])
+        order.save(update_fields=['total_amount', 'shipping_cost', 'reservation_expires_at', 'updated_at'])
 
         # 5. Vaciar el carrito de compras
         self.cart.items.all().delete()

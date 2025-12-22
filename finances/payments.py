@@ -492,6 +492,7 @@ class PaymentService:
                 payment_type=Payment.PaymentType.FINAL,
                 status=Payment.PaymentStatus.APPROVED,
             )
+            DeveloperCommissionService.handle_successful_payment(payment)
         appointment.status = Appointment.AppointmentStatus.PAID
         appointment.save(update_fields=['status', 'updated_at'])
         return payment, outstanding

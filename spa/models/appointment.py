@@ -52,6 +52,18 @@ class Service(SoftDeleteModel):
         default=True,
         help_text="Whether the service is available for booking."
     )
+    what_is_included = models.TextField(
+        blank=True,
+        help_text="Detalle de qué incluye el servicio (pasos, productos, etc.)"
+    )
+    benefits = models.TextField(
+        blank=True,
+        help_text="Beneficios para la piel (e.g. hidratación, luminosidad)"
+    )
+    contraindications = models.TextField(
+        blank=True,
+        help_text="Contraindicaciones médicas o de salud."
+    )
     history = HistoricalRecords(inherit=True)
 
     class Meta:

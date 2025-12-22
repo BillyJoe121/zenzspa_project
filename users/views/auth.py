@@ -71,6 +71,112 @@ class UserRegistrationView(generics.CreateAPIView):
             raise
 
 
+class ResendOTPView(views.APIView):
+    """
+    Reenvía el código de verificación OTP a usuarios existentes no verificados.
+    Endpoint: POST /api/v1/auth/otp/resend/
+    """
+    permission_classes = [AllowAny]
+
+    # Rate limiting
+    RESEND_COOLDOWN_SECONDS = 60  # 1 minuto entre reenvíos
+    MAX_RESENDS_PER_HOUR = 5
+
+    def post(self, request, *args, **kwargs):
+        phone_number = request.data.get('phone_number')
+        ip = get_client_ip(request) or "unknown"
+
+        if not phone_number:
+            return Response(
+                {"detail": "El número de teléfono es requerido.", "code": "phone_required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Verificar cooldown (evitar spam)
+        cooldown_key = f"otp_resend_cooldown:{phone_number}"
+        if cache.get(cooldown_key):
+            return Response(
+                {
+                    "detail": "Debes esperar antes de solicitar otro código.",
+                    "code": "resend_cooldown",
+                    "retry_after_seconds": self.RESEND_COOLDOWN_SECONDS
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+
+        # Verificar límite por hora
+        hourly_key = f"otp_resend_hourly:{phone_number}"
+        hourly_count = cache.get(hourly_key, 0)
+        if hourly_count >= self.MAX_RESENDS_PER_HOUR:
+            return Response(
+                {
+                    "detail": "Has excedido el límite de reenvíos. Intenta más tarde.",
+                    "code": "resend_limit_exceeded"
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+
+        # Buscar usuario
+        try:
+            user = CustomUser.objects.get(phone_number=phone_number)
+        except CustomUser.DoesNotExist:
+            # No revelar si el usuario existe o no por seguridad
+            return Response(
+                {"detail": "Si el número está registrado, recibirás un código de verificación."},
+                status=status.HTTP_200_OK
+            )
+
+        # Verificar si ya está verificado
+        if user.is_verified:
+            return Response(
+                {"detail": "Este número ya ha sido verificado.", "code": "already_verified"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Verificar si está bloqueado
+        if user.is_persona_non_grata or not user.is_active:
+            return Response(
+                {"detail": "Tu cuenta ha sido bloqueada.", "code": "account_blocked"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Verificar reCAPTCHA si es necesario
+        if requires_recaptcha(phone_number, ip, OTPAttempt.AttemptType.REQUEST):
+            recaptcha_token = request.data.get('recaptcha_token')
+            if not recaptcha_token or not verify_recaptcha(
+                recaptcha_token,
+                ip,
+                action=RECAPTCHA_ACTION_OTP_REQUEST,
+            ):
+                return Response(
+                    {"detail": "Se requiere verificación reCAPTCHA.", "code": "recaptcha_required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Enviar código OTP
+        try:
+            twilio_service = TwilioService()
+            twilio_service.send_verification_code(user.phone_number)
+            
+            # Establecer cooldown y contador
+            cache.set(cooldown_key, True, timeout=self.RESEND_COOLDOWN_SECONDS)
+            cache.set(hourly_key, hourly_count + 1, timeout=3600)
+            
+            log_otp_attempt(phone_number, OTPAttempt.AttemptType.REQUEST, True, request, {"context": "resend"})
+            
+            return Response(
+                {"detail": "Código de verificación enviado exitosamente."},
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            log_otp_attempt(phone_number, OTPAttempt.AttemptType.REQUEST, False, request, {"context": "resend", "error": str(e)})
+            logger.exception("Error al reenviar OTP a %s", phone_number)
+            return Response(
+                {"detail": "Error al enviar el código. Intenta más tarde.", "code": "send_error"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 class VerifySMSView(views.APIView):
     """Verificación de código SMS con protección contra abuso."""
     permission_classes = [AllowAny]

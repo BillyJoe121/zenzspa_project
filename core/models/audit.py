@@ -24,6 +24,7 @@ class AuditLog(BaseModel):
         VIP_DOWNGRADED = "VIP_DOWNGRADED", "VIP degradado"
         MARKETPLACE_RETURN = "MARKETPLACE_RETURN", "Devolución marketplace procesada"
         FINANCIAL_ADJUSTMENT_CREATED = "FINANCIAL_ADJUSTMENT_CREATED", "Ajuste financiero registrado"
+        USER_DELETED_PERMANENTLY = "USER_DELETED_PERMANENTLY", "Usuario eliminado permanentemente"
 
     action = models.CharField(
         max_length=64,

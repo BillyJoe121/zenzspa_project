@@ -25,6 +25,9 @@ SERVICE_CATALOG = [
                 "duration": 90,
                 "price": "150000.00",
                 "vip_price": "135000.00",
+                "what_is_included": "• Masaje de espalda, cuello y hombros con técnicas de tejido profundo\n• Trabajo en piernas y pies con drenaje\n• Masaje de brazos y manos\n• Aceites esenciales de aromaterapia personalizados\n• Música relajante ambiental",
+                "benefits": "• Libera tensiones musculares acumuladas\n• Mejora la circulación sanguínea y linfática\n• Reduce el estrés y la ansiedad\n• Aumenta la flexibilidad muscular\n• Promueve el sueño reparador",
+                "contraindications": "• Fiebre o infecciones activas\n• Fracturas recientes o lesiones abiertas\n• Trombosis venosa profunda\n• Primer trimestre de embarazo\n• Quemaduras solares recientes",
             },
             {
                 "name": "Terapéutico Focalizado",
@@ -32,6 +35,9 @@ SERVICE_CATALOG = [
                 "duration": 50,
                 "price": "130000.00",
                 "vip_price": "117000.00",
+                "what_is_included": "• Evaluación inicial de puntos de tensión\n• Masaje profundo en zona focalizada (espalda, cuello u hombros)\n• Técnicas de liberación miofascial\n• Aplicación de calor localizado si es necesario\n• Aceite terapéutico antiinflamatorio",
+                "benefits": "• Alivio inmediato de contracturas\n• Reduce dolores de cabeza tensionales\n• Mejora la postura\n• Disminuye el dolor cervical\n• Aumenta el rango de movimiento",
+                "contraindications": "• Hernias discales agudas\n• Inflamación severa en la zona\n• Lesiones musculares recientes (menos de 48h)\n• Osteoporosis avanzada\n• Anticoagulantes sin supervisión médica",
             },
             {
                 "name": "Terapéutico Mixto",
@@ -39,6 +45,9 @@ SERVICE_CATALOG = [
                 "duration": 75,
                 "price": "145000.00",
                 "vip_price": "130000.00",
+                "what_is_included": "• Trabajo profundo en áreas de mayor tensión\n• Masaje relajante en zonas complementarias\n• Estiramientos pasivos suaves\n• Aceites esenciales premium\n• Técnica de piedras calientes en puntos clave",
+                "benefits": "• Combina los beneficios terapéuticos y relajantes\n• Equilibrio entre alivio muscular y relajación mental\n• Mejora del estado de ánimo\n• Reducción del cortisol\n• Sensación de renovación completa",
+                "contraindications": "• Condiciones cardíacas severas\n• Cáncer activo sin autorización médica\n• Infecciones en la piel\n• Estado de embriaguez\n• Fiebre alta",
             },
         ],
     },
@@ -54,6 +63,9 @@ SERVICE_CATALOG = [
                 "duration": 60,
                 "price": "140000.00",
                 "vip_price": "126000.00",
+                "what_is_included": "• Movimientos suaves y rítmicos siguiendo el sistema linfático\n• Trabajo en ganglios principales (cuello, axilas, inglés)\n• Técnica específica para reducir edemas\n• Aceite neutro hipoalergénico\n• Recomendaciones post-tratamiento",
+                "benefits": "• Reduce la retención de líquidos\n• Mejora la circulación linfática\n• Fortalece el sistema inmunológico\n• Acelera la eliminación de toxinas\n• Reduce la celulitis y la piel de naranja",
+                "contraindications": "• Infecciones agudas o fiebre\n• Insuficiencia cardíaca descompensada\n• Trombosis o flebitis\n• Hipotiroidismo no tratado\n• Cáncer sin autorización oncológica",
             },
             {
                 "name": "Terapia de Equilibrio",
@@ -61,6 +73,9 @@ SERVICE_CATALOG = [
                 "duration": 75,
                 "price": "155000.00",
                 "vip_price": "139000.00",
+                "what_is_included": "• Drenaje linfático suave\n• Estimulación de puntos de acupresión\n• Trabajo en meridianos energéticos\n• Aceites esenciales equilibrantes\n• Momento de meditación guiada",
+                "benefits": "• Restaura el equilibrio energético\n• Reduce el estrés emocional\n• Mejora la calidad del sueño\n• Armoniza cuerpo y mente\n• Aumenta la vitalidad general",
+                "contraindications": "• Primer trimestre de embarazo\n• Marcapasos cardíaco\n• Epilepsia no controlada\n• Estados de ansiedad severa\n• Heridas abiertas en puntos de presión",
             },
             {
                 "name": "Udvartana",
@@ -68,6 +83,9 @@ SERVICE_CATALOG = [
                 "duration": 90,
                 "price": "170000.00",
                 "vip_price": "153000.00",
+                "what_is_included": "• Exfoliación con polvos herbales ayurvédicos\n• Masaje vigoroso en dirección de los meridianos\n• Aceites herbales calientes\n• Envolvimiento detox (opcional)\n• Ducha para retirar polvos",
+                "benefits": "• Exfolia y renueva la piel\n• Reduce la celulitis y grasa localizada\n• Tonifica los tejidos\n• Activa el metabolismo\n• Deja la piel suave y radiante",
+                "contraindications": "• Piel muy sensible o con eczema activo\n• Quemaduras solares\n• Heridas abiertas\n• Alergia a hierbas (consultar ingredientes)\n• Embarazo",
             },
         ],
     },
@@ -83,6 +101,9 @@ SERVICE_CATALOG = [
                 "duration": 60,
                 "price": "135000.00",
                 "vip_price": "121000.00",
+                "what_is_included": "• Masaje relajante de cuerpo completo\n• Aromaterapia con aceites esenciales premium\n• Música terapéutica 432Hz\n• Ambiente con iluminación tenue\n• Té herbal de cortesía",
+                "benefits": "• Relajación profunda del sistema nervioso\n• Reducción del estrés y ansiedad\n• Mejora el estado de ánimo\n• Promueve la claridad mental\n• Sensación de paz interior",
+                "contraindications": "• Alergia a aceites esenciales (informar antes)\n• Claustrofobia severa\n• Condiciones que impidan estar recostado\n• Sensibilidad extrema a olores",
             },
             {
                 "name": "Zen Extendido",
@@ -90,6 +111,9 @@ SERVICE_CATALOG = [
                 "duration": 90,
                 "price": "165000.00",
                 "vip_price": "148000.00",
+                "what_is_included": "• Todo lo incluido en Experiencia Zen\n• 30 minutos adicionales de masaje\n• Meditación guiada al inicio\n• Técnica de respiración consciente\n• Mascarilla facial express",
+                "benefits": "• Relajación más profunda y duradera\n• Conexión mente-cuerpo\n• Reset completo del sistema nervioso\n• Mejora la calidad del sueño durante días\n• Renovación de energía vital",
+                "contraindications": "• Las mismas que Experiencia Zen\n• Dificultad para permanecer quieto por tiempo prolongado",
             },
             {
                 "name": "Toque de Seda",
@@ -97,6 +121,9 @@ SERVICE_CATALOG = [
                 "duration": 75,
                 "price": "145000.00",
                 "vip_price": "130000.00",
+                "what_is_included": "• Masaje con técnica sueca suave\n• Aceites nutritivos de argán y jojoba\n• Movimientos largos y envolventes\n• Atención especial a zonas secas\n• Hidratación final intensiva",
+                "benefits": "• Hidratación profunda de la piel\n• Nutrición de tejidos\n• Relajación muscular suave\n• Piel sedosa y luminosa\n• Mejora la elasticidad cutánea",
+                "contraindications": "• Alergia a frutos secos (por aceites)\n• Acné severo en cuerpo\n• Piel con heridas abiertas",
             },
             {
                 "name": "Herbal Essence",
@@ -104,6 +131,9 @@ SERVICE_CATALOG = [
                 "duration": 75,
                 "price": "145000.00",
                 "vip_price": "130000.00",
+                "what_is_included": "• Masaje con presión media-profunda\n• Aceites de romero, menta y eucalipto\n• Técnicas energizantes\n• Trabajo en puntos de tensión\n• Toalla caliente en espalda",
+                "benefits": "• Revitaliza el cuerpo y la mente\n• Alivia la fatiga muscular\n• Despeja las vías respiratorias\n• Aumenta el estado de alerta\n• Ideal después del ejercicio",
+                "contraindications": "• Hipertensión no controlada\n• Sensibilidad al eucalipto o menta\n• Asma severa (consultar)\n• Migrañas activas",
             },
             {
                 "name": "Cráneo Facial Ensueño",
@@ -111,6 +141,9 @@ SERVICE_CATALOG = [
                 "duration": 45,
                 "price": "120000.00",
                 "vip_price": "108000.00",
+                "what_is_included": "• Masaje craneal con técnica india\n• Trabajo facial con aceites nutritivos\n• Masaje de cuello y hombros\n• Acupresión en puntos de tensión facial\n• Aceite capilar nutritivo",
+                "benefits": "• Alivia dolores de cabeza\n• Reduce la tensión mandibular\n• Mejora la circulación facial\n• Promueve el crecimiento capilar\n• Relajación mental profunda",
+                "contraindications": "• Sinusitis aguda\n• Migraña en curso\n• Conjuntivitis u otras infecciones oculares\n• Cirugía facial reciente",
             },
             {
                 "name": "Cráneo Facial Ocaso",
@@ -118,6 +151,9 @@ SERVICE_CATALOG = [
                 "duration": 50,
                 "price": "130000.00",
                 "vip_price": "117000.00",
+                "what_is_included": "• Limpieza facial suave\n• Acupresión en puntos de medicina china\n• Masaje craneal relajante\n• Aceites esenciales de lavanda\n• Compresa tibia en ojos",
+                "benefits": "• Prepara para el descanso nocturno\n• Alivia la fatiga visual\n• Reduce el bruxismo\n• Mejora la calidad del sueño\n• Suaviza líneas de expresión",
+                "contraindications": "• Alergia a lavanda\n• Glaucoma\n• Desprendimiento de retina\n• Botox reciente (menos de 2 semanas)",
             },
             {
                 "name": "Cráneo Facial Renacer",
@@ -125,6 +161,9 @@ SERVICE_CATALOG = [
                 "duration": 60,
                 "price": "145000.00",
                 "vip_price": "130000.00",
+                "what_is_included": "• Exfoliación facial suave\n• Masaje lifting natural\n• Estimulación de puntos energéticos\n• Mascarilla revitalizante\n• Masaje craneal activador",
+                "benefits": "• Efecto lifting natural inmediato\n• Luminosidad y frescura facial\n• Activa la circulación\n• Reduce la hinchazón matutina\n• Renueva la energía vital",
+                "contraindications": "• Rosacea activa\n• Acné inflamatorio\n• Tratamientos estéticos recientes\n• Piel con heridas o irritación",
             },
             {
                 "name": "Pediluvio",
@@ -132,6 +171,9 @@ SERVICE_CATALOG = [
                 "duration": 30,
                 "price": "80000.00",
                 "vip_price": "72000.00",
+                "what_is_included": "• Baño de pies con sales minerales\n• Exfoliación de pies\n• Masaje reflexológico\n• Hidratación intensiva\n• Aceites esenciales relajantes",
+                "benefits": "• Activa puntos reflejos de todo el cuerpo\n• Mejora la circulación de piernas\n• Reduce pies cansados e hinchados\n• Hidrata piel agrietada\n• Relajación a través de los pies",
+                "contraindications": "• Pie diabético sin control\n• Hongos activos en pies\n• Heridas abiertas en pies\n• Varices severas",
             },
             {
                 "name": "Limpieza Facial Sencilla",
@@ -139,6 +181,9 @@ SERVICE_CATALOG = [
                 "duration": 45,
                 "price": "110000.00",
                 "vip_price": "99000.00",
+                "what_is_included": "• Doble limpieza facial\n• Exfoliación enzimática suave\n• Extracción de impurezas (si aplica)\n• Mascarilla equilibrante\n• Hidratación según tipo de piel",
+                "benefits": "• Piel limpia y luminosa\n• Poros desobstruidos\n• Textura más suave\n• Mejor absorción de productos\n• Rostro fresco y renovado",
+                "contraindications": "• Herpes activo\n• Rosácea severa\n• Quemaduras solares\n• Tratamientos de Accutane en curso\n• Peeling químico reciente",
             },
             {
                 "name": "Hidra Facial",
@@ -146,10 +191,14 @@ SERVICE_CATALOG = [
                 "duration": 60,
                 "price": "180000.00",
                 "vip_price": "162000.00",
+                "what_is_included": "• Limpieza profunda con tecnología\n• Hidrodermabrasión profesional\n• Extracción indolora de impurezas\n• Infusión de serums según necesidad\n• Mascarilla LED (opcional)\n• Protección solar final",
+                "benefits": "• Limpieza profunda sin irritación\n• Hidratación inigualable\n• Resultados visibles inmediatos\n• Reduce líneas finas\n• Piel radiante y juvenil",
+                "contraindications": "• Embarazo (algunas tecnologías)\n• Marca pasos\n• Rosácea activa\n• Herpes labial\n• Alergias severas a productos faciales",
             },
         ],
     },
 ]
+
 
 # ============================================================================
 # CATÁLOGO DE PRODUCTOS REALES - MARKETPLACE
@@ -168,12 +217,15 @@ MARKETPLACE_PRODUCTS = [
         "description": "Aceites esenciales 100% puros de grado terapéutico. Cada gota concentra la esencia botánica más pura para transformar tu hogar en un santuario de bienestar. Úsalos en difusores, baños aromáticos o masajes.",
         "preparation_days": 1,
         "is_active": True,
+        "what_is_included": "• Frasco de vidrio ámbar de 10ml con gotero\n• Aceite esencial 100% puro sin diluir\n• Etiqueta con información de origen y propiedades\n• Caja de cartón reciclado con instrucciones",
+        "benefits": "• Aromaterapia natural que mejora el estado de ánimo\n• Propiedades relajantes o energizantes según variedad\n• Purifica el ambiente del hogar\n• Ayuda a conciliar el sueño\n• Reduce el estrés y la ansiedad",
+        "how_to_use": "1. Difusor: Agregar 3-5 gotas en difusor con agua\n2. Masaje: Diluir 2-3 gotas en 10ml de aceite portador\n3. Baño: Añadir 5-8 gotas al agua tibia de la tina\n4. Inhalación: 1-2 gotas en pañuelo o manos\n\n⚠️ No aplicar directamente sobre la piel sin diluir",
         "variants": [
             {
                 "name": "Lavanda del Valle - 10ml",
                 "sku": "AE-LAVANDA-10",
                 "price": "42000.00",
-                "vip_price": "37000.00",  # Costo aprox: $12k-15k (aceite + frasco ámbar + etiqueta)
+                "vip_price": "37000.00",
                 "stock": 40,
                 "min_order_quantity": 1,
             },
@@ -181,7 +233,7 @@ MARKETPLACE_PRODUCTS = [
                 "name": "Eucalipto & Menta - 10ml",
                 "sku": "AE-EUCALIPTO-10",
                 "price": "42000.00",
-                "vip_price": "37000.00",  # Costo aprox: $12k-15k
+                "vip_price": "37000.00",
                 "stock": 35,
                 "min_order_quantity": 1,
             },
@@ -189,7 +241,7 @@ MARKETPLACE_PRODUCTS = [
                 "name": "Naranja Dulce - 10ml",
                 "sku": "AE-NARANJA-10",
                 "price": "39000.00",
-                "vip_price": "35000.00",  # Costo aprox: $12k-15k
+                "vip_price": "35000.00",
                 "stock": 45,
                 "min_order_quantity": 1,
             },
@@ -201,12 +253,15 @@ MARKETPLACE_PRODUCTS = [
         "description": "Velas artesanales vertidas a mano con cera de soja 100% natural y mechas de algodón. Sin parafina ni toxinas. Duración extendida y aromas sutiles que perfuman sin saturar. Cada vela es una pieza única.",
         "preparation_days": 2,
         "is_active": True,
+        "what_is_included": "• Vela de cera de soja 100% natural\n• Mecha de algodón libre de plomo\n• Envase reutilizable (lata o vidrio según variante)\n• Fragancia premium de larga duración\n• Instrucciones de uso y seguridad",
+        "benefits": "• Aromatiza espacios de forma natural\n• No produce hollín negro como las velas de parafina\n• Crea ambiente de relajación y bienestar\n• Ideal para meditación y rituales de autocuidado\n• El envase es reutilizable después de terminar",
+        "how_to_use": "1. Primer uso: Dejar encendida hasta que toda la superficie se derrita (2-3h)\n2. Recortar la mecha a 5mm antes de cada uso\n3. Máximo 4 horas continuas de uso\n4. Usar en superficie plana y estable\n5. Mantener alejada de corrientes de aire\n\n💡 Tip: Para mayor duración, apagar soplando suavemente",
         "variants": [
             {
                 "name": "Travel - Vainilla & Coco (100g)",
                 "sku": "VL-TRAVEL-VAINILLA",
                 "price": "28000.00",
-                "vip_price": "25000.00",  # Costo aprox: $9k (cera soja + lata dorada + esencia)
+                "vip_price": "25000.00",
                 "stock": 30,
                 "min_order_quantity": 1,
                 "max_order_quantity": 5,
@@ -215,7 +270,7 @@ MARKETPLACE_PRODUCTS = [
                 "name": "Travel - Sándalo & Madera (100g)",
                 "sku": "VL-TRAVEL-SANDALO",
                 "price": "28000.00",
-                "vip_price": "25000.00",  # Costo aprox: $9k
+                "vip_price": "25000.00",
                 "stock": 25,
                 "min_order_quantity": 1,
                 "max_order_quantity": 5,
@@ -224,7 +279,7 @@ MARKETPLACE_PRODUCTS = [
                 "name": "Home - Jazmín (250g)",
                 "sku": "VL-HOME-JAZMIN",
                 "price": "75000.00",
-                "vip_price": "67000.00",  # Costo aprox: $18k-22k (vaso vidrio + tapa madera)
+                "vip_price": "67000.00",
                 "stock": 20,
                 "min_order_quantity": 1,
                 "max_order_quantity": 3,
@@ -233,7 +288,7 @@ MARKETPLACE_PRODUCTS = [
                 "name": "Home - Vainilla & Coco (250g)",
                 "sku": "VL-HOME-VAINILLA",
                 "price": "72000.00",
-                "vip_price": "65000.00",  # Costo aprox: $18k-22k
+                "vip_price": "65000.00",
                 "stock": 22,
                 "min_order_quantity": 1,
                 "max_order_quantity": 3,
@@ -246,19 +301,21 @@ MARKETPLACE_PRODUCTS = [
         "description": "El secreto para dormir como bebé. Fórmula botánica con lavanda francesa y manzanilla romana que calma el sistema nervioso y prepara tu mente para el descanso profundo. Spray fino que no mancha telas.",
         "preparation_days": 1,
         "is_active": True,
+        "what_is_included": "• Botella de vidrio con atomizador fino de 60ml\n• Fórmula con aceites esenciales de lavanda y manzanilla\n• Base de agua destilada y alcohol vegetal\n• Empaque en caja kraft con instrucciones",
+        "benefits": "• Promueve el sueño profundo y reparador\n• Calma la mente antes de dormir\n• Reduce el tiempo para conciliar el sueño\n• Aroma relajante que persiste toda la noche\n• No mancha sábanas ni almohadas",
+        "how_to_use": "1. Agitar bien antes de usar\n2. Rociar 2-3 veces sobre la almohada a 30cm de distancia\n3. Aplicar 10-15 minutos antes de acostarse\n4. También puede usarse en sábanas y ropa de cama\n5. Opcional: rociar en muñecas y sienes\n\n🌙 Ritual nocturno: Combinar con respiración profunda",
         "variants": [
             {
                 "name": "Bruma Deep Sleep - 60ml",
                 "sku": "BM-SLEEP-60",
                 "price": "38000.00",
-                "vip_price": "34000.00",  # Costo aprox: $10k (base líquida + esencia + botella spray)
+                "vip_price": "34000.00",
                 "stock": 35,
                 "min_order_quantity": 1,
                 "max_order_quantity": 4,
             },
         ],
     },
-    # NOTA: Kit de Sahumerio Ritual fue removido por solicitud del cliente
 
     # ========================================================================
     # CATEGORÍA: SPA Y CUIDADO CORPORAL
@@ -269,12 +326,15 @@ MARKETPLACE_PRODUCTS = [
         "description": "La misma fórmula premium que usamos en cabina, ahora para tu hogar. Textura sedosa que se absorbe lentamente, ideal para masajes terapéuticos o hidratación post-ducha. Sin parabenos ni siliconas.",
         "preparation_days": 2,
         "is_active": True,
+        "what_is_included": "• Botella de 120ml con dosificador pump\n• Aceite base de almendras dulces y jojoba\n• Aceites esenciales según variante\n• Vitamina E natural como antioxidante\n• Libre de parabenos, siliconas y colorantes",
+        "benefits": "• Deslizamiento perfecto para masajes profesionales\n• Hidratación profunda que no deja sensación grasosa\n• Nutre y suaviza la piel seca\n• Aromaterapia durante el masaje\n• Absorción gradual para mejor trabajabilidad",
+        "how_to_use": "1. MASAJE: Calentar entre las manos y aplicar con movimientos largos\n2. POST-DUCHA: Aplicar sobre piel húmeda para mejor absorción\n3. Usar 1-2 pumps por zona del cuerpo\n4. Masajear hasta absorción completa\n5. Evitar contacto con ojos y mucosas\n\n💆 Tip: Tibiar la botella en agua caliente antes del masaje",
         "variants": [
             {
                 "name": "Relax Total - Almendras & Lavanda (120ml)",
                 "sku": "AM-RELAX-120",
                 "price": "56000.00",
-                "vip_price": "50000.00",  # Costo aprox: $14k-18k (aceite base calidad + botella pump)
+                "vip_price": "50000.00",
                 "stock": 25,
                 "min_order_quantity": 1,
             },
@@ -282,7 +342,7 @@ MARKETPLACE_PRODUCTS = [
                 "name": "Alivio Muscular - Árnica & Romero (120ml)",
                 "sku": "AM-MUSCULAR-120",
                 "price": "58000.00",
-                "vip_price": "52000.00",  # Costo aprox: $14k-18k
+                "vip_price": "52000.00",
                 "stock": 20,
                 "min_order_quantity": 1,
             },
@@ -294,12 +354,15 @@ MARKETPLACE_PRODUCTS = [
         "description": "Sales minerales que transforman tu bañera en un spa terapéutico. La combinación de sal marina, Epsom y botánicos ayuda a desinflamar músculos, eliminar toxinas y relajar profundamente. Piel suave garantizada.",
         "preparation_days": 1,
         "is_active": True,
+        "what_is_included": "• Frasco de vidrio de 250g con tapa hermética\n• Mezcla de sal marina y sal de Epsom\n• Hierbas secas naturales (lavanda y eucalipto)\n• Aceites esenciales puros\n• Cuchara medidora de madera incluida",
+        "benefits": "• Desintoxica y purifica la piel\n• Relaja músculos tensos y adoloridos\n• Reduce la inflamación y la retención de líquidos\n• El magnesio de Epsom calma el sistema nervioso\n• Deja la piel increíblemente suave",
+        "how_to_use": "1. Llenar la tina con agua tibia (37-40°C)\n2. Agregar 2-3 cucharadas de sales mientras corre el agua\n3. Mezclar con la mano para disolver\n4. Sumergirse por 15-20 minutos\n5. Enjuagar con agua limpia al salir\n\n🛁 Ritual: Encender velas y música relajante para potenciar efectos",
         "variants": [
             {
                 "name": "Sales Detox - Lavanda & Eucalipto (250g)",
                 "sku": "SB-DETOX-250",
                 "price": "35000.00",
-                "vip_price": "31000.00",  # Costo aprox: $8k (sales + hierbas + frasco vidrio)
+                "vip_price": "31000.00",
                 "stock": 30,
                 "min_order_quantity": 1,
             },
@@ -315,12 +378,15 @@ MARKETPLACE_PRODUCTS = [
         "description": "Más que joyería, un amuleto personal. Tejida a mano por artesanos caleños, combina la nobleza de la plata 925 con el poder vibracional de cuarzos naturales certificados. Cada piedra es única. Incluye tarjeta explicativa de propiedades energéticas.",
         "preparation_days": 3,
         "is_active": True,
+        "what_is_included": "• Pulsera tejida a mano con nudo ajustable\n• Piedras naturales certificadas\n• Herrajes de plata 925 con sello de garantía\n• Bolsa de terciopelo para almacenamiento\n• Tarjeta con propiedades de las piedras\n• Certificado de autenticidad",
+        "benefits": "• Protección energética contra energías negativas\n• Fortalece el campo áurico personal\n• Aumenta la confianza y la seguridad\n• Piedras cargadas con intención positiva\n• Diseño versátil para uso diario",
+        "how_to_use": "1. ACTIVACIÓN: Al recibirla, sostenla entre tus manos y visualiza tu intención\n2. Usar en la muñeca izquierda para recibir energía protectora\n3. Usar en la muñeca derecha para proyectar fuerza\n4. Limpiar energéticamente cada luna llena con humo de incienso\n5. No mojar (retirar antes de ducha o piscina)\n\n✨ Tip: Cargar bajo la luz de la luna una noche al mes",
         "variants": [
             {
                 "name": "Protección - Ojo de Tigre & Plata 925",
                 "sku": "PJ-PROT-OJOTIGRE",
                 "price": "165000.00",
-                "vip_price": "148000.00",  # Costo aprox: $50k-65k (materiales + mano obra + empaque lujo)
+                "vip_price": "148000.00",
                 "stock": 15,
                 "min_order_quantity": 1,
             },
@@ -328,7 +394,7 @@ MARKETPLACE_PRODUCTS = [
                 "name": "Protección - Turmalina Negra & Plata 925",
                 "sku": "PJ-PROT-TURMALINA",
                 "price": "175000.00",
-                "vip_price": "157000.00",  # Costo aprox: $55k-70k
+                "vip_price": "157000.00",
                 "stock": 12,
                 "min_order_quantity": 1,
             },
@@ -336,7 +402,7 @@ MARKETPLACE_PRODUCTS = [
                 "name": "Protección - Onix & Plata 925",
                 "sku": "PJ-PROT-ONIX",
                 "price": "158000.00",
-                "vip_price": "142000.00",  # Costo aprox: $45k-60k
+                "vip_price": "142000.00",
                 "stock": 18,
                 "min_order_quantity": 1,
             },
@@ -348,12 +414,15 @@ MARKETPLACE_PRODUCTS = [
         "description": "Diseño exclusivo que celebra tu esencia. Oro laminado de 14k (gold filled) que no se oxida, combinado con cuarzos rosados que vibran en frecuencia del amor incondicional. Empaque premium en bolsa de terciopelo.",
         "preparation_days": 3,
         "is_active": True,
+        "what_is_included": "• Pulsera tejida a mano con cierre ajustable\n• Piedras naturales de cuarzo rosa o rodocrosita\n• Herrajes de oro laminado 14k (gold filled)\n• Bolsa de terciopelo premium\n• Tarjeta con afirmaciones de amor propio\n• Certificado de autenticidad de piedras",
+        "benefits": "• Vibra en la frecuencia del amor incondicional\n• Ayuda a sanar heridas emocionales\n• Aumenta la autoestima y la confianza\n• Atrae relaciones armoniosas\n• Conecta con la energía del corazón",
+        "how_to_use": "1. RITUAL DE CONEXIÓN: Coloca sobre tu corazón y respira profundo 3 veces\n2. Usar en la muñeca izquierda para abrir el chakra del corazón\n3. Repetir la afirmación: 'Me amo y me acepto completamente'\n4. Limpiar con agua de rosas cada semana\n5. No exponer al cloro o agua salada\n\n💕 Ideal como regalo para alguien especial o para ti misma",
         "variants": [
             {
                 "name": "Amor Propio - Cuarzo Rosa & Oro 14k",
                 "sku": "PJ-AMOR-CUARZO",
                 "price": "155000.00",
-                "vip_price": "139000.00",  # Costo aprox: $45k-60k
+                "vip_price": "139000.00",
                 "stock": 20,
                 "min_order_quantity": 1,
             },
@@ -361,7 +430,7 @@ MARKETPLACE_PRODUCTS = [
                 "name": "Amor Propio - Rodocrosita & Oro 14k",
                 "sku": "PJ-AMOR-RODOCROSITA",
                 "price": "168000.00",
-                "vip_price": "151000.00",  # Costo aprox: $50k-65k
+                "vip_price": "151000.00",
                 "stock": 15,
                 "min_order_quantity": 1,
             },
@@ -373,12 +442,15 @@ MARKETPLACE_PRODUCTS = [
         "description": "Equilibrio entre mente, cuerpo y espíritu. Diseño versátil con herrajes mixtos (plata y oro) que combina con todo. Cuarzos de alta frecuencia seleccionados por su claridad y energía. Regalo perfecto para quien busca armonía.",
         "preparation_days": 3,
         "is_active": True,
+        "what_is_included": "• Pulsera tejida artesanalmente\n• Piedras de amatista o aventurina natural\n• Herrajes mixtos plata 925 y oro laminado 14k\n• Bolsa de terciopelo para guardar\n• Tarjeta con guía de meditación\n• Certificado de autenticidad",
+        "benefits": "• Armoniza los chakras principales\n• Equilibra las emociones y la mente\n• Atrae abundancia y prosperidad (aventurina)\n• Promueve la paz interior (amatista)\n• Diseño versátil para cualquier ocasión",
+        "how_to_use": "1. MEDITACIÓN: Sostener la pulsera mientras meditas para amplificar la conexión\n2. Usar en cualquier muñeca según tu intuición del día\n3. En momentos de estrés, tocar las piedras y respirar profundo\n4. Limpiar pasándola por humo de palo santo\n5. Guardar en bolsa de terciopelo cuando no se use\n\n☯️ Mantras sugeridos: 'Estoy en equilibrio' o 'Fluyo con la vida'",
         "variants": [
             {
                 "name": "Balance - Amatista & Herrajes Mixtos",
                 "sku": "PJ-BAL-AMATISTA",
                 "price": "148000.00",
-                "vip_price": "133000.00",  # Costo aprox: $45k-60k
+                "vip_price": "133000.00",
                 "stock": 22,
                 "min_order_quantity": 1,
             },
@@ -386,7 +458,7 @@ MARKETPLACE_PRODUCTS = [
                 "name": "Balance - Aventurina Verde & Herrajes Mixtos",
                 "sku": "PJ-BAL-AVENTURINA",
                 "price": "142000.00",
-                "vip_price": "128000.00",  # Costo aprox: $40k-55k
+                "vip_price": "128000.00",
                 "stock": 18,
                 "min_order_quantity": 1,
             },
@@ -493,6 +565,7 @@ class Command(BaseCommand):
     def _seed_service_catalog(self):
         """
         Crea categorías y servicios de masajes reutilizando nombres como llave idempotente.
+        Maneja correctamente SoftDeleteModel usando all_objects.
         """
         category_map = {}
         services_processed = 0
@@ -503,11 +576,18 @@ class Command(BaseCommand):
                 "description": category_data["description"],
                 "is_low_supervision": category_data.get("is_low_supervision", False),
             }
-            category, created = ServiceCategory.objects.get_or_create(
-                name=category_data["name"],
-                defaults=category_defaults,
-            )
-            if not created:
+            
+            # Buscar categoría incluso si está eliminada
+            category = ServiceCategory.all_objects.filter(name=category_data["name"]).first()
+            if not category:
+                category = ServiceCategory.objects.create(
+                    name=category_data["name"],
+                    **category_defaults
+                )
+            else:
+                if category.is_deleted:
+                    category.restore()
+                
                 updated_fields = []
                 for field, value in category_defaults.items():
                     if getattr(category, field) != value:
@@ -515,6 +595,7 @@ class Command(BaseCommand):
                         updated_fields.append(field)
                 if updated_fields:
                     category.save(update_fields=updated_fields + ["updated_at"])
+            
             category_map[category_data["key"]] = category
 
             for service_data in category_data["services"]:
@@ -525,14 +606,31 @@ class Command(BaseCommand):
                     "price": Decimal(service_data["price"]),
                     "vip_price": Decimal(service_data["vip_price"]),
                     "is_active": True,
+                    "what_is_included": service_data.get("what_is_included", ""),
+                    "benefits": service_data.get("benefits", ""),
+                    "contraindications": service_data.get("contraindications", ""),
                 }
-                _, created_service = Service.objects.update_or_create(
-                    name=service_data["name"],
-                    category=category,
-                    defaults=defaults,
-                )
-                if created_service:
-                    services_created += 1
+                
+                # Buscar servicio incluso si está eliminado
+                service = Service.all_objects.filter(name=service_data["name"], category=category).first()
+                if not service:
+                     Service.objects.create(
+                        name=service_data["name"],
+                        category=category,
+                        **defaults
+                    )
+                     services_created += 1
+                else:
+                    if service.is_deleted:
+                        service.restore()
+                    
+                    updated_svc = False
+                    for k, v in defaults.items():
+                        if getattr(service, k) != v:
+                            setattr(service, k, v)
+                            updated_svc = True
+                    if updated_svc:
+                        service.save()
 
         return category_map, {"processed": services_processed, "created": services_created}
 
@@ -540,6 +638,7 @@ class Command(BaseCommand):
         """
         Crea las categorías de productos. Se ejecuta FUERA de transaction.atomic()
         para evitar problemas de isolation level en Postgres.
+        Maneja correctamente SoftDeleteModel usando all_objects.
         """
         PRODUCT_CATEGORIES = {
             "aromaterapia": {
@@ -559,37 +658,26 @@ class Command(BaseCommand):
             },
         }
 
-        from django.db import IntegrityError
-
         category_map = {}
         for key, cat_data in PRODUCT_CATEGORIES.items():
-            try:
-                category, _ = ServiceCategory.objects.get_or_create(
+            # Buscar categoría incluso si está eliminada
+            category = ServiceCategory.all_objects.filter(name=cat_data["name"]).first()
+            
+            if not category:
+                category = ServiceCategory.objects.create(
                     name=cat_data["name"],
-                    defaults={
-                        "description": cat_data["description"],
-                        "is_low_supervision": cat_data["is_low_supervision"],
-                    }
+                    description=cat_data["description"],
+                    is_low_supervision=cat_data["is_low_supervision"]
                 )
-            except IntegrityError:
-                # Si hubo un problema de concurrencia, usar raw SQL para obtener la existente
-                # Esto evita problemas de snapshot en transacciones concurrentes
-                from django.db import connection
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "SELECT id FROM spa_servicecategory WHERE name = %s",
-                        [cat_data["name"]]
-                    )
-                    row = cursor.fetchone()
-                    if row:
-                        category = ServiceCategory.objects.get(id=row[0])
-                    else:
-                        raise RuntimeError(f"Categoría {cat_data['name']} no encontrada después de IntegrityError")
-
-            # Actualizar siempre por si cambió algo
-            category.description = cat_data["description"]
-            category.is_low_supervision = cat_data["is_low_supervision"]
-            category.save(update_fields=['description', 'is_low_supervision', 'updated_at'])
+            else:
+                if category.is_deleted:
+                    category.restore()
+                
+                # Actualizar campos si cambiaron
+                category.description = cat_data["description"]
+                category.is_low_supervision = cat_data["is_low_supervision"]
+                category.save(update_fields=['description', 'is_low_supervision', 'updated_at'])
+            
             category_map[key] = category
 
         return category_map
@@ -612,6 +700,9 @@ class Command(BaseCommand):
                 "category": category,
                 "preparation_days": product_data.get("preparation_days", 1),
                 "is_active": product_data.get("is_active", True),
+                "what_is_included": product_data.get("what_is_included", ""),
+                "benefits": product_data.get("benefits", ""),
+                "how_to_use": product_data.get("how_to_use", ""),
             }
             products_processed += 1
             product, created_product = Product.objects.update_or_create(

@@ -38,9 +38,26 @@ def idempotent_view(timeout=60):
 
             user = request.user if request.user.is_authenticated else None
 
+            # CRITICAL SECURITY FIX:
+            # Scope the idempotency key to the user to prevent cross-user collisions
+            # (e.g. if different users send the same key such as 'add-item').
+            # We prefix the key internally with the user ID if available.
+            db_key = key
+            if user:
+                # Use a separator that is unlikely to collision
+                prefix = f"{user.id}::"
+                # Check length constraints (max_length=255)
+                if len(prefix) + len(key) > 255:
+                     # If too long, hash the composite key
+                     import hashlib
+                     composite = f"{prefix}{key}"
+                     db_key = hashlib.sha256(composite.encode()).hexdigest()
+                else:
+                     db_key = f"{prefix}{key}"
+
             with transaction.atomic():
                 record, created = IdempotencyKey.objects.select_for_update().get_or_create(
-                    key=key,
+                    key=db_key,
                     defaults={
                         "user": user,
                         "endpoint": request.path,
@@ -94,13 +111,13 @@ def idempotent_view(timeout=60):
                 response = view_func(self, request, *args, **kwargs)
             except Exception:
                 with transaction.atomic():
-                    IdempotencyKey.objects.filter(key=key).delete()
+                    IdempotencyKey.objects.filter(key=db_key).delete()
                 raise
 
             payload = getattr(response, "data", None)
             with transaction.atomic():
                 try:
-                    record = IdempotencyKey.objects.select_for_update().get(key=key)
+                    record = IdempotencyKey.objects.select_for_update().get(key=db_key)
                 except IdempotencyKey.DoesNotExist:
                     return response
                 record.mark_completed(response_body=payload, status_code=response.status_code)

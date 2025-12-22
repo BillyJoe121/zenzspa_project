@@ -12,7 +12,9 @@ from decimal import Decimal
 import requests
 
 from django.conf import settings
-from django.db import transaction
+from django.db import transaction, models
+from django.db.models import Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import generics, status, viewsets
 from rest_framework.decorators import action
@@ -56,6 +58,15 @@ class CommissionLedgerListView(generics.ListAPIView):
         return queryset
 
 
+class CommissionLedgerDetailView(generics.RetrieveAPIView):
+    """
+    Detalle de un asiento de comisión.
+    """
+    queryset = CommissionLedger.objects.select_related("source_payment")
+    serializer_class = CommissionLedgerSerializer
+    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+
+
 class DeveloperCommissionStatusView(APIView):
     permission_classes = [IsAuthenticated, IsStaffOrAdmin]
 
@@ -69,6 +80,13 @@ class DeveloperCommissionStatusView(APIView):
             balance_str = str(balance.quantize(Decimal("0.01")))
         except Exception:
             balance_str = "0.00"
+        # Calcular total recaudado (Ventas Totales)
+        total_collected = Payment.objects.filter(
+            status=Payment.PaymentStatus.APPROVED
+        ).aggregate(
+            total=Coalesce(Sum('amount'), Decimal('0'))
+        )['total']
+
         data = {
             "developer_debt": str(debt),
             "payout_threshold": str(settings_obj.developer_payout_threshold),
@@ -79,8 +97,59 @@ class DeveloperCommissionStatusView(APIView):
                 else None
             ),
             "wompi_available_balance": balance_str,
+            "total_collected": str(total_collected),
         }
         return Response(data)
+
+
+class ManualDeveloperPayoutView(APIView):
+    """
+    Permite al SuperAdmin marcar la deuda del desarrollador como pagada manualmente
+    (ej. pago externo por transferencia bancaria directa).
+    """
+    from users.permissions import IsSuperAdmin
+    permission_classes = [IsAuthenticated, IsSuperAdmin]
+
+    @transaction.atomic
+    def post(self, request):
+        amount = request.data.get("amount")
+        if not amount:
+            return Response(
+                {"error": "Se requiere un monto (amount)."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            amount_decimal = Decimal(str(amount))
+            if amount_decimal <= 0:
+                raise ValueError("El monto debe ser positivo.")
+        except Exception:
+            return Response(
+                {"error": "Monto inválido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Usar el servicio para aplicar el pago, usando un ID ficticio para transfer_id
+        # ya que es un pago manual externo.
+        manual_ref = f"MANUAL-{uuid.uuid4().hex[:8]}"
+        
+        DeveloperCommissionService._apply_payout_to_ledger(
+            amount_to_pay=amount_decimal,
+            transfer_id=manual_ref,
+            performed_by=request.user
+        )
+
+        settings_obj = GlobalSettings.load()
+        DeveloperCommissionService._exit_default(settings_obj)
+
+        remaining_debt = DeveloperCommissionService.get_developer_debt()
+        
+        return Response({
+            "status": "success",
+            "message": f"Se ha registrado el pago manual de {amount_decimal}.",
+            "reference": manual_ref,
+            "remaining_debt": str(remaining_debt)
+        })
 
 
 class PSEFinancialInstitutionsView(APIView):
@@ -530,4 +599,30 @@ class PaymentHistoryView(generics.ListAPIView):
     
     def get_queryset(self):
         return Payment.objects.filter(user=self.request.user).order_by('-created_at')
+
+
+class ClientCreditBalanceView(APIView):
+    """
+    Retorna el saldo total de créditos activos disponibles para el usuario autenticado.
+    
+    GET /api/v1/finances/credits/balance/
+    Response: { "balance": 150000.00 }
+    """
+    permission_classes = [IsAuthenticated, IsVerified]
+
+    def get(self, request):
+        active_credits = ClientCredit.objects.filter(
+            user=request.user,
+            status__in=[
+                ClientCredit.CreditStatus.AVAILABLE,
+                ClientCredit.CreditStatus.PARTIALLY_USED
+            ],
+            expires_at__gte=timezone.now().date()
+        )
+        total_balance = sum(c.remaining_amount for c in active_credits)
+        
+        return Response({
+            'balance': total_balance,
+            'currency': 'COP'
+        })
 

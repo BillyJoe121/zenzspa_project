@@ -14,6 +14,7 @@ from .auth import (
     CurrentUserView,
     CustomTokenObtainPairView,
     CustomTokenRefreshView,
+    ResendOTPView,
     UserRegistrationView,
     VerifySMSView,
     UserDeleteView,
@@ -48,6 +49,7 @@ _revoke_all_sessions = revoke_all_sessions
 __all__ = [
     # Auth
     'UserRegistrationView',
+    'ResendOTPView',
     'VerifySMSView',
     'CustomTokenObtainPairView',
     'CustomTokenRefreshView',

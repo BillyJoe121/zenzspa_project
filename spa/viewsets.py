@@ -58,6 +58,23 @@ class ServiceCategoryViewSet(viewsets.ModelViewSet):
         
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def toggle_low_supervision(self, request, pk=None):
+        """
+        POST /api/v1/spa/service-categories/{id}/toggle_low_supervision/
+        
+        Cambia el estado de is_low_supervision de la categoría.
+        """
+        category = self.get_object()
+        category.is_low_supervision = not category.is_low_supervision
+        category.save()
+        
+        serializer = self.get_serializer(category)
+        return Response({
+            'message': f'Categoría marcada como {"baja supervisión" if category.is_low_supervision else "supervisión normal"}',
+            'category': serializer.data
+        })
+
 
 class ServiceViewSet(viewsets.ModelViewSet):
     """

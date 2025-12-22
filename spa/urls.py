@@ -11,6 +11,7 @@ from .views import (
     FinancialAdjustmentView,
     AdminVoucherViewSet,
 )
+from finances.views import ClientCreditBalanceView
 from .views.history import ClientAppointmentHistoryView
 from .viewsets import (
     ServiceViewSet,
@@ -38,4 +39,7 @@ urlpatterns = [
     path('vip/cancel-subscription/', CancelVipSubscriptionView.as_view(), name='cancel-vip-subscription'),
     path('financial-adjustments/', FinancialAdjustmentView.as_view(), name='financial-adjustments'),
     path('history/', ClientAppointmentHistoryView.as_view(), name='client-appointment-history'),
+    
+    # Alias para compatibilidad con frontend (credits/balance/ -> finances/views)
+    path('credits/balance/', ClientCreditBalanceView.as_view(), name='client-credit-balance-alias'),
 ]

@@ -19,6 +19,9 @@ class CommissionLedgerSerializer(serializers.ModelSerializer):
     payment_type = serializers.CharField(source="source_payment.payment_type", read_only=True)
     payment_status = serializers.CharField(source="source_payment.status", read_only=True)
     payment_created_at = serializers.DateTimeField(source="source_payment.created_at", read_only=True)
+    client_name = serializers.CharField(source="source_payment.user.get_full_name", read_only=True, default="Cliente no identificado")
+    client_email = serializers.EmailField(source="source_payment.user.email", read_only=True, default="")
+    payment_amount = serializers.DecimalField(source="source_payment.amount", max_digits=12, decimal_places=2, read_only=True)
     pending_amount = serializers.SerializerMethodField()
 
     class Meta:
@@ -33,6 +36,9 @@ class CommissionLedgerSerializer(serializers.ModelSerializer):
             "payment_type",
             "payment_status",
             "payment_created_at",
+            "payment_amount",
+            "client_name",
+            "client_email",
             "wompi_transfer_id",
             "paid_at",
             "created_at",
@@ -104,12 +110,14 @@ class ClientCreditAdminSerializer(serializers.ModelSerializer):
     Permite crear, editar y ajustar expiración/estado.
     """
     user = serializers.PrimaryKeyRelatedField(queryset=CustomUser.objects.all())
+    user_data = SimpleUserSerializer(source='user', read_only=True)
 
     class Meta:
         model = ClientCredit
         fields = [
             "id",
             "user",
+            "user_data",
             "originating_payment",
             "initial_amount",
             "remaining_amount",

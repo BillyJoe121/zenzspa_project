@@ -7,7 +7,9 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     ClientCreditAdminViewSet,
     CommissionLedgerListView,
+    CommissionLedgerDetailView,
     DeveloperCommissionStatusView,
+    ManualDeveloperPayoutView,
     PSEFinancialInstitutionsView,
     InitiateAppointmentPaymentView,
     WompiWebhookView,
@@ -17,6 +19,7 @@ from .views import (
     CreateNequiPaymentView,
     CreateDaviplataPaymentView,
     CreateBancolombiaTransferPaymentView,
+    ClientCreditBalanceView,
 )
 
 router = DefaultRouter()
@@ -25,7 +28,12 @@ router.register(r"admin/credits", ClientCreditAdminViewSet, basename="admin-clie
 urlpatterns = [
     # Comisiones del desarrollador
     path("commissions/", CommissionLedgerListView.as_view(), name="commission-ledger-list"),
+    path("commissions/<uuid:pk>/", CommissionLedgerDetailView.as_view(), name="commission-ledger-detail"),
     path("commissions/status/", DeveloperCommissionStatusView.as_view(), name="commission-ledger-status"),
+    path("commissions/manual-payout/", ManualDeveloperPayoutView.as_view(), name="commission-manual-payout"),
+
+    # Créditos del usuario
+    path("credits/balance/", ClientCreditBalanceView.as_view(), name="client-credit-balance"),
 
     # PSE
     path("pse-banks/", PSEFinancialInstitutionsView.as_view(), name="pse-banks"),

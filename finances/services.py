@@ -506,7 +506,10 @@ class CreditManagementService:
             
         # Buscar pagos de anticipo aprobados
         payments = appointment.payments.select_for_update().filter(
-            payment_type=Payment.PaymentType.ADVANCE,
+            payment_type__in=[
+                Payment.PaymentType.ADVANCE,
+                Payment.PaymentType.FINAL,
+            ],
             status__in=[
                 Payment.PaymentStatus.APPROVED,
                 Payment.PaymentStatus.PAID_WITH_CREDIT,

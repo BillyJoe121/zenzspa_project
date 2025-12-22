@@ -105,3 +105,10 @@ class ClientCreditAdminSerializerTest(TestCase):
         self.assertTrue(serializer.is_valid(), serializer.errors)
         credit = serializer.save()
         self.assertEqual(credit.remaining_amount, Decimal("100.00"))
+
+    def test_serialization_includes_user_data(self):
+        credit = baker.make(ClientCredit, user=self.user)
+        serializer = ClientCreditAdminSerializer(credit)
+        self.assertIn("user_data", serializer.data)
+        self.assertEqual(serializer.data["user_data"]["id"], str(self.user.id))
+        self.assertEqual(serializer.data["user_data"]["email"], self.user.email)

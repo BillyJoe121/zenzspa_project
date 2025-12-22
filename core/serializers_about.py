@@ -80,6 +80,7 @@ class AboutPageSerializer(serializers.ModelSerializer):
             'linkedin_url',
             'youtube_url',
             'business_hours',
+            'content',  # Contenido flexible en JSON
             'team_members',
             'gallery_images',
             'created_at',
@@ -110,6 +111,7 @@ class AboutPageUpdateSerializer(serializers.ModelSerializer):
             'linkedin_url',
             'youtube_url',
             'business_hours',
+            'content',  # Contenido flexible en JSON
         ]
     
     def validate_email(self, value):

@@ -29,10 +29,37 @@ class IsStaff(BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.role == CustomUser.Role.STAFF
 
-class IsAdminUser(BasePermission):
-    """Permite el acceso solo a usuarios con rol ADMIN."""
+class IsSuperAdmin(BasePermission):
+    """
+    Permite el acceso SOLO a superusuarios (is_superuser=True).
+    Los superadmins tienen control total sobre todos los usuarios, incluyendo otros admins.
+    """
+    message = 'Esta acción requiere permisos de superadministrador.'
+    
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == CustomUser.Role.ADMIN
+        return (
+            request.user.is_authenticated and 
+            request.user.is_superuser
+        )
+
+class IsAdminUser(BasePermission):
+    """
+    Permite el acceso a usuarios con rol ADMIN (incluyendo superadmins).
+    Nota: Para acciones sensibles sobre otros admins, usa IsSuperAdmin.
+    """
+    def has_permission(self, request, view):
+        return (
+            request.user.is_authenticated and 
+            request.user.role == CustomUser.Role.ADMIN
+        )
+
+class IsAdminOrSuperAdmin(BasePermission):
+    """Permite el acceso a administradores o superadministradores."""
+    def has_permission(self, request, view):
+        return (
+            request.user.is_authenticated and 
+            (request.user.role == CustomUser.Role.ADMIN or request.user.is_superuser)
+        )
 
 class IsStaffOrAdmin(BasePermission):
     """Permite el acceso a usuarios con rol STAFF o ADMIN."""

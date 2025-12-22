@@ -45,7 +45,8 @@ class ServiceSerializer(serializers.ModelSerializer):
         model = Service
         fields = [
             'id', 'name', 'description', 'duration', 'price',
-            'vip_price', 'category', 'category_name', 'is_active'
+            'vip_price', 'category', 'category_name', 'is_active',
+            'what_is_included', 'benefits', 'contraindications'
         ]
 
 
@@ -63,6 +64,8 @@ class AppointmentListSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source='get_status_display', read_only=True)
     services = AppointmentItemSerializer(source='items', many=True, read_only=True)
     total_duration_minutes = serializers.SerializerMethodField()
+    paid_amount = serializers.SerializerMethodField()
+    outstanding_balance = serializers.SerializerMethodField()
 
     class Meta:
         model = Appointment
@@ -76,6 +79,8 @@ class AppointmentListSerializer(serializers.ModelSerializer):
             'status',
             'status_display',
             'price_at_purchase',
+            'paid_amount',
+            'outstanding_balance',
             'total_duration_minutes',
             'reschedule_count',
             'created_at',
@@ -85,6 +90,19 @@ class AppointmentListSerializer(serializers.ModelSerializer):
 
     def get_total_duration_minutes(self, obj):
         return obj.total_duration_minutes
+
+    def get_paid_amount(self, obj):
+        """Calcula el monto total pagado (solo pagos aprobados)."""
+        # Importación local para evitar ciclos
+        from finances.models import Payment
+        payments = obj.payments.all()
+        paid = sum(p.amount for p in payments if p.status == Payment.PaymentStatus.APPROVED)
+        return paid
+
+    def get_outstanding_balance(self, obj):
+        """Calcula el saldo pendiente."""
+        paid = self.get_paid_amount(obj)
+        return max(obj.price_at_purchase - paid, Decimal('0.00'))
 
 
 AppointmentReadSerializer = AppointmentListSerializer

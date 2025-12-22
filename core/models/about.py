@@ -92,6 +92,15 @@ class AboutPage(BaseModel):
         default="Lunes a Sábado: 9:00 AM - 8:00 PM\nDomingos: Cerrado"
     )
     
+    # Contenido flexible en JSON para el frontend
+    content = models.JSONField(
+        verbose_name="Contenido de la Página",
+        help_text="Configuración completa de la página en formato JSON",
+        blank=True,
+        null=True,
+        default=dict
+    )
+    
     class Meta:
         verbose_name = "Página Quiénes Somos"
         verbose_name_plural = "Página Quiénes Somos"

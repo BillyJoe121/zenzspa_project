@@ -10,6 +10,7 @@ api_patterns = [
     path('catalog/', include('spa.urls_catalog')),
     path('marketplace/', include('marketplace.urls')),
     path('', include('spa.urls')),
+    path('spa/', include('spa.urls')), # Alias para soportar rutas con prefijo /spa/
     path('', include('profiles.urls')),
     path('notifications/', include('notifications.urls')),
     path('', include('core.urls')),

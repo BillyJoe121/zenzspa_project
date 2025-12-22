@@ -124,18 +124,31 @@ def _parse_action_scores(raw: str) -> Dict[str, float]:
     return mapping
 
 
-ALLOWED_HOSTS = _split_env("ALLOWED_HOSTS", "localhost 127.0.0.1 testserver web")
+# Para cambiar de red WiFi, actualiza la IP aquí (solo aplica si no usas Docker)
+# Nueva WiFi (192.168.1.x):
+# ALLOWED_HOSTS = _split_env("ALLOWED_HOSTS", "localhost 127.0.0.1 testserver web 192.168.1.14")
+# CSRF_TRUSTED_ORIGINS = _split_env(
+#     "CSRF_TRUSTED_ORIGINS",
+#     "http://localhost http://127.0.0.1 http://localhost:3000 http://127.0.0.1:3000 http://localhost:8000 http://127.0.0.1:8000 http://192.168.1.14:3000 http://192.168.1.14:8000",
+# )
+# CORS_ALLOWED_ORIGINS = _split_env(
+#     "CORS_ALLOWED_ORIGINS",
+#     "http://localhost:3000 http://127.0.0.1:3000 http://localhost:3001 http://127.0.0.1:3001 http://192.168.1.14:3000",
+# )
+# WiFi actual (192.168.40.x):
+ALLOWED_HOSTS = _split_env("ALLOWED_HOSTS", "localhost 127.0.0.1 testserver web 192.168.40.81")
 CSRF_TRUSTED_ORIGINS = _split_env(
     "CSRF_TRUSTED_ORIGINS",
-    "http://localhost http://127.0.0.1 http://localhost:3000 http://127.0.0.1:3000 http://localhost:8000 http://127.0.0.1:8000",
+    "http://localhost http://127.0.0.1 http://localhost:3000 http://127.0.0.1:3000 http://localhost:8000 http://127.0.0.1:8000 http://192.168.40.81:3000 http://192.168.40.81:8000",
 )
 CORS_ALLOWED_ORIGINS = _split_env(
     "CORS_ALLOWED_ORIGINS",
-    "http://localhost:3000 http://127.0.0.1:3000 http://localhost:3001 http://127.0.0.1:3001",
+    "http://localhost:3000 http://127.0.0.1:3000 http://localhost:3001 http://127.0.0.1:3001 http://192.168.40.81:3000",
 )
 
 # Configuraciones de cookies y CSRF para desarrollo
 if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
     CSRF_COOKIE_SECURE = False
     SESSION_COOKIE_SECURE = False
     CSRF_COOKIE_HTTPONLY = False
@@ -144,7 +157,9 @@ if DEBUG:
     CSRF_USE_SESSIONS = False  # Asegura que CSRF use cookies, no sesiones
     CSRF_COOKIE_NAME = 'csrftoken'  # Nombre estándar
     # TEMPORAL: Deshabilitar CSRF para admin en desarrollo
-    CSRF_TRUSTED_ORIGINS.extend(['http://localhost:8000', 'http://127.0.0.1:8000'])
+    # Nueva WiFi (192.168.1.x): CSRF_TRUSTED_ORIGINS.extend(['http://localhost:8000', 'http://127.0.0.1:8000', 'http://192.168.1.14:3000', 'http://192.168.1.14:8000'])
+    # WiFi actual (192.168.40.x):
+    CSRF_TRUSTED_ORIGINS.extend(['http://localhost:8000', 'http://127.0.0.1:8000', 'http://192.168.40.81:3000', 'http://192.168.40.81:8000'])
 else:
     CSRF_COOKIE_SECURE = True
     SESSION_COOKIE_SECURE = True
@@ -239,21 +254,21 @@ WSGI_APPLICATION = "studiozens.wsgi.application"
 # --------------------------------------------------------------------------------------
 # Base de datos
 # --------------------------------------------------------------------------------------
+import dj_database_url
+
+# ... imports ...
+
+
+# --------------------------------------------------------------------------------------
+# Base de datos
+# --------------------------------------------------------------------------------------
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME", "studiozens"),
-        "USER": os.getenv("DB_USER", "postgres"),
-        "PASSWORD": os.getenv("DB_PASSWORD", ""),
-        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
-        "PORT": os.getenv("DB_PORT", "5432"),
-        "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
-        "OPTIONS": {
-            "sslmode": os.getenv("DB_SSLMODE", "require" if not DEBUG else "disable"),
-            "connect_timeout": 10,
-            "client_encoding": "UTF8",
-        },
-    }
+    "default": dj_database_url.config(
+        default=f"postgres://{os.getenv('DB_USER', 'postgres')}:{os.getenv('DB_PASSWORD', '')}@{os.getenv('DB_HOST', '127.0.0.1')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'studiozens')}",
+        conn_max_age=600,
+        conn_health_checks=True,
+        ssl_require=not DEBUG,
+    )
 }
 
 if not DEBUG and not os.getenv("DB_PASSWORD"):
@@ -288,31 +303,30 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.ScopedRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "user": os.getenv("THROTTLE_USER", "100/min"),
-        "anon": os.getenv("THROTTLE_ANON", "30/min"),
+        "user": os.getenv("THROTTLE_USER", "1000/min"),
+        "anon": os.getenv("THROTTLE_ANON", "300/min"),
 
         # Scopes específicos de autenticación
-        "auth_login": os.getenv("THROTTLE_AUTH_LOGIN", "3/min"),
-        "auth_verify": os.getenv("THROTTLE_AUTH_VERIFY", "3/10min"),
-        "password_change": os.getenv("THROTTLE_PASSWORD_CHANGE", "3/hour"),  # Protección anti brute-force
-        "payments": os.getenv("THROTTLE_PAYMENTS", "30/min"),
+        "auth_login": os.getenv("THROTTLE_AUTH_LOGIN", "30/min"),
+        "auth_verify": os.getenv("THROTTLE_AUTH_VERIFY", "30/10min"),
+        "password_change": os.getenv("THROTTLE_PASSWORD_CHANGE", "10/hour"),  # Protección anti brute-force
+        "payments": os.getenv("THROTTLE_PAYMENTS", "100/min"),
 
         # Bot
-        "bot": os.getenv("THROTTLE_BOT", "15/min"),
-        "bot_daily": os.getenv("THROTTLE_BOT_DAILY", "100/day"),
-        "bot_ip": os.getenv("THROTTLE_BOT_IP", "60/hour"),
+        "bot": os.getenv("THROTTLE_BOT", "60/min"),
+        "bot_daily": os.getenv("THROTTLE_BOT_DAILY", "500/day"),
+        "bot_ip": os.getenv("THROTTLE_BOT_IP", "120/hour"),
 
         # Admin (NUEVO)
-        "admin": os.getenv("THROTTLE_ADMIN", "1000/hour"),
+        "admin": os.getenv("THROTTLE_ADMIN", "5000/hour"),
 
         # Analytics (NUEVO)
-        "analytics": os.getenv("THROTTLE_ANALYTICS", "30/minute"),
-        "analytics_export": os.getenv("THROTTLE_ANALYTICS_EXPORT", "5/minute"),
+        "analytics": os.getenv("THROTTLE_ANALYTICS", "60/minute"),
+        "analytics_export": os.getenv("THROTTLE_ANALYTICS_EXPORT", "20/minute"),
 
         # Endpoints críticos adicionales
-        "appointments_create": os.getenv("THROTTLE_APPT_CREATE", "10/hour"),
-        "profile_update": os.getenv("THROTTLE_PROFILE_UPDATE", "20/hour"),
-        "analytics_export": os.getenv("THROTTLE_ANALYTICS_EXPORT", "5/hour"),
+        "appointments_create": os.getenv("THROTTLE_APPT_CREATE", "120/hour"),
+        "profile_update": os.getenv("THROTTLE_PROFILE_UPDATE", "60/hour"),
     },
 }
 
