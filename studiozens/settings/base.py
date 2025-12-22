@@ -145,6 +145,12 @@ def _parse_action_scores(raw: str) -> Dict[str, float]:
 # )
 # WiFi actual (192.168.40.x):
 ALLOWED_HOSTS = _split_env("ALLOWED_HOSTS", "localhost 127.0.0.1 testserver web 192.168.40.81")
+
+# Debug: Imprimir ALLOWED_HOSTS para verificar configuración
+import sys
+if not DEBUG:
+    print(f"DEBUG: ALLOWED_HOSTS configurado: {ALLOWED_HOSTS}", file=sys.stderr)
+    print(f"DEBUG: Variable ALLOWED_HOSTS env: {os.getenv('ALLOWED_HOSTS', 'NO CONFIGURADA')}", file=sys.stderr)
 CSRF_TRUSTED_ORIGINS = _split_env(
     "CSRF_TRUSTED_ORIGINS",
     "http://localhost http://127.0.0.1 http://localhost:3000 http://127.0.0.1:3000 http://localhost:8000 http://127.0.0.1:8000 http://192.168.40.81:3000 http://192.168.40.81:8000",

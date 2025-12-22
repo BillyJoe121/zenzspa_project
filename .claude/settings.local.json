@@ -34,7 +34,8 @@
       "Bash(grep:*)",
       "Bash(ipconfig:*)",
       "Bash(Select-String \"IPv4\")",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
