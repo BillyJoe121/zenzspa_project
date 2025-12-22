@@ -15,8 +15,11 @@ def validate_required_env_vars():
     """
     required_vars = {
         "SECRET_KEY": "Clave secreta de Django",
-        "DB_PASSWORD": "Contraseña de base de datos",
     }
+
+    # Validar DB: Si tenemos DATABASE_URL, no exigimos DB_PASSWORD por separado
+    if not os.getenv("DATABASE_URL") and not os.getenv("DB_PASSWORD"):
+        required_vars["DB_PASSWORD"] = "Contraseña de base de datos (o DATABASE_URL)"
 
     # En producción, validar más variables
     if os.getenv("DEBUG", "0") not in ("1", "true", "True"):
@@ -33,12 +36,17 @@ def validate_required_env_vars():
             "WOMPI_DEVELOPER_DESTINATION": "Destino de dispersión para desarrollador",
             "GEMINI_API_KEY": "Gemini API Key para bot",
             "REDIS_URL": "URL de Redis",
-            "CELERY_BROKER_URL": "URL del broker de Celery",
+            # CELERY_BROKER_URL: Opcional si REDIS_URL está presente (usamos Redis como broker por default)
             "EMAIL_HOST_USER": "Usuario de email",
             "EMAIL_HOST_PASSWORD": "Contraseña de email",
         })
+        
+        # Validación lógica condicional para Celery
+        if not os.getenv("CELERY_BROKER_URL") and not os.getenv("REDIS_URL"):
+             required_vars["CELERY_BROKER_URL"] = "URL del broker de Celery (o REDIS_URL)"
 
     missing = []
+    # Verificar solo las que quedaron en el diccionario
     for var, description in required_vars.items():
         if not os.getenv(var):
             missing.append(f"{var} ({description})")
