@@ -263,16 +263,41 @@ WSGI_APPLICATION = "studiozens.wsgi.application"
 # Base de datos
 # --------------------------------------------------------------------------------------
 import dj_database_url
+from urllib.parse import quote_plus
 
 DATABASES = {}
 
 if os.getenv("DATABASE_URL"):
     # Producción / Render (con URL completa)
-    DATABASES["default"] = dj_database_url.config(
-        conn_max_age=600,
-        conn_health_checks=True,
-        ssl_require=not DEBUG,
-    )
+    try:
+        DATABASES["default"] = dj_database_url.config(
+            conn_max_age=600,
+            conn_health_checks=True,
+            ssl_require=not DEBUG,
+        )
+    except Exception as e:
+        # Si DATABASE_URL falla, intentar con variables individuales
+        print(f"Warning: DATABASE_URL parsing failed: {e}")
+        print("Falling back to individual DB environment variables")
+
+        db_password = os.getenv("DB_PASSWORD", "")
+        # URL-encode the password if it contains special characters
+        encoded_password = quote_plus(db_password) if db_password else ""
+
+        DATABASES["default"] = {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("DB_NAME", "studiozens"),
+            "USER": os.getenv("DB_USER", "postgres"),
+            "PASSWORD": db_password,
+            "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+            "PORT": os.getenv("DB_PORT", "5432"),
+            "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "600")),
+            "OPTIONS": {
+                "sslmode": os.getenv("DB_SSLMODE", "require"),
+                "connect_timeout": 10,
+                "client_encoding": "UTF8",
+            },
+        }
 else:
     # Desarrollo local (variables individuales)
     DATABASES["default"] = {
