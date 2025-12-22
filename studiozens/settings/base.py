@@ -264,23 +264,31 @@ WSGI_APPLICATION = "studiozens.wsgi.application"
 # --------------------------------------------------------------------------------------
 import dj_database_url
 
-# ... imports ...
+DATABASES = {}
 
-
-# --------------------------------------------------------------------------------------
-# Base de datos
-# --------------------------------------------------------------------------------------
-DATABASES = {
-    "default": dj_database_url.config(
-        default=f"postgres://{os.getenv('DB_USER', 'postgres')}:{os.getenv('DB_PASSWORD', '')}@{os.getenv('DB_HOST', '127.0.0.1')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'studiozens')}",
+if os.getenv("DATABASE_URL"):
+    # Producción / Render (con URL completa)
+    DATABASES["default"] = dj_database_url.config(
         conn_max_age=600,
         conn_health_checks=True,
         ssl_require=not DEBUG,
     )
-}
-
-if not DEBUG and not os.getenv("DB_PASSWORD"):
-    raise RuntimeError("DB_PASSWORD debe estar configurado en producción.")
+else:
+    # Desarrollo local (variables individuales)
+    DATABASES["default"] = {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME", "studiozens"),
+        "USER": os.getenv("DB_USER", "postgres"),
+        "PASSWORD": os.getenv("DB_PASSWORD", ""),
+        "HOST": os.getenv("DB_HOST", "127.0.0.1"),
+        "PORT": os.getenv("DB_PORT", "5432"),
+        "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
+        "OPTIONS": {
+            "sslmode": os.getenv("DB_SSLMODE", "require" if not DEBUG else "disable"),
+            "connect_timeout": 10,
+            "client_encoding": "UTF8",
+        },
+    }
 
 # --------------------------------------------------------------------------------------
 # Usuario
