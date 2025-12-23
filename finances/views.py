@@ -205,38 +205,61 @@ class PSEFinancialInstitutionsView(APIView):
 
 class InitiateAppointmentPaymentView(generics.GenericAPIView):
     """
-    Inicia el flujo de pago para una cita pendiente.
+    Inicia el flujo de pago para una cita.
     Migrado desde spa.views.packages para centralizar lógica de pagos.
 
     GET /api/finances/payments/appointment/<pk>/initiate/
+    
+    Query params:
+    - payment_type: 'deposit' (default), 'full', o 'balance'
+    
+    Estados soportados:
+    - PENDING_PAYMENT: Puede pagar deposit (40%) o full (100%)
+    - CONFIRMED/RESCHEDULED: Puede pagar balance (saldo pendiente)
     """
     permission_classes = [IsAuthenticated, IsVerified]
 
     def get(self, request, pk):
         appointment = generics.get_object_or_404(Appointment, pk=pk, user=request.user)
 
-        if appointment.status != Appointment.AppointmentStatus.PENDING_PAYMENT:
+        payment_type = request.query_params.get('payment_type', 'deposit')
+        total_price = appointment.price_at_purchase
+
+        # Calcular outstanding_balance
+        from .payments import PaymentService
+        outstanding = PaymentService.calculate_outstanding_amount(appointment)
+
+        # Determinar el monto y tipo de pago según el estado de la cita
+        if appointment.status == Appointment.AppointmentStatus.PENDING_PAYMENT:
+            # Cita nueva: puede pagar anticipo o total
+            if payment_type == 'full':
+                amount = total_price
+                payment_type_enum = Payment.PaymentType.FINAL
+            else:
+                # Pago de anticipo (porcentaje configurable)
+                global_settings = GlobalSettings.load()
+                advance_percentage = Decimal(global_settings.advance_payment_percentage / 100)
+                amount = total_price * advance_percentage
+                payment_type_enum = Payment.PaymentType.ADVANCE
+                
+        elif appointment.status in [
+            Appointment.AppointmentStatus.CONFIRMED,
+            Appointment.AppointmentStatus.RESCHEDULED,
+        ]:
+            # Cita confirmada: solo puede pagar el saldo pendiente
+            if outstanding <= Decimal('0'):
+                return Response(
+                    {"error": "Esta cita no tiene saldo pendiente por pagar."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            amount = outstanding
+            payment_type_enum = Payment.PaymentType.FINAL
+            
+        else:
             return Response(
-                {"error": "Esta cita no tiene un pago de anticipo pendiente."},
+                {"error": f"No se puede iniciar pago para citas con estado '{appointment.get_status_display()}'."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
-        # Obtener el tipo de pago desde query params (deposit o full)
-        payment_type = request.query_params.get('payment_type', 'deposit')
-        
-        # Calcular el monto según el tipo de pago
-        total_price = appointment.price_at_purchase
-        
-        if payment_type == 'full':
-            # Pago total
-            amount = total_price
-            payment_type_enum = Payment.PaymentType.FINAL
-        else:
-            # Pago de anticipo (40% por defecto)
-            global_settings = GlobalSettings.load()
-            advance_percentage = Decimal(global_settings.advance_payment_percentage / 100)
-            amount = total_price * advance_percentage
-            payment_type_enum = Payment.PaymentType.ADVANCE
 
         # Buscar o crear el pago pendiente
         try:
@@ -274,8 +297,12 @@ class InitiateAppointmentPaymentView(generics.GenericAPIView):
             'currency': "COP",
             'amountInCents': amount_in_cents,
             'reference': reference,
-            'signatureIntegrity': signature,  # Frontend debe usar esto para construir signature:integrity
-            'redirectUrl': settings.WOMPI_REDIRECT_URL
+            'signatureIntegrity': signature,
+            'redirectUrl': settings.WOMPI_REDIRECT_URL,
+            # Campos adicionales para el frontend
+            'paymentId': str(payment.id),
+            'paymentType': payment_type_enum,
+            'appointmentStatus': appointment.status,
         }
         return Response(payment_data, status=status.HTTP_200_OK)
 

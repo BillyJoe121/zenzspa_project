@@ -173,11 +173,19 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         new_start_time = serializer.validated_data['new_start_time']
+        skip_counter = serializer.validated_data.get('skip_counter', False)
+        
+        # Solo Admin/Staff pueden usar skip_counter
+        is_privileged = request.user.role in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]
+        if skip_counter and not is_privileged:
+            skip_counter = False  # Ignorar si no es privilegiado
+        
         try:
             updated_appointment = AppointmentService.reschedule_appointment(
                 appointment=appointment,
                 new_start_time=new_start_time,
                 acting_user=request.user,
+                skip_counter=skip_counter,
             )
         except ValidationError as exc:
             message = exc.message or (exc.messages[0] if getattr(exc, 'messages', None) else str(exc))
@@ -185,7 +193,9 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         list_serializer = AppointmentListSerializer(updated_appointment, context={'request': request})
         response = Response(list_serializer.data, status=status.HTTP_200_OK)
-        if appointment.user == request.user:
+        
+        # Solo aplicar penalidades si el cliente reagendó su propia cita Y se incrementó el contador
+        if appointment.user == request.user and not skip_counter:
             history = append_cancellation_strike(
                 user=appointment.user,
                 appointment=updated_appointment,

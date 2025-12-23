@@ -273,6 +273,11 @@ class AvailabilityCheckSerializer(serializers.Serializer):
 
 class AppointmentRescheduleSerializer(serializers.Serializer):
     new_start_time = serializers.DateTimeField()
+    skip_counter = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Si es True, no incrementa el contador de reagendamientos del cliente. Solo para Admin/Staff."
+    )
 
     def validate_new_start_time(self, value):
         if value < timezone.now():

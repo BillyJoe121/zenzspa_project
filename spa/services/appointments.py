@@ -484,9 +484,15 @@ class AppointmentService:
 
     @staticmethod
     @transaction.atomic
-    def reschedule_appointment(appointment, new_start_time, acting_user):
+    def reschedule_appointment(appointment, new_start_time, acting_user, skip_counter=False):
         """
         Reagenda una cita existente aplicando las reglas de negocio.
+        
+        Args:
+            appointment: La cita a reagendar
+            new_start_time: Nueva fecha/hora de inicio
+            acting_user: Usuario que realiza el reagendamiento
+            skip_counter: Si True y acting_user es Admin/Staff, no incrementa el contador
         """
         if not isinstance(new_start_time, datetime):
             raise ValidationError("La fecha y hora nuevas no son válidas.")
@@ -555,7 +561,28 @@ class AppointmentService:
 
         appointment.start_time = new_start_time
         appointment.end_time = new_end_time
-        appointment.reschedule_count = appointment.reschedule_count + 1
+        
+        # Solo incrementar el contador si:
+        # - skip_counter es False, o
+        # - el usuario NO es privilegiado (clientes siempre incrementan)
+        should_increment = not (skip_counter and is_privileged)
+        if should_increment:
+            appointment.reschedule_count = appointment.reschedule_count + 1
+        else:
+            # Log cuando admin/staff no incrementa el contador
+            logger.info(
+                "Staff %s reagendó cita %s sin incrementar contador (skip_counter=True)",
+                acting_user.id,
+                appointment.id,
+            )
+            AuditLog.objects.create(
+                admin_user=acting_user,
+                target_user=appointment.user,
+                target_appointment=appointment,
+                action=AuditLog.Action.APPOINTMENT_RESCHEDULE_FORCE,
+                details="Reagendamiento por Staff sin afectar contador del cliente.",
+            )
+        
         appointment.status = Appointment.AppointmentStatus.RESCHEDULED
         appointment.save(
             update_fields=['start_time', 'end_time',
