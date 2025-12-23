@@ -2,9 +2,11 @@
 ViewSets simples para modelos de servicios, paquetes y disponibilidad.
 """
 from django.db.models import ProtectedError
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, filters
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from django_filters.rest_framework import DjangoFilterBackend
+from django_filters import rest_framework as django_filters
 
 from users.models import CustomUser
 from users.permissions import IsAdminUser, IsStaff
@@ -42,14 +44,36 @@ class ServiceCategoryViewSet(viewsets.ModelViewSet):
             return Response(payload, status=status.HTTP_409_CONFLICT)
 
 
+class ServiceFilter(django_filters.FilterSet):
+    """Filtro explícito para Servicios en el catálogo público."""
+    category = django_filters.UUIDFilter(field_name='category__id')
+    is_active = django_filters.BooleanFilter(field_name='is_active')
+
+    class Meta:
+        model = Service
+        fields = ['category', 'is_active']
+
+
 class ServiceViewSet(viewsets.ModelViewSet):
-    """ViewSet para servicios."""
-    queryset = Service.objects.filter(is_active=True)
+    """
+    ViewSet para servicios del catálogo público.
+
+    Filtros disponibles:
+    - category: UUID de la categoría (ej: ?category=uuid)
+    - is_active: true/false
+    - search: búsqueda por nombre o descripción
+    """
+    queryset = Service.objects.select_related('category').filter(is_active=True)
     serializer_class = ServiceSerializer
     permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = ServiceFilter
+    search_fields = ['name', 'description']
+    ordering_fields = ['name', 'price', 'duration', 'created_at']
 
     def get_queryset(self):
-        base = Service.objects.all()
+        """Filtrar servicios según rol del usuario."""
+        base = Service.objects.select_related('category').all()
         user = getattr(self.request, "user", None)
         if user and getattr(user, "role", None) == CustomUser.Role.ADMIN:
             return base

@@ -33,9 +33,16 @@ class ServiceSummarySerializer(serializers.ModelSerializer):
 
 
 class ServiceCategorySerializer(serializers.ModelSerializer):
+    service_count = serializers.SerializerMethodField()
+
     class Meta:
         model = ServiceCategory
-        fields = ['id', 'name', 'description', 'is_low_supervision']
+        fields = ['id', 'name', 'description', 'is_low_supervision', 'service_count']
+        read_only_fields = ['service_count']
+
+    def get_service_count(self, obj):
+        """Cuenta servicios activos en esta categoría."""
+        return obj.services.filter(is_active=True, deleted_at__isnull=True).count()
 
 
 class ServiceSerializer(serializers.ModelSerializer):
@@ -325,3 +332,152 @@ class AppointmentRescheduleSerializer(serializers.Serializer):
 
         data['new_start_time'] = normalized_start
         return data
+
+
+class WaitlistJoinSerializer(serializers.Serializer):
+    """Serializer para unirse a la lista de espera."""
+    desired_date = serializers.DateField()
+    service_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+    )
+    notes = serializers.CharField(required=False, allow_blank=True, max_length=500)
+
+
+class WaitlistConfirmSerializer(serializers.Serializer):
+    """Serializer para confirmar/rechazar oferta de lista de espera."""
+    accept = serializers.BooleanField()
+
+
+class AdminAppointmentCreateSerializer(serializers.Serializer):
+    """
+    Serializer para que admin/staff cree citas en nombre de un cliente.
+    
+    Usado en: POST /api/appointments/admin-create/
+    """
+    client_id = serializers.UUIDField(
+        help_text="UUID del cliente para quien se crea la cita."
+    )
+    service_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        min_length=1,
+        help_text="IDs de los servicios a agendar."
+    )
+    staff_member_id = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+        help_text="UUID del staff asignado (opcional para servicios de baja supervisión)."
+    )
+    start_time = serializers.DateTimeField(
+        help_text="Fecha y hora de inicio de la cita."
+    )
+    send_whatsapp = serializers.BooleanField(
+        default=True,
+        help_text="Si enviar notificación WhatsApp con link de pago."
+    )
+
+    def validate_client_id(self, value):
+        """Valida que el cliente exista y esté activo."""
+        try:
+            client = CustomUser.objects.get(
+                id=value,
+                role__in=[CustomUser.Role.CLIENT, CustomUser.Role.VIP],
+                is_active=True,
+                is_persona_non_grata=False,
+            )
+        except CustomUser.DoesNotExist:
+            raise serializers.ValidationError(
+                "Cliente no encontrado, inactivo o bloqueado."
+            )
+        return value
+
+    def validate_start_time(self, value):
+        """Valida que la hora de inicio sea futura y en intervalo válido."""
+        if value < timezone.now():
+            raise serializers.ValidationError("La cita no puede programarse en el pasado.")
+        if value.minute % AvailabilityService.SLOT_INTERVAL_MINUTES != 0:
+            raise serializers.ValidationError(
+                f"Las citas deben comenzar en intervalos de {AvailabilityService.SLOT_INTERVAL_MINUTES} minutos."
+            )
+        return value.replace(second=0, microsecond=0)
+
+    def validate(self, data):
+        """Valida disponibilidad y servicios."""
+        # Obtener servicios
+        service_ids = data['service_ids']
+        services = Service.objects.filter(id__in=service_ids, is_active=True)
+        if services.count() != len(service_ids):
+            raise serializers.ValidationError(
+                {"service_ids": "Algunos servicios no existen o están inactivos."}
+            )
+        
+        # Verificar si requiere staff
+        requires_staff = any(not s.category.is_low_supervision for s in services)
+        staff_member_id = data.get('staff_member_id')
+        
+        if requires_staff and not staff_member_id:
+            raise serializers.ValidationError(
+                {"staff_member_id": "Estos servicios requieren un terapeuta asignado."}
+            )
+        
+        # Validar staff si se proporcionó
+        staff_member = None
+        if staff_member_id:
+            try:
+                staff_member = CustomUser.objects.get(
+                    id=staff_member_id,
+                    role__in=[CustomUser.Role.STAFF, CustomUser.Role.ADMIN],
+                    is_active=True,
+                )
+            except CustomUser.DoesNotExist:
+                raise serializers.ValidationError(
+                    {"staff_member_id": "Staff no encontrado o inactivo."}
+                )
+        
+        # Verificar disponibilidad
+        start_time = data['start_time']
+        try:
+            available_slots = AvailabilityService.get_available_slots(
+                start_time.date(),
+                service_ids,
+                staff_member_id=staff_member_id,
+            )
+        except ValueError as exc:
+            raise serializers.ValidationError({"service_ids": str(exc)})
+        
+        slot_is_available = any(
+            slot['start_time'] == start_time and 
+            (not staff_member_id or slot['staff_id'] == staff_member_id)
+            for slot in available_slots
+        )
+        
+        if not slot_is_available:
+            raise serializers.ValidationError(
+                {"start_time": "El horario seleccionado ya no está disponible."}
+            )
+        
+        data['services'] = list(services)
+        data['staff_member'] = staff_member
+        return data
+
+
+class ReceiveAdvanceInPersonSerializer(serializers.Serializer):
+    """
+    Serializer para registrar anticipo recibido en persona.
+    
+    Usado en: POST /api/appointments/{id}/receive-advance-in-person/
+    """
+    amount = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        min_value=Decimal('0.01'),
+        help_text="Monto recibido en persona (puede ser menor al anticipo requerido)."
+    )
+    notes = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=255,
+        help_text="Notas opcionales sobre el pago."
+    )
+

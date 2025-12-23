@@ -877,3 +877,103 @@ class PaymentService:
         if streak:
             user.cancellation_streak = []
             user.save(update_fields=['cancellation_streak', 'updated_at'])
+
+    @staticmethod
+    def generate_checkout_url(payment: Payment) -> str:
+        """
+        Genera una URL de checkout hosted de Wompi para el pago.
+        
+        Esta URL puede ser enviada al cliente por WhatsApp para que complete
+        el pago sin necesidad de estar en la app.
+        
+        Returns:
+            str: URL completa de checkout de Wompi
+        """
+        import urllib.parse
+        
+        amount_in_cents = int(payment.amount * 100)
+        reference = payment.transaction_id or f"PAY-{str(payment.id)[-12:]}"
+        
+        # Actualizar transaction_id si no existe
+        if not payment.transaction_id:
+            payment.transaction_id = reference
+            payment.save(update_fields=['transaction_id', 'updated_at'])
+        
+        signature = build_integrity_signature(
+            reference=reference,
+            amount_in_cents=amount_in_cents,
+            currency="COP"
+        )
+        
+        public_key = settings.WOMPI_PUBLIC_KEY
+        redirect_url = urllib.parse.quote(settings.WOMPI_REDIRECT_URL, safe='')
+        
+        # Construir URL de checkout de Wompi
+        checkout_url = (
+            f"https://checkout.wompi.co/p/"
+            f"?public-key={public_key}"
+            f"&currency=COP"
+            f"&amount-in-cents={amount_in_cents}"
+            f"&reference={reference}"
+            f"&signature:integrity={signature}"
+            f"&redirect-url={redirect_url}"
+        )
+        
+        return checkout_url
+
+    @staticmethod
+    @transaction.atomic
+    def create_cash_advance_payment(appointment: Appointment, amount: Decimal, notes: str = "") -> Payment:
+        """
+        Crea un registro de pago en efectivo recibido en persona para una cita.
+        
+        Este método:
+        - Crea un Payment con status APPROVED y payment_method_type CASH
+        - Cambia el estado de la cita a CONFIRMED (sin importar el monto)
+        - Registra las notas del admin
+        
+        Args:
+            appointment: Cita para la que se recibe el anticipo
+            amount: Monto recibido en persona
+            notes: Notas opcionales del admin
+            
+        Returns:
+            Payment: El registro de pago creado
+            
+        Raises:
+            ValidationError: Si la cita no está en estado PENDING_PAYMENT
+        """
+        if appointment.status != Appointment.AppointmentStatus.PENDING_PAYMENT:
+            raise ValidationError(
+                "Solo se pueden recibir anticipos para citas pendientes de pago."
+            )
+        
+        reference = f"CASH-{str(appointment.id)[-12:]}-{uuid.uuid4().hex[:4]}"
+        
+        payment = Payment.objects.create(
+            user=appointment.user,
+            appointment=appointment,
+            amount=amount,
+            payment_type=Payment.PaymentType.ADVANCE,
+            status=Payment.PaymentStatus.APPROVED,
+            payment_method_type="CASH",
+            transaction_id=reference,
+            payment_method_data={"notes": notes} if notes else {},
+        )
+        
+        # Confirmar la cita inmediatamente
+        appointment.status = Appointment.AppointmentStatus.CONFIRMED
+        appointment.save(update_fields=['status', 'updated_at'])
+        
+        # Registrar comisión del desarrollador
+        DeveloperCommissionService.handle_successful_payment(payment)
+        
+        logger.info(
+            "Anticipo en efectivo registrado: cita=%s, monto=%s, payment=%s",
+            appointment.id,
+            amount,
+            payment.id,
+        )
+        
+        return payment
+

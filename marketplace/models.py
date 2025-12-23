@@ -2,8 +2,23 @@ from django.db import models
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from core.models import BaseModel
-from spa.models import Appointment, Voucher, ServiceCategory
+from core.models import BaseModel, SoftDeleteModel
+from spa.models import Appointment, Voucher
+
+
+class ProductCategory(SoftDeleteModel):
+    """Categoría específica para productos del marketplace."""
+    name = models.CharField(max_length=100, unique=True, verbose_name="Nombre")
+    description = models.TextField(blank=True, verbose_name="Descripción")
+    
+    class Meta:
+        verbose_name = "Categoría de Producto"
+        verbose_name_plural = "Categorías de Productos"
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
 
 class Product(BaseModel):
     name = models.CharField(max_length=255, verbose_name="Nombre del Producto")
@@ -14,9 +29,10 @@ class Product(BaseModel):
         help_text="Indica si el producto está visible y disponible para la compra."
     )
     category = models.ForeignKey(
-        ServiceCategory,
+        ProductCategory,
         on_delete=models.SET_NULL,
         null=True, blank=True,
+        related_name='products',
         verbose_name="Categoría"
     )
     preparation_days = models.PositiveSmallIntegerField(

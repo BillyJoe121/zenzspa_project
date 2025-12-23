@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import (
+    ProductCategory,
     Product,
     ProductVariant,
     ProductImage,
@@ -24,6 +25,13 @@ class ProductImageInline(admin.TabularInline):
     model = ProductImage
     extra = 1
     fields = ('image', 'is_primary', 'alt_text')
+
+
+@admin.register(ProductCategory)
+class ProductCategoryAdmin(admin.ModelAdmin):
+    list_display = ('name', 'description', 'created_at')
+    search_fields = ('name', 'description')
+    ordering = ('name',)
 
 
 @admin.register(Product)

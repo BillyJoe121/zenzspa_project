@@ -7,10 +7,21 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db import models
+from django_filters import rest_framework as django_filters
 
 from users.permissions import IsAdminUser
 from spa.models import Service, ServiceCategory, AvailabilityExclusion, Appointment, StaffAvailability
 from spa.serializers import ServiceSerializer, ServiceCategorySerializer
+
+
+class ServiceFilter(django_filters.FilterSet):
+    """Filtro explícito para Servicios."""
+    category = django_filters.UUIDFilter(field_name='category__id')
+    is_active = django_filters.BooleanFilter(field_name='is_active')
+
+    class Meta:
+        model = Service
+        fields = ['category', 'is_active']
 
 
 class ServiceCategoryViewSet(viewsets.ModelViewSet):
@@ -92,7 +103,7 @@ class ServiceViewSet(viewsets.ModelViewSet):
     serializer_class = ServiceSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['category', 'is_active']
+    filterset_class = ServiceFilter
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'price', 'duration', 'created_at']
     

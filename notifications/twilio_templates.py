@@ -157,6 +157,14 @@ TWILIO_TEMPLATE_MAP = {
         "variables": ["user_identifier", "block_reason", "timestamp", "admin_url"],
         "description": "Usuario auto-bloqueado",
     },
+
+    # ===== CITAS CREADAS POR ADMIN =====
+    "ADMIN_APPOINTMENT_PAYMENT_LINK": {
+        # TODO: Reemplazar con SID real cuando Meta apruebe el template
+        "content_sid": "HX00000000000000000000000000000027",
+        "variables": ["user_name", "services", "amount", "payment_url", "expiration_time"],
+        "description": "Link de pago para cita creada por admin",
+    },
 }
 
 

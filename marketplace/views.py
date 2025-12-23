@@ -3,7 +3,7 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
-from rest_framework import mixins, permissions, status, viewsets
+from rest_framework import mixins, permissions, status, viewsets, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from datetime import timedelta
@@ -28,11 +28,13 @@ from .models import (
     InventoryMovement,
     Order,
     Product,
+    ProductCategory,
     ProductImage,
     ProductReview,
     ProductVariant,
 )
 from .serializers import (
+    ProductCategorySerializer,
     ProductListSerializer,
     ProductDetailSerializer,
     ProductVariantSerializer,
@@ -53,6 +55,51 @@ from .serializers import (
     AdminOrderSerializer,
 )
 from .services import OrderCreationService, ReturnService
+
+
+class ProductCategoryViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gestión de categorías de productos del marketplace.
+
+    - LIST/RETRIEVE: Cualquier usuario autenticado
+    - CREATE/UPDATE/DELETE: Solo ADMIN
+    """
+    queryset = ProductCategory.objects.all().order_by('name')
+    serializer_class = ProductCategorySerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'description']
+    ordering_fields = ['name', 'created_at']
+    
+    def get_permissions(self):
+        """Solo ADMIN puede crear, actualizar o eliminar categorías."""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [DomainIsAdminUser()]
+        return super().get_permissions()
+    
+    def destroy(self, request, *args, **kwargs):
+        """
+        Soft delete de la categoría.
+        Verifica que no tenga productos activos asociados.
+        """
+        instance = self.get_object()
+        
+        active_products = instance.products.filter(is_active=True).count()
+        if active_products > 0:
+            return Response(
+                {
+                    'error': f'No se puede eliminar la categoría porque tiene {active_products} producto(s) activo(s) asociado(s).'
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Soft delete
+        instance.deleted_at = timezone.now()
+        instance.save()
+        
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     """

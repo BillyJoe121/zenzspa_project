@@ -568,3 +568,200 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         response = HttpResponse(ics_payload, content_type='text/calendar')
         response['Content-Disposition'] = f'attachment; filename=appointment-{appointment.id}.ics'
         return response
+
+    @action(detail=False, methods=['post'], permission_classes=[IsStaffOrAdmin], url_path='admin-create')
+    @idempotent_view(timeout=60)
+    @transaction.atomic
+    def admin_create_for_client(self, request):
+        """
+        Admin/Staff crea una cita en nombre de un cliente.
+        
+        POST /api/appointments/admin-create/
+        
+        Request body:
+        {
+            "client_id": "uuid",
+            "service_ids": ["uuid", ...],
+            "staff_member_id": "uuid" (optional),
+            "start_time": "ISO datetime",
+            "send_whatsapp": true/false (default: true)
+        }
+        
+        Response:
+        {
+            "appointment": {...},
+            "payment": {...}, 
+            "payment_link": "https://checkout.wompi.co/...",
+            "whatsapp_sent": true/false
+        }
+        """
+        from ...serializers import AdminAppointmentCreateSerializer
+        
+        serializer = AdminAppointmentCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        validated_data = serializer.validated_data
+        
+        # Obtener cliente
+        client = CustomUser.objects.get(id=validated_data['client_id'])
+        
+        try:
+            # Crear la cita usando el servicio existente
+            appointment_service = AppointmentService(
+                user=client,
+                services=validated_data['services'],
+                staff_member=validated_data.get('staff_member'),
+                start_time=validated_data['start_time']
+            )
+            appointment = appointment_service.create_appointment_with_lock()
+        except BusinessLogicError as exc:
+            raise exc
+        except ValueError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Crear el pago de anticipo
+        payment_service = PaymentService(client)
+        payment = payment_service.create_advance_payment_for_appointment(appointment)
+        
+        # Generar link de pago si el anticipo no fue cubierto por crédito
+        payment_link = None
+        if payment.status != payment.PaymentStatus.PAID_WITH_CREDIT:
+            payment_link = PaymentService.generate_checkout_url(payment)
+        
+        # Enviar notificación WhatsApp con link de pago
+        whatsapp_sent = False
+        send_whatsapp = validated_data.get('send_whatsapp', True)
+        
+        if send_whatsapp and payment_link and client.phone_number:
+            try:
+                from notifications.services import NotificationService
+                
+                # Calcular tiempo de expiración
+                settings_obj = GlobalSettings.load()
+                expiration_minutes = settings_obj.advance_expiration_minutes
+                expiration_time = timezone.now() + timedelta(minutes=expiration_minutes)
+                
+                # Obtener nombres de servicios
+                service_names = ", ".join([s.name for s in validated_data['services']])
+                
+                NotificationService.send_notification(
+                    user=client,
+                    event_code="ADMIN_APPOINTMENT_PAYMENT_LINK",
+                    context={
+                        "user_name": client.get_full_name() or client.first_name or "Cliente",
+                        "services": service_names,
+                        "amount": f"${payment.amount:,.0f}",
+                        "payment_url": payment_link,
+                        "expiration_time": expiration_time.strftime("%I:%M %p"),
+                    },
+                    priority="high"
+                )
+                whatsapp_sent = True
+            except Exception as e:
+                logger.exception(
+                    "Error enviando WhatsApp con link de pago para cita %s: %s",
+                    appointment.id,
+                    str(e)
+                )
+        
+        # Registrar en AuditLog
+        AuditLog.objects.create(
+            admin_user=request.user,
+            target_user=client,
+            target_appointment=appointment,
+            action=AuditLog.Action.APPOINTMENT_CREATED_BY_ADMIN,
+            details=f"Admin '{request.user.first_name}' creó cita para cliente {client.phone_number}. WhatsApp enviado: {whatsapp_sent}."
+        )
+        
+        # Preparar respuesta
+        appointment_serializer = AppointmentListSerializer(appointment, context={'request': request})
+        
+        return Response({
+            'appointment': appointment_serializer.data,
+            'payment': {
+                'id': str(payment.id),
+                'amount': str(payment.amount),
+                'status': payment.status,
+                'payment_type': payment.payment_type,
+            },
+            'payment_link': payment_link,
+            'whatsapp_sent': whatsapp_sent,
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsStaffOrAdmin], url_path='receive-advance-in-person')
+    @transaction.atomic
+    def receive_advance_in_person(self, request, pk=None):
+        """
+        Registra un anticipo recibido en persona.
+        
+        POST /api/appointments/{id}/receive-advance-in-person/
+        
+        Request body:
+        {
+            "amount": 50000,
+            "notes": "Cliente fiel, pagará el resto después" (optional)
+        }
+        
+        La cita se confirma inmediatamente sin importar si el monto
+        es menor al anticipo requerido (para clientes fieles).
+        
+        Response:
+        {
+            "appointment": {...},
+            "payment": {...},
+            "message": "..."
+        }
+        """
+        from ...serializers import ReceiveAdvanceInPersonSerializer
+        
+        appointment = self.get_object()
+        
+        # Validar que la cita esté pendiente de pago
+        if appointment.status != Appointment.AppointmentStatus.PENDING_PAYMENT:
+            return Response(
+                {'error': 'Solo se pueden recibir anticipos para citas pendientes de pago.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        serializer = ReceiveAdvanceInPersonSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        amount = serializer.validated_data['amount']
+        notes = serializer.validated_data.get('notes', '')
+        
+        # Usar el método del servicio de pagos
+        try:
+            payment = PaymentService.create_cash_advance_payment(
+                appointment=appointment,
+                amount=amount,
+                notes=notes
+            )
+        except ValidationError as exc:
+            message = exc.message if hasattr(exc, 'message') else str(exc)
+            return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Actualizar la instancia de appointment después de que el servicio la modificó
+        appointment.refresh_from_db()
+        
+        # Registrar en AuditLog
+        AuditLog.objects.create(
+            admin_user=request.user,
+            target_user=appointment.user,
+            target_appointment=appointment,
+            action=AuditLog.Action.PAYMENT_RECEIVED_IN_PERSON,
+            details=f"Admin '{request.user.first_name}' registró anticipo en efectivo de ${amount:,.0f}. Notas: {notes or 'N/A'}"
+        )
+        
+        # Preparar respuesta
+        appointment_serializer = AppointmentListSerializer(appointment, context={'request': request})
+        
+        return Response({
+            'appointment': appointment_serializer.data,
+            'payment': {
+                'id': str(payment.id),
+                'amount': str(payment.amount),
+                'status': payment.status,
+                'payment_method_type': payment.payment_method_type,
+            },
+            'message': f'Anticipo de ${amount:,.0f} registrado. Cita confirmada.',
+        }, status=status.HTTP_200_OK)
+

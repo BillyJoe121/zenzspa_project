@@ -25,6 +25,8 @@ class AuditLog(BaseModel):
         MARKETPLACE_RETURN = "MARKETPLACE_RETURN", "Devolución marketplace procesada"
         FINANCIAL_ADJUSTMENT_CREATED = "FINANCIAL_ADJUSTMENT_CREATED", "Ajuste financiero registrado"
         USER_DELETED_PERMANENTLY = "USER_DELETED_PERMANENTLY", "Usuario eliminado permanentemente"
+        APPOINTMENT_CREATED_BY_ADMIN = "APPOINTMENT_CREATED_BY_ADMIN", "Cita creada por admin para cliente"
+        PAYMENT_RECEIVED_IN_PERSON = "PAYMENT_RECEIVED_IN_PERSON", "Pago recibido en persona"
 
     action = models.CharField(
         max_length=64,

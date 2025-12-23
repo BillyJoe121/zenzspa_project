@@ -6,8 +6,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from marketplace.models import CartItem, Product, ProductVariant, ProductImage
-from spa.models import ServiceCategory
+from marketplace.models import CartItem, Product, ProductVariant, ProductImage, ProductCategory
 from users.models import CustomUser
 
 
@@ -41,7 +40,7 @@ def _auth(client: APIClient, user: CustomUser):
 
 
 def _make_product(name="Aceite Relax", price=Decimal("50000"), stock=5, vip_price=None):
-    cat = ServiceCategory.objects.create(name=f"Cat {name}", description="desc")
+    cat = ProductCategory.objects.create(name=f"Cat {name}", description="desc")
     product = Product.objects.create(
         name=name,
         description="Aceite esencial",
@@ -63,7 +62,7 @@ def _make_product(name="Aceite Relax", price=Decimal("50000"), stock=5, vip_pric
 
 def test_product_catalog_shows_active_only(api_client, client_user):
     active, _ = _make_product(name="Activo")
-    inactive_cat = ServiceCategory.objects.create(name="Cat Inactivo", description="x")
+    inactive_cat = ProductCategory.objects.create(name="Cat Inactivo", description="x")
     inactive = Product.objects.create(name="Inactivo", description="desc", category=inactive_cat, is_active=False)
     ProductVariant.objects.create(product=inactive, name="Var", sku="SKU-INAC", price=Decimal("10000"), stock=2)
 
@@ -163,3 +162,97 @@ def test_remove_cart_item(api_client, client_user):
     delete_resp = api_client.delete(url)
     assert delete_resp.status_code == status.HTTP_204_NO_CONTENT
     assert not CartItem.objects.filter(id=cart_item_id).exists()
+
+
+def test_filter_products_by_category(api_client, client_user):
+    """Test filtrado de productos por categoría."""
+    # Crear categorías
+    cat_aceites = ProductCategory.objects.create(name="Aceites", description="Aceites esenciales")
+    cat_cremas = ProductCategory.objects.create(name="Cremas", description="Cremas corporales")
+
+    # Crear productos en diferentes categorías
+    product_aceite = Product.objects.create(
+        name="Aceite de Lavanda",
+        description="Aceite esencial de lavanda",
+        category=cat_aceites,
+        is_active=True,
+    )
+    ProductVariant.objects.create(
+        product=product_aceite,
+        name="50ml",
+        sku="SKU-LAV",
+        price=Decimal("45000"),
+        stock=10,
+    )
+    ProductImage.objects.create(product=product_aceite, image="product_images/lavanda.jpg", is_primary=True)
+
+    product_crema = Product.objects.create(
+        name="Crema Hidratante",
+        description="Crema corporal hidratante",
+        category=cat_cremas,
+        is_active=True,
+    )
+    ProductVariant.objects.create(
+        product=product_crema,
+        name="200ml",
+        sku="SKU-CRE",
+        price=Decimal("35000"),
+        stock=5,
+    )
+    ProductImage.objects.create(product=product_crema, image="product_images/crema.jpg", is_primary=True)
+
+    _auth(api_client, client_user)
+
+    # Filtrar por categoría de aceites
+    url = reverse("product-list")
+    resp = api_client.get(url, {"category": str(cat_aceites.id)})
+
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.data["results"] if isinstance(resp.data, dict) and "results" in resp.data else resp.data
+    names = [p["name"] for p in data]
+    assert product_aceite.name in names
+    assert product_crema.name not in names
+
+    # Filtrar por categoría de cremas
+    resp = api_client.get(url, {"category": str(cat_cremas.id)})
+    data = resp.data["results"] if isinstance(resp.data, dict) and "results" in resp.data else resp.data
+    names = [p["name"] for p in data]
+    assert product_crema.name in names
+    assert product_aceite.name not in names
+
+
+def test_list_product_categories(api_client, client_user):
+    """Test listado de categorías de productos."""
+    # Crear categorías
+    cat1 = ProductCategory.objects.create(name="Aceites Esenciales", description="Aromaterapia")
+    cat2 = ProductCategory.objects.create(name="Velas Aromáticas", description="Ambiente")
+
+    # Crear productos para contar
+    product1 = Product.objects.create(
+        name="Aceite de Romero",
+        description="desc",
+        category=cat1,
+        is_active=True,
+    )
+    ProductVariant.objects.create(product=product1, name="var", sku="SKU1", price=Decimal("20000"), stock=5)
+    ProductImage.objects.create(product=product1, image="product_images/dummy.jpg", is_primary=True)
+
+    _auth(api_client, client_user)
+
+    url = reverse("product-category-list")
+    resp = api_client.get(url)
+
+    assert resp.status_code == status.HTTP_200_OK
+    data = resp.data["results"] if isinstance(resp.data, dict) and "results" in resp.data else resp.data
+
+    # Verificar que las categorías estén en la respuesta
+    names = [c["name"] for c in data]
+    assert cat1.name in names
+    assert cat2.name in names
+
+    # Verificar que tenga el contador de productos
+    cat1_data = next(c for c in data if c["name"] == cat1.name)
+    assert cat1_data["product_count"] == 1
+
+    cat2_data = next(c for c in data if c["name"] == cat2.name)
+    assert cat2_data["product_count"] == 0

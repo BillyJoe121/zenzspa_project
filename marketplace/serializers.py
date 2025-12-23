@@ -5,6 +5,7 @@ from rest_framework import serializers
 from users.models import CustomUser
 from .models import (
     Product,
+    ProductCategory,
     ProductImage,
     ProductVariant,
     Cart,
@@ -14,6 +15,22 @@ from .models import (
     ProductReview,
     InventoryMovement,
 )
+
+
+class ProductCategorySerializer(serializers.ModelSerializer):
+    """Serializador para categorías de productos del marketplace."""
+    product_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProductCategory
+        fields = ['id', 'name', 'description', 'product_count']
+        read_only_fields = ['id', 'product_count']
+
+    def get_product_count(self, obj):
+        """Cuenta productos activos en esta categoría."""
+        return obj.products.filter(is_active=True).count()
+
+
 
 
 def _show_sensitive_data(context):
@@ -58,7 +75,7 @@ class ProductListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Product
-        fields = ['id', 'name', 'price', 'vip_price', 'stock', 'main_image']
+        fields = ['id', 'name', 'price', 'vip_price', 'stock', 'main_image', 'category']
 
     def get_main_image(self, obj):
         # Busca la imagen marcada como principal o la primera que encuentre
@@ -102,7 +119,6 @@ class ProductDetailSerializer(ProductListSerializer):
     class Meta(ProductListSerializer.Meta):
         fields = ProductListSerializer.Meta.fields + [
             'description',
-            'category',
             'preparation_days',
             'images',
             'variants',

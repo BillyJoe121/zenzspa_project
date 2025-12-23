@@ -409,3 +409,36 @@ class AdminUserViewSet(viewsets.ModelViewSet):
             {"detail": f"Usuario '{user_data['first_name']} {user_data['last_name']}' eliminado permanentemente."},
             status=status.HTTP_200_OK
         )
+
+    @action(detail=False, methods=['get'], url_path='search-by-phone')
+    def search_by_phone(self, request):
+        """
+        Busca clientes por número de teléfono para creación de citas por admin.
+        
+        GET /api/v1/auth/admin/users/search-by-phone/?phone=+573...
+        
+        Returns:
+            Lista de hasta 10 usuarios que coinciden con el teléfono.
+            Excluye usuarios marcados como Persona Non Grata.
+        """
+        from django.db.models import Q
+        
+        phone = request.query_params.get('phone', '').strip()
+        if not phone or len(phone) < 4:
+            return Response(
+                {'error': 'Se requiere un número de teléfono con al menos 4 dígitos.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Buscar clientes y VIPs que coincidan con el teléfono
+        users = CustomUser.objects.filter(
+            Q(phone_number__icontains=phone),
+            role__in=[CustomUser.Role.CLIENT, CustomUser.Role.VIP],
+            is_persona_non_grata=False,
+            is_active=True,
+        ).select_related('profile')[:10]
+        
+        # Usar SimpleUserSerializer para la respuesta
+        from ..serializers import SimpleUserSerializer
+        return Response(SimpleUserSerializer(users, many=True).data)
+
