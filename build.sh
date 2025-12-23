@@ -15,8 +15,9 @@ if [ "$DJANGO_RUN_SEED" = "1" ]; then
     echo "🌱 Running seed_demo_data (services, products, users)..."
     python manage.py seed_demo_data
 
-    echo "🌱 Running seed_staff_availability..."
-    python manage.py seed_staff_availability
+    # Skip seed_staff_availability - causes overlapping schedule errors
+    # echo "🌱 Running seed_staff_availability..."
+    # python manage.py seed_staff_availability
 
     echo "🌱 Running seed_dosha_questions..."
     python manage.py seed_dosha_questions
