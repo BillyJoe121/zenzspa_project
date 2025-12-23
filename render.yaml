@@ -30,8 +30,9 @@ services:
         value: 2
       - key: DEBUG
         value: "False"
-      - key: ALLOWED_HOSTS
-        value: "*"
+      - key: TRUST_PROXY
+        value: "1"
+      # ALLOWED_HOSTS: Configure in Render Dashboard (e.g., "studiozens-web.onrender.com studiozens.com")
       
       # Require user input for these critical keys
       - key: GEMINI_API_KEY

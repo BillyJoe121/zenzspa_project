@@ -277,10 +277,16 @@ if os.getenv("DATABASE_URL"):
     # Producción / Render (con URL completa)
     try:
         DATABASES["default"] = dj_database_url.config(
-            conn_max_age=600,
+            conn_max_age=60,  # Reducido para mejor compatibilidad con Supabase pooler
             conn_health_checks=True,
             ssl_require=not DEBUG,
         )
+        # Añadir opciones de timeout para evitar conexiones colgadas
+        DATABASES["default"]["OPTIONS"] = DATABASES["default"].get("OPTIONS", {})
+        DATABASES["default"]["OPTIONS"].update({
+            "connect_timeout": 10,
+            "options": "-c statement_timeout=30000",  # 30 segundos max por query
+        })
     except Exception as e:
         # Si DATABASE_URL falla, intentar con variables individuales
         print(f"Warning: DATABASE_URL parsing failed: {e}")
@@ -416,13 +422,17 @@ CACHES = {
         "LOCATION": REDIS_URL,
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
-            # STUDIOZENS-REDIS-WATCHDOG: No ignorar excepciones de Redis
-            "IGNORE_EXCEPTIONS": False,
+            # CRÍTICO: Ignorar excepciones para evitar que requests se cuelguen
+            # si Redis está lento o temporalmente no disponible
+            "IGNORE_EXCEPTIONS": True,
+            "SOCKET_CONNECT_TIMEOUT": 5,  # segundos
+            "SOCKET_TIMEOUT": 5,
         },
         "TIMEOUT": int(os.getenv("CACHE_TIMEOUT", "300")),
     }
 }
-SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+# Usar cached_db para mayor resiliencia: guarda en DB, cachea en Redis
+SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
 SESSION_CACHE_ALIAS = "default"
 
 # --------------------------------------------------------------------------------------
