@@ -46,6 +46,7 @@ class PaymentService:
                 Payment.PaymentStatus.TIMEOUT,
                 Payment.PaymentStatus.ERROR,
                 Payment.PaymentStatus.PAID_WITH_CREDIT,
+                Payment.PaymentStatus.CANCELLED,
             }
             # Idempotencia: si ya está en estado terminal, no reprocesar.
             if previous_status in terminal_statuses:
@@ -65,7 +66,16 @@ class PaymentService:
                     from spa.services.vouchers import PackagePurchaseService
                     PackagePurchaseService.fulfill_purchase(payment)
                 elif payment.payment_type == Payment.PaymentType.ADVANCE and payment.appointment:
-                    payment.appointment.status = Appointment.AppointmentStatus.CONFIRMED
+                    # Check if this payment covers the full amount
+                    # Use PaymentService to calculate outstanding (includes APPROVED + PAID_WITH_CREDIT)
+                    outstanding = PaymentService.calculate_outstanding_amount(payment.appointment)
+
+                    if outstanding <= Decimal('0'):
+                        # Fully paid with advance payment
+                        payment.appointment.status = Appointment.AppointmentStatus.FULLY_PAID
+                    else:
+                        # Only advance paid
+                        payment.appointment.status = Appointment.AppointmentStatus.CONFIRMED
                     payment.appointment.save(
                         update_fields=['status', 'updated_at'])
                 elif payment.payment_type == Payment.PaymentType.VIP_SUBSCRIPTION:
@@ -74,7 +84,23 @@ class PaymentService:
                     payment.payment_type == Payment.PaymentType.FINAL
                     and payment.appointment
                 ):
-                    payment.appointment.status = Appointment.AppointmentStatus.PAID
+                    # Check if final payment covers everything
+                    # Use PaymentService to calculate outstanding (includes APPROVED + PAID_WITH_CREDIT)
+                    outstanding = PaymentService.calculate_outstanding_amount(payment.appointment)
+
+                    if outstanding <= Decimal('0'):
+                        # Fully paid
+                        if payment.appointment.status == Appointment.AppointmentStatus.COMPLETED:
+                            # If service already completed, keep as COMPLETED
+                            pass
+                        else:
+                            # Fully paid but service pending
+                            payment.appointment.status = Appointment.AppointmentStatus.FULLY_PAID
+                    else:
+                        # Partial final payment - keep as CONFIRMED
+                        # (outstanding_balance will show remaining debt)
+                        if payment.appointment.status != Appointment.AppointmentStatus.COMPLETED:
+                            payment.appointment.status = Appointment.AppointmentStatus.CONFIRMED
                     payment.appointment.save(
                         update_fields=['status', 'updated_at'])
                 elif (
@@ -445,10 +471,11 @@ class PaymentService:
     def create_tip_payment(appointment: Appointment, user, amount):
         if appointment.status not in [
             Appointment.AppointmentStatus.COMPLETED,
-            Appointment.AppointmentStatus.PAID,
+            Appointment.AppointmentStatus.CONFIRMED,
+            Appointment.AppointmentStatus.FULLY_PAID,
         ]:
             raise ValidationError(
-                "Solo se pueden registrar propinas para citas completadas.")
+                "Solo se pueden registrar propinas para citas completadas o confirmadas.")
         return Payment.objects.create(
             user=user,
             appointment=appointment,
@@ -493,8 +520,16 @@ class PaymentService:
                 status=Payment.PaymentStatus.APPROVED,
             )
             DeveloperCommissionService.handle_successful_payment(payment)
-        appointment.status = Appointment.AppointmentStatus.PAID
-        appointment.save(update_fields=['status', 'updated_at'])
+
+            # Recalculate outstanding to determine new status
+            # Use PaymentService to ensure consistency (includes APPROVED + PAID_WITH_CREDIT)
+            outstanding_after = PaymentService.calculate_outstanding_amount(appointment)
+
+            if outstanding_after <= Decimal('0'):
+                appointment.status = Appointment.AppointmentStatus.FULLY_PAID
+            else:
+                appointment.status = Appointment.AppointmentStatus.CONFIRMED
+            appointment.save(update_fields=['status', 'updated_at'])
         return payment, outstanding
 
     @classmethod
@@ -974,6 +1009,42 @@ class PaymentService:
             amount,
             payment.id,
         )
-        
+
         return payment
+
+    @staticmethod
+    def cancel_pending_payments_for_appointment(appointment):
+        """
+        Cancela todos los pagos pendientes asociados a una cita cuando esta es cancelada.
+
+        Esto previene que los usuarios queden bloqueados por deuda de citas canceladas.
+        Solo cancela pagos en estado PENDING (no afecta pagos ya aprobados o procesados).
+
+        Args:
+            appointment: La cita que fue cancelada
+
+        Returns:
+            int: Número de pagos cancelados
+        """
+        from finances.models import Payment
+
+        # Solo cancelar pagos PENDING
+        pending_payments = Payment.objects.filter(
+            appointment=appointment,
+            status=Payment.PaymentStatus.PENDING
+        )
+
+        count = pending_payments.count()
+        if count > 0:
+            pending_payments.update(
+                status=Payment.PaymentStatus.CANCELLED,
+                updated_at=timezone.now()
+            )
+            logger.info(
+                "Cancelados %d pagos pendientes para cita %s",
+                count,
+                appointment.id
+            )
+
+        return count
 

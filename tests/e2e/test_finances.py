@@ -116,7 +116,7 @@ def test_wompi_webhook_approved_sets_payment_and_ledger(api_client, client_user,
     payment.refresh_from_db()
     assert payment.status == Payment.PaymentStatus.APPROVED
     appt.refresh_from_db()
-    assert appt.status in [Appointment.AppointmentStatus.CONFIRMED, Appointment.AppointmentStatus.PAID]
+    assert appt.status in [Appointment.AppointmentStatus.CONFIRMED, Appointment.AppointmentStatus.FULLY_PAID]
     assert WebhookEvent.objects.filter(event_type="transaction.updated", status=WebhookEvent.Status.PROCESSED).exists()
 
     # Se crea ledger por cobro

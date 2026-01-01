@@ -85,7 +85,10 @@ class GlobalSettingsView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        
+
+        # IMPORTANTE: Recargar desde caché actualizado para devolver valores frescos
+        settings_obj = GlobalSettings.load()
+
         # Retornamos la representación completa actualizada
         response_serializer = GlobalSettingsSerializer(settings_obj, context={'request': request})
         return Response(response_serializer.data, status=status.HTTP_200_OK)

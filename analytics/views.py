@@ -510,15 +510,20 @@ class DashboardViewSet(viewsets.ViewSet):
                 Payment.PaymentStatus.PAID_WITH_CREDIT,
             ]
         )
+        # Get appointments with outstanding balance (CONFIRMED, FULLY_PAID or COMPLETED with debt)
         pending_appointments = (
             Appointment.objects.select_related("user")
-            .filter(status=Appointment.AppointmentStatus.PAID)
+            .filter(status__in=[Appointment.AppointmentStatus.CONFIRMED, Appointment.AppointmentStatus.FULLY_PAID, Appointment.AppointmentStatus.COMPLETED])
             .annotate(
                 paid_amount=Coalesce(
                     Sum("payments__amount", filter=payment_filter),
                     Decimal("0"),
                 )
             )
+            .annotate(
+                outstanding=F("price_at_purchase") - F("paid_amount")
+            )
+            .filter(outstanding__gt=0)
             .order_by("-start_time")
         )
         payments_payload = [

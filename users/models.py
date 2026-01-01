@@ -220,11 +220,17 @@ class CustomUser(BaseModel, AbstractBaseUser, PermissionsMixin):
         Determina si el usuario tiene un pago final pendiente de completar.
         """
         from spa.models import Appointment, Payment  # Import local para evitar ciclos
+        from decimal import Decimal
 
-        has_pending_appointment = Appointment.objects.filter(
+        # Check for appointments with outstanding balance
+        has_pending_appointment = False
+        for appt in Appointment.objects.filter(
             user=self,
-            status=Appointment.AppointmentStatus.PAID,
-        ).exists()
+            status__in=[Appointment.AppointmentStatus.CONFIRMED, Appointment.AppointmentStatus.FULLY_PAID, Appointment.AppointmentStatus.COMPLETED]
+        ):
+            if appt.outstanding_balance > Decimal('0'):
+                has_pending_appointment = True
+                break
 
         has_pending_payment = Payment.objects.filter(
             user=self,

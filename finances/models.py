@@ -27,6 +27,7 @@ class Payment(BaseModel):
         ERROR = 'ERROR', 'Error'
         TIMEOUT = 'TIMEOUT', 'Sin confirmación'
         PAID_WITH_CREDIT = 'PAID_WITH_CREDIT', 'Pagado con Saldo a Favor'
+        CANCELLED = 'CANCELLED', 'Cancelado'
 
     class PaymentType(models.TextChoices):
         ADVANCE = 'ADVANCE', 'Anticipo de Cita'
@@ -416,6 +417,19 @@ class CommissionLedger(BaseModel):
         on_delete=models.PROTECT,
         related_name="commission_entries",
         help_text="Pago original que generó la comisión.",
+    )
+    # Campos desnormalizados del pago para filtrado y reporting
+    payment_type = models.CharField(
+        max_length=30,
+        blank=True,
+        default="",
+        help_text="Tipo de pago que generó la comisión (copiado de source_payment).",
+    )
+    payment_method = models.CharField(
+        max_length=30,
+        blank=True,
+        default="",
+        help_text="Método de pago usado (CARD, PSE, NEQUI, CASH, etc.).",
     )
     wompi_transfer_id = models.CharField(
         max_length=255,

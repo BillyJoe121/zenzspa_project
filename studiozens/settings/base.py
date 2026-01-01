@@ -216,6 +216,7 @@ INSTALLED_APPS = [
     "finances",
     "legal",
     "blog",
+    "promociones",
 ]
 
 MIDDLEWARE = [
@@ -525,9 +526,40 @@ WOMPI_BASE_URL = os.getenv("WOMPI_BASE_URL", "https://sandbox.wompi.co/v1")
 WOMPI_ACCEPTANCE_TOKEN = os.getenv("WOMPI_ACCEPTANCE_TOKEN", "")
 WOMPI_REDIRECT_URL = os.getenv(
     "WOMPI_REDIRECT_URL", "http://localhost:3000/payment-result")
-WOMPI_PAYOUT_PRIVATE_KEY = os.getenv("WOMPI_PAYOUT_PRIVATE_KEY", "")
-WOMPI_PAYOUT_BASE_URL = os.getenv("WOMPI_PAYOUT_BASE_URL", "")
+# Wompi Payouts API (Pagos a Terceros)
+WOMPI_PAYOUT_MODE = os.getenv("WOMPI_PAYOUT_MODE", "sandbox")  # 'sandbox' o 'production'
+
+# Credenciales según el modo
+if WOMPI_PAYOUT_MODE == "sandbox":
+    WOMPI_PAYOUT_PRIVATE_KEY = os.getenv("WOMPI_PAYOUT_SANDBOX_API_KEY", "")
+    WOMPI_PAYOUT_USER_ID = os.getenv("WOMPI_PAYOUT_SANDBOX_USER_ID", "")
+    WOMPI_PAYOUT_BASE_URL = os.getenv(
+        "WOMPI_PAYOUT_SANDBOX_BASE_URL",
+        "https://sandbox.api.payouts.wompi.co/v1"
+    )
+    WOMPI_PAYOUT_EVENTS_SECRET = os.getenv("WOMPI_PAYOUT_SANDBOX_EVENTS_SECRET", "")
+else:  # production
+    WOMPI_PAYOUT_PRIVATE_KEY = os.getenv("WOMPI_PAYOUT_PROD_API_KEY", "")
+    WOMPI_PAYOUT_USER_ID = os.getenv("WOMPI_PAYOUT_PROD_USER_ID", "")
+    WOMPI_PAYOUT_BASE_URL = os.getenv(
+        "WOMPI_PAYOUT_PROD_BASE_URL",
+        "https://api.payouts.wompi.co/v1"
+    )
+    WOMPI_PAYOUT_EVENTS_SECRET = os.getenv("WOMPI_PAYOUT_PROD_EVENTS_SECRET", "")
+
+# Configuración del desarrollador (beneficiario de comisiones)
 WOMPI_DEVELOPER_DESTINATION = os.getenv("WOMPI_DEVELOPER_DESTINATION", "")
+WOMPI_DEVELOPER_LEGAL_ID_TYPE = os.getenv("WOMPI_DEVELOPER_LEGAL_ID_TYPE", "CC")
+WOMPI_DEVELOPER_LEGAL_ID = os.getenv("WOMPI_DEVELOPER_LEGAL_ID", "")
+WOMPI_DEVELOPER_BANK_ID = os.getenv("WOMPI_DEVELOPER_BANK_ID", "1007")  # Default: Bancolombia
+WOMPI_DEVELOPER_ACCOUNT_TYPE = os.getenv("WOMPI_DEVELOPER_ACCOUNT_TYPE", "AHORROS")
+WOMPI_DEVELOPER_ACCOUNT_NUMBER = os.getenv("WOMPI_DEVELOPER_ACCOUNT_NUMBER", "")
+WOMPI_DEVELOPER_NAME = os.getenv("WOMPI_DEVELOPER_NAME", "")
+WOMPI_DEVELOPER_EMAIL = os.getenv("WOMPI_DEVELOPER_EMAIL", "")
+
+# Configuración operativa de Payouts
+WOMPI_PAYOUT_PAYMENT_TYPE = os.getenv("WOMPI_PAYOUT_PAYMENT_TYPE", "OTHER")  # PAYROLL, PROVIDERS, OTHER
+WOMPI_CURRENCY = os.getenv("WOMPI_CURRENCY", "COP")
 
 # STUDIOZENS-WOMPI-REDIRECT: Validar HTTPS en producción
 if not DEBUG:

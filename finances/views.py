@@ -8,12 +8,13 @@ Incluye endpoints de:
 - Instituciones financieras PSE
 """
 import uuid
+import logging
 from decimal import Decimal
 import requests
 
 from django.conf import settings
 from django.db import transaction, models
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from rest_framework import generics, status, viewsets
@@ -26,12 +27,17 @@ from users.permissions import IsAdminUser, IsStaffOrAdmin, IsVerified
 from core.models import AuditLog, GlobalSettings
 from spa.models import Appointment
 from .services import DeveloperCommissionService, WompiDisbursementClient
+from .wompi_payouts_client import WompiPayoutsClient, WompiPayoutsError
+from .webhooks_payouts import WompiPayoutsWebhookService
 from .models import ClientCredit, CommissionLedger, Payment, WebhookEvent
 from .serializers import ClientCreditAdminSerializer, CommissionLedgerSerializer, ClientCreditSerializer, PaymentSerializer
 from .gateway import WompiPaymentClient, build_integrity_signature
 from .webhooks import WompiWebhookService
 from spa.serializers import PackagePurchaseCreateSerializer
 from .payments import PaymentService
+
+# Logger
+logger = logging.getLogger(__name__)
 
 
 class CommissionLedgerListView(generics.ListAPIView):
@@ -46,15 +52,30 @@ class CommissionLedgerListView(generics.ListAPIView):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+
+        # Filtro por estado
         status_param = self.request.query_params.get("status")
         if status_param:
             queryset = queryset.filter(status=status_param)
+
+        # Filtro por tipo de pago (ADVANCE, FINAL, PACKAGE, etc.)
+        payment_type = self.request.query_params.get("payment_type")
+        if payment_type:
+            queryset = queryset.filter(payment_type=payment_type)
+
+        # Filtro por método de pago (CASH, CARD, PSE, NEQUI, etc.)
+        payment_method = self.request.query_params.get("payment_method")
+        if payment_method:
+            queryset = queryset.filter(payment_method=payment_method)
+
+        # Filtro por rango de fechas
         start_date = self.request.query_params.get("start_date")
         end_date = self.request.query_params.get("end_date")
         if start_date:
             queryset = queryset.filter(created_at__date__gte=start_date)
         if end_date:
             queryset = queryset.filter(created_at__date__lte=end_date)
+
         return queryset
 
 
@@ -65,6 +86,156 @@ class CommissionLedgerDetailView(generics.RetrieveAPIView):
     queryset = CommissionLedger.objects.select_related("source_payment")
     serializer_class = CommissionLedgerSerializer
     permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+
+
+class CommissionBreakdownByTypeView(APIView):
+    """
+    Retorna un desglose de comisiones agrupadas por tipo de pago.
+
+    GET /api/v1/finances/commissions/breakdown-by-type/
+
+    Query params opcionales:
+    - status: filtrar por estado (PENDING, PAID)
+    - start_date: fecha de inicio (YYYY-MM-DD)
+    - end_date: fecha de fin (YYYY-MM-DD)
+
+    Response:
+    {
+        "breakdown": [
+            {
+                "payment_type": "ADVANCE",
+                "count": 5,
+                "total_amount": "25000.00",
+                "paid_amount": "0.00",
+                "pending_amount": "25000.00"
+            },
+            ...
+        ],
+        "total_count": 10,
+        "total_amount": "50000.00"
+    }
+    """
+    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+
+    def get(self, request):
+        queryset = CommissionLedger.objects.all()
+
+        # Aplicar filtros
+        status_param = request.query_params.get("status")
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+
+        start_date = request.query_params.get("start_date")
+        end_date = request.query_params.get("end_date")
+        if start_date:
+            queryset = queryset.filter(created_at__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(created_at__date__lte=end_date)
+
+        # Agrupar por payment_type
+        breakdown = queryset.values('payment_type').annotate(
+            count=models.Count('id'),
+            total_amount=Coalesce(Sum('amount'), Decimal('0')),
+            paid_amount=Coalesce(Sum('paid_amount'), Decimal('0')),
+        ).order_by('-total_amount')
+
+        # Calcular pending_amount para cada grupo
+        breakdown_data = []
+        total_count = 0
+        total_amount = Decimal('0')
+
+        for item in breakdown:
+            pending = item['total_amount'] - item['paid_amount']
+            breakdown_data.append({
+                'payment_type': item['payment_type'] or 'UNKNOWN',
+                'count': item['count'],
+                'total_amount': str(item['total_amount']),
+                'paid_amount': str(item['paid_amount']),
+                'pending_amount': str(pending),
+            })
+            total_count += item['count']
+            total_amount += item['total_amount']
+
+        return Response({
+            'breakdown': breakdown_data,
+            'total_count': total_count,
+            'total_amount': str(total_amount),
+        })
+
+
+class CommissionBreakdownByMethodView(APIView):
+    """
+    Retorna un desglose de comisiones agrupadas por método de pago.
+
+    GET /api/v1/finances/commissions/breakdown-by-method/
+
+    Query params opcionales:
+    - status: filtrar por estado (PENDING, PAID)
+    - start_date: fecha de inicio (YYYY-MM-DD)
+    - end_date: fecha de fin (YYYY-MM-DD)
+
+    Response:
+    {
+        "breakdown": [
+            {
+                "payment_method": "CASH",
+                "count": 3,
+                "total_amount": "15000.00",
+                "paid_amount": "0.00",
+                "pending_amount": "15000.00"
+            },
+            ...
+        ],
+        "total_count": 10,
+        "total_amount": "50000.00"
+    }
+    """
+    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+
+    def get(self, request):
+        queryset = CommissionLedger.objects.all()
+
+        # Aplicar filtros
+        status_param = request.query_params.get("status")
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+
+        start_date = request.query_params.get("start_date")
+        end_date = request.query_params.get("end_date")
+        if start_date:
+            queryset = queryset.filter(created_at__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(created_at__date__lte=end_date)
+
+        # Agrupar por payment_method
+        breakdown = queryset.values('payment_method').annotate(
+            count=models.Count('id'),
+            total_amount=Coalesce(Sum('amount'), Decimal('0')),
+            paid_amount=Coalesce(Sum('paid_amount'), Decimal('0')),
+        ).order_by('-total_amount')
+
+        # Calcular pending_amount para cada grupo
+        breakdown_data = []
+        total_count = 0
+        total_amount = Decimal('0')
+
+        for item in breakdown:
+            pending = item['total_amount'] - item['paid_amount']
+            breakdown_data.append({
+                'payment_method': item['payment_method'] or 'UNKNOWN',
+                'count': item['count'],
+                'total_amount': str(item['total_amount']),
+                'paid_amount': str(item['paid_amount']),
+                'pending_amount': str(pending),
+            })
+            total_count += item['count']
+            total_amount += item['total_amount']
+
+        return Response({
+            'breakdown': breakdown_data,
+            'total_count': total_count,
+            'total_amount': str(total_amount),
+        })
 
 
 class DeveloperCommissionStatusView(APIView):
@@ -231,22 +402,44 @@ class InitiateAppointmentPaymentView(generics.GenericAPIView):
 
         # Determinar el monto y tipo de pago según el estado de la cita
         if appointment.status == Appointment.AppointmentStatus.PENDING_PAYMENT:
-            # Cita nueva: puede pagar anticipo o total
+            # Cita nueva: puede pagar anticipo, total, o saldo (si ya pagó algo)
             if payment_type == 'full':
                 amount = total_price
                 payment_type_enum = Payment.PaymentType.FINAL
-            else:
+            elif payment_type == 'balance':
+                # Pagar saldo pendiente (útil si ya hizo un pago parcial)
+                if outstanding <= Decimal('0'):
+                    return Response(
+                        {"error": "Esta cita no tiene saldo pendiente por pagar."},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                amount = outstanding
+                payment_type_enum = Payment.PaymentType.FINAL
+            else:  # deposit (default)
                 # Pago de anticipo (porcentaje configurable)
                 global_settings = GlobalSettings.load()
                 advance_percentage = Decimal(global_settings.advance_payment_percentage / 100)
+                
+                # DEBUG LOGS
+                logger.info(f"=== INITIATING APPOINTMENT PAYMENT DEBUG ===")
+                logger.info(f"Appointment ID: {appointment.id}")
+                logger.info(f"User Role: {getattr(request.user, 'role', 'unknown')}")
+                logger.info(f"Price at Purchase (DB): {appointment.price_at_purchase}")
+                logger.info(f"Global Advance Percentage: {global_settings.advance_payment_percentage}")
+                logger.info(f"Calculated Advance Factor: {advance_percentage}")
+                
                 amount = total_price * advance_percentage
+                logger.info(f"Calculated Amount: {amount}")
+                logger.info(f"============================================")
+
                 payment_type_enum = Payment.PaymentType.ADVANCE
                 
         elif appointment.status in [
             Appointment.AppointmentStatus.CONFIRMED,
             Appointment.AppointmentStatus.RESCHEDULED,
+            Appointment.AppointmentStatus.FULLY_PAID,
         ]:
-            # Cita confirmada: solo puede pagar el saldo pendiente
+            # Cita confirmada, reagendada o totalmente pagada: solo puede pagar el saldo pendiente
             if outstanding <= Decimal('0'):
                 return Response(
                     {"error": "Esta cita no tiene saldo pendiente por pagar."},
@@ -281,8 +474,10 @@ class InitiateAppointmentPaymentView(generics.GenericAPIView):
             )
 
         amount_in_cents = int(payment.amount * 100)
-        # Acortar referencia para evitar truncamiento en URL de Wompi
-        reference = f"PAY-{str(payment.id)[-12:]}"
+        # Generar referencia única por intento para evitar error "La referencia ya ha sido usada"
+        # Usamos parte del ID del pago + sufijo aleatorio. Wompi soporta hasta 255 chars.
+        suffix = uuid.uuid4().hex[:6]
+        reference = f"PAY-{str(payment.id)[-10:]}-{suffix}"
         payment.transaction_id = reference
         payment.save()
 
@@ -292,13 +487,26 @@ class InitiateAppointmentPaymentView(generics.GenericAPIView):
             currency="COP"
         )
 
+
+        # TEMPORAL: Override redirectUrl para desarrollo local
+        # Wompi no acepta localhost, pero acepta about:blank
+        redirect_url = settings.WOMPI_REDIRECT_URL
+        if 'localhost' in redirect_url or '127.0.0.1' in redirect_url:
+            # En desarrollo, usar about:blank para que Wompi no rechace
+            # El widget modal manejará el resultado sin redirigir
+            redirect_url = 'about:blank'
+            logger.warning(
+                f"[DEVELOPMENT] Usando 'about:blank' como redirectUrl porque "
+                f"WOMPI_REDIRECT_URL contiene localhost: {settings.WOMPI_REDIRECT_URL}"
+            )
+
         payment_data = {
             'publicKey': settings.WOMPI_PUBLIC_KEY,
             'currency': "COP",
             'amountInCents': amount_in_cents,
             'reference': reference,
             'signatureIntegrity': signature,
-            'redirectUrl': settings.WOMPI_REDIRECT_URL,
+            'redirectUrl': redirect_url,
             # Campos adicionales para el frontend
             'paymentId': str(payment.id),
             'paymentType': payment_type_enum,
@@ -339,6 +547,81 @@ class WompiWebhookView(generics.GenericAPIView):
             return Response({"error": "Error interno del servidor al procesar el webhook."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class WompiManualConfirmView(generics.GenericAPIView):
+    """
+    Endpoint para confirmar pagos manualmente cuando el widget modal
+    no redirige y Wompi no envía webhook (desarrollo local).
+    
+    POST /api/finances/webhooks/wompi/manual-confirm/
+    Body: {
+        "transaction_id": "12001854-176712619B-56986",
+        "reference": "PAY-396de01fb41",
+        "status": "APPROVED"
+    }
+    """
+    permission_classes = [IsAuthenticated]
+    
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        transaction_id = request.data.get('transaction_id')
+        reference = request.data.get('reference')
+        transaction_status = request.data.get('status', 'APPROVED')
+        
+        if not transaction_id:
+            return Response(
+                {"error": "transaction_id es requerido"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        logger.info(f"[MANUAL-CONFIRM] Confirmando pago: {transaction_id}")
+        
+        try:
+            # Buscar el pago por transaction_id
+            # El reference de Wompi se guarda como transaction_id en nuestro modelo
+            payment = Payment.objects.filter(transaction_id=reference).first()
+            
+            if not payment:
+                logger.error(f"[MANUAL-CONFIRM] Pago no encontrado con reference: {reference}")
+                return Response(
+                    {"error": "Pago no encontrado"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Construir payload simulado de Wompi
+            transaction_payload = {
+                "id": transaction_id,
+                "reference": reference,
+                "status": transaction_status,
+                "payment_method_type": "CARD",
+            }
+            
+            # Usar PaymentService para aplicar el estado
+            # Esto ejecutará toda la lógica: actualizar cita, crear comisión, etc.
+            from .payments import PaymentService
+            final_status = PaymentService.apply_gateway_status(
+                payment=payment,
+                gateway_status=transaction_status,
+                transaction_payload=transaction_payload
+            )
+            
+            logger.info(f"[MANUAL-CONFIRM] Pago actualizado: {payment.id} -> {final_status}")
+            
+            return Response({
+                "status": "success",
+                "payment_id": str(payment.id),
+                "payment_status": final_status
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"[MANUAL-CONFIRM] Error: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return Response(
+                {"error": f"Error al confirmar pago: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 class InitiateVipSubscriptionView(generics.GenericAPIView):
     """
     Inicia el flujo de pago para suscripción VIP.
@@ -377,13 +660,21 @@ class InitiateVipSubscriptionView(generics.GenericAPIView):
             currency="COP"
         )
 
+        # TEMPORAL: Override redirectUrl para desarrollo local
+        redirect_url = settings.WOMPI_REDIRECT_URL
+        if 'localhost' in redirect_url or '127.0.0.1' in redirect_url:
+            redirect_url = 'about:blank'
+            logger.warning(
+                f"[DEVELOPMENT] VIP: Usando 'about:blank' como redirectUrl"
+            )
+
         payment_data = {
             'publicKey': settings.WOMPI_PUBLIC_KEY,
             'currency': "COP",
             'amountInCents': amount_in_cents,
             'reference': reference,
             'signatureIntegrity': signature,  # Frontend debe usar esto para construir signature:integrity
-            'redirectUrl': settings.WOMPI_REDIRECT_URL
+            'redirectUrl': redirect_url
         }
         return Response(payment_data, status=status.HTTP_200_OK)
 
@@ -419,13 +710,21 @@ class InitiatePackagePurchaseView(generics.CreateAPIView):
             currency="COP"
         )
 
+        # TEMPORAL: Override redirectUrl para desarrollo local
+        redirect_url = settings.WOMPI_REDIRECT_URL
+        if 'localhost' in redirect_url or '127.0.0.1' in redirect_url:
+            redirect_url = 'about:blank'
+            logger.warning(
+                f"[DEVELOPMENT] Package: Usando 'about:blank' como redirectUrl"
+            )
+
         payment_data = {
             'publicKey': settings.WOMPI_PUBLIC_KEY,
             'currency': "COP",
             'amountInCents': amount_in_cents,
             'reference': reference,
             'signatureIntegrity': signature,  # Frontend debe usar esto para construir signature:integrity
-            'redirectUrl': settings.WOMPI_REDIRECT_URL
+            'redirectUrl': redirect_url
         }
         return Response(payment_data, status=status.HTTP_200_OK)
 
@@ -652,4 +951,305 @@ class ClientCreditBalanceView(APIView):
             'balance': total_balance,
             'currency': 'COP'
         })
+
+
+# ========================================
+# WOMPI PAYOUTS - ENDPOINTS ADMIN
+# ========================================
+
+class WompiPayoutsAccountsView(APIView):
+    """
+    Consulta las cuentas origen disponibles para dispersión en Wompi.
+
+    GET /api/v1/finances/wompi-payouts/accounts/
+
+    Response:
+    {
+        "accounts": [
+            {
+                "id": "uuid",
+                "balanceInCents": 1000000,
+                "accountNumber": "1234567890",
+                "bankId": "1007",
+                "accountType": "AHORROS",
+                "status": "ACTIVE"
+            }
+        ],
+        "mode": "sandbox"
+    }
+    """
+    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+
+    def get(self, request):
+        try:
+            client = WompiPayoutsClient()
+            accounts = client.get_accounts()
+
+            return Response({
+                "accounts": accounts,
+                "mode": settings.WOMPI_PAYOUT_MODE,
+                "total_accounts": len(accounts)
+            })
+
+        except WompiPayoutsError as exc:
+            logger.exception("Error consultando cuentas de Wompi Payouts")
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
+
+class WompiPayoutsBanksView(APIView):
+    """
+    Consulta la lista de bancos soportados por Wompi para dispersión.
+
+    GET /api/v1/finances/wompi-payouts/banks/
+
+    Response:
+    {
+        "banks": [
+            {
+                "id": "1007",
+                "name": "BANCOLOMBIA",
+                "code": "1007"
+            },
+            ...
+        ],
+        "total_banks": 50
+    }
+    """
+    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+
+    def get(self, request):
+        try:
+            client = WompiPayoutsClient()
+            banks = client.get_banks()
+
+            return Response({
+                "banks": banks,
+                "total_banks": len(banks)
+            })
+
+        except WompiPayoutsError as exc:
+            logger.exception("Error consultando bancos de Wompi Payouts")
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
+
+class WompiPayoutsBalanceView(APIView):
+    """
+    Consulta el saldo disponible en la cuenta de dispersión.
+
+    GET /api/v1/finances/wompi-payouts/balance/
+
+    Query params:
+    - account_id (opcional): ID de cuenta específica
+
+    Response:
+    {
+        "balance": "10000.00",
+        "currency": "COP",
+        "account_id": "uuid",
+        "mode": "sandbox"
+    }
+    """
+    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+
+    def get(self, request):
+        account_id = request.query_params.get('account_id')
+
+        try:
+            client = WompiPayoutsClient()
+            balance = client.get_available_balance(account_id=account_id)
+
+            return Response({
+                "balance": str(balance),
+                "currency": "COP",
+                "account_id": account_id or "default",
+                "mode": settings.WOMPI_PAYOUT_MODE
+            })
+
+        except WompiPayoutsError as exc:
+            logger.exception("Error consultando saldo de Wompi Payouts")
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
+
+class WompiPayoutsRechargeView(APIView):
+    """
+    Recarga saldo en cuenta de sandbox (solo para testing).
+
+    POST /api/v1/finances/wompi-payouts/sandbox/recharge/
+
+    Body:
+    {
+        "account_id": "uuid",
+        "amount": "100000.00"
+    }
+
+    Response:
+    {
+        "success": true,
+        "account_id": "uuid",
+        "amount": "100000.00",
+        "message": "Saldo recargado exitosamente"
+    }
+    """
+    permission_classes = [IsAuthenticated, IsAdminUser]  # Solo superadmin
+
+    def post(self, request):
+        # Solo permitir en sandbox
+        if settings.WOMPI_PAYOUT_MODE != "sandbox":
+            return Response(
+                {"error": "La recarga de saldo solo está disponible en modo sandbox"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        account_id = request.data.get('account_id')
+        amount = request.data.get('amount')
+
+        if not account_id or not amount:
+            return Response(
+                {"error": "Se requieren account_id y amount"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            amount_decimal = Decimal(str(amount))
+
+            if amount_decimal <= 0:
+                return Response(
+                    {"error": "El monto debe ser mayor a cero"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            client = WompiPayoutsClient()
+            result = client.recharge_balance_sandbox(account_id, amount_decimal)
+
+            # Log de auditoría
+            AuditLog.objects.create(
+                admin_user=request.user,
+                action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+                details=f"Recarga sandbox Wompi: ${amount_decimal} COP en cuenta {account_id}"
+            )
+
+            return Response({
+                "success": True,
+                "account_id": account_id,
+                "amount": str(amount_decimal),
+                "message": "Saldo recargado exitosamente",
+                "result": result
+            })
+
+        except (ValueError, Decimal.InvalidOperation):
+            return Response(
+                {"error": "Monto inválido"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except WompiPayoutsError as exc:
+            logger.exception("Error recargando saldo en Wompi Sandbox")
+            return Response(
+                {"error": str(exc)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
+
+
+class WompiPayoutsWebhookView(APIView):
+    """
+    Webhook endpoint para recibir eventos de Wompi Payouts API.
+
+    POST /api/v1/finances/wompi-payouts/webhook/
+
+    Wompi envía eventos cuando cambia el estado de un payout o transacción.
+
+    Eventos soportados:
+    - payout.updated: Cambio de estado en un lote de pago
+    - transaction.updated: Cambio de estado en una transacción individual
+
+    Headers esperados:
+    - X-Signature: Firma HMAC SHA256 del payload con WOMPI_PAYOUT_EVENTS_SECRET
+
+    Payload de ejemplo:
+    {
+        "event": "transaction.updated",
+        "data": {
+            "id": "transaction-uuid",
+            "status": "APPROVED",
+            "reference": "DEV-COMM-20251231-120000",
+            "amount": 5000000,
+            "payoutId": "payout-uuid"
+        }
+    }
+    """
+    permission_classes = [AllowAny]  # Wompi no puede autenticarse
+
+    def post(self, request):
+        # Extraer firma del header
+        signature = request.META.get('HTTP_X_SIGNATURE', '')
+
+        if not signature:
+            logger.warning("[Wompi Payouts Webhook] Request sin firma X-Signature")
+            return Response(
+                {"error": "Missing X-Signature header"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # Validar firma
+        if not WompiPayoutsWebhookService.validate_signature(request.data, signature):
+            logger.warning(
+                "[Wompi Payouts Webhook] Firma inválida. Posible intento de falsificación."
+            )
+            return Response(
+                {"error": "Invalid signature"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+        # Extraer tipo de evento
+        event_type = request.data.get('event')
+
+        if not event_type:
+            logger.error("[Wompi Payouts Webhook] Payload sin campo 'event'")
+            return Response(
+                {"error": "Missing event type"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        logger.info(
+            "[Wompi Payouts Webhook] Recibido evento: %s",
+            event_type
+        )
+
+        try:
+            # Procesar evento
+            result = WompiPayoutsWebhookService.process_event(event_type, request.data)
+
+            return Response(
+                {
+                    "status": "webhook_processed",
+                    "event_type": event_type,
+                    "result": result
+                },
+                status=status.HTTP_200_OK
+            )
+
+        except Exception as exc:
+            logger.exception(
+                "[Wompi Payouts Webhook] Error procesando evento %s: %s",
+                event_type,
+                exc
+            )
+            # Retornar 200 para que Wompi no reintente
+            # (el error ya está loggeado para revisión manual)
+            return Response(
+                {
+                    "status": "error",
+                    "message": "Internal error processing webhook",
+                    "event_type": event_type
+                },
+                status=status.HTTP_200_OK
+            )
 

@@ -143,7 +143,7 @@ class GlobalSettings(BaseModel):
         decimal_places=2,
         default=Decimal("5.00"),
         verbose_name="Comisión del desarrollador (%)",
-        help_text="Porcentaje reservado para el desarrollador. Solo puede mantenerse o incrementarse.",
+        help_text="Porcentaje reservado para el desarrollador. Mínimo permitido: 5%.",
     )
     developer_payout_threshold = models.DecimalField(
         max_digits=12,
@@ -195,17 +195,8 @@ class GlobalSettings(BaseModel):
         commission = self.developer_commission_percentage
         if commission is None or commission <= 0:
             errors["developer_commission_percentage"] = "El porcentaje de la comisión debe ser mayor a cero."
-        else:
-            previous_value = None
-            if self.pk:
-                previous_value = (
-                    type(self)
-                    .objects.filter(pk=self.pk)
-                    .values_list("developer_commission_percentage", flat=True)
-                    .first()
-                )
-            if previous_value is not None and commission < previous_value:
-                errors["developer_commission_percentage"] = "No se permite disminuir la comisión del desarrollador."
+        elif commission < Decimal("5.00"):
+            errors["developer_commission_percentage"] = "El porcentaje de la comisión no puede ser menor al 5%."
         threshold = self.developer_payout_threshold
         if threshold is None or threshold <= 0:
             errors["developer_payout_threshold"] = "El umbral de pago debe ser mayor que cero."

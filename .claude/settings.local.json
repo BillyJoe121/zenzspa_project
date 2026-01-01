@@ -38,7 +38,14 @@
       "Bash(git add:*)",
       "Bash(docker-compose exec web python:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(git -C \"c:/Users/joshe/Desktop/Zenz/studiozens\" status spa/models/appointment.py)",
+      "Bash(cat:*)",
+      "Bash(Select-String -Pattern \"PAID = ''PAID''\" -Context 2)",
+      "Bash(timeout /t 5 /nobreak)",
+      "Bash(Select-String \"WOMPI_PUBLIC_KEY\" .env)",
+      "Bash(del check_payment_debug.py find_advance_only.py fix_fully_paid_appointments.py)",
+      "Bash(del test_breakdown_endpoints.py test_breakdown_simple.py)"
     ],
     "deny": [],
     "ask": []

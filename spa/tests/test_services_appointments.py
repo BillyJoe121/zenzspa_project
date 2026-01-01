@@ -286,13 +286,23 @@ def test_appointment_service_user_with_paid_appointment_blocked(mocker):
     staff = baker.make(CustomUser, role=CustomUser.Role.STAFF)
     user = baker.make(CustomUser, role=CustomUser.Role.CLIENT)
 
-    # Create appointment in PAID status
-    baker.make(
+    # Create appointment in CONFIRMED status with outstanding balance
+    appt = baker.make(
         Appointment,
         user=user,
-        status=Appointment.AppointmentStatus.PAID,
+        status=Appointment.AppointmentStatus.CONFIRMED,
         start_time=timezone.now() + timedelta(days=1),
         end_time=timezone.now() + timedelta(days=1, hours=1),
+        price_at_purchase=100000,
+    )
+    # Create partial payment to simulate outstanding balance
+    baker.make(
+        'finances.Payment',
+        appointment=appt,
+        user=user,
+        amount=50000,  # Only half paid
+        status='APPROVED',
+        payment_type='ADVANCE'
     )
 
     future_time = timezone.now() + timedelta(days=2)

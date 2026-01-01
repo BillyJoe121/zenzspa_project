@@ -112,6 +112,7 @@ class AvailabilityService:
                 Appointment.AppointmentStatus.CONFIRMED,
                 Appointment.AppointmentStatus.PENDING_PAYMENT,
                 Appointment.AppointmentStatus.RESCHEDULED,
+                Appointment.AppointmentStatus.FULLY_PAID,
             ],
             staff_member_id__isnull=False,
         ).only("start_time", "end_time", "staff_member_id")
@@ -278,10 +279,17 @@ class AppointmentService:
             payment_type=Payment.PaymentType.FINAL,
         ).order_by("created_at").first()
 
-        pending_appointment = Appointment.objects.filter(
+        # Check for appointments with outstanding balance
+        from decimal import Decimal
+        pending_appointment = None
+        for appt in Appointment.objects.filter(
             user=self.user,
-            status=Appointment.AppointmentStatus.PAID,
-        ).order_by("start_time").first()
+            status__in=[Appointment.AppointmentStatus.CONFIRMED, Appointment.AppointmentStatus.FULLY_PAID, Appointment.AppointmentStatus.COMPLETED]
+        ).order_by("start_time"):
+            outstanding = appt.outstanding_balance
+            if outstanding > Decimal('0'):
+                pending_appointment = appt
+                break
 
         if pending_payment or pending_appointment:
             raise BusinessLogicError(
@@ -296,6 +304,7 @@ class AppointmentService:
                 Appointment.AppointmentStatus.CONFIRMED,
                 Appointment.AppointmentStatus.PENDING_PAYMENT,
                 Appointment.AppointmentStatus.RESCHEDULED,
+                Appointment.AppointmentStatus.FULLY_PAID,
             ]
         ).count()
 
@@ -378,6 +387,7 @@ class AppointmentService:
                         Appointment.AppointmentStatus.CONFIRMED,
                         Appointment.AppointmentStatus.PENDING_PAYMENT,
                         Appointment.AppointmentStatus.RESCHEDULED,
+                        Appointment.AppointmentStatus.FULLY_PAID,
                     ],
                     start_time__lt=self.end_time + self.buffer,
                     end_time__gt=self.start_time - self.buffer,
@@ -465,6 +475,7 @@ class AppointmentService:
             Appointment.AppointmentStatus.CONFIRMED,
             Appointment.AppointmentStatus.PENDING_PAYMENT,
             Appointment.AppointmentStatus.RESCHEDULED,
+            Appointment.AppointmentStatus.FULLY_PAID,
         ]
         concurrent_count = (
             Appointment.objects.select_for_update()
@@ -546,6 +557,7 @@ class AppointmentService:
                         Appointment.AppointmentStatus.CONFIRMED,
                         Appointment.AppointmentStatus.PENDING_PAYMENT,
                         Appointment.AppointmentStatus.RESCHEDULED,
+                        Appointment.AppointmentStatus.FULLY_PAID,
                     ],
                 )
                 .exclude(id=appointment.id)

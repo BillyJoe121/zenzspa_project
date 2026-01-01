@@ -74,6 +74,9 @@ class AppointmentListSerializer(serializers.ModelSerializer):
     paid_amount = serializers.SerializerMethodField()
     outstanding_balance = serializers.SerializerMethodField()
 
+    # Available actions (optional, populated if request context includes user)
+    available_actions = serializers.SerializerMethodField()
+
     class Meta:
         model = Appointment
         fields = [
@@ -90,6 +93,7 @@ class AppointmentListSerializer(serializers.ModelSerializer):
             'outstanding_balance',
             'total_duration_minutes',
             'reschedule_count',
+            'available_actions',
             'created_at',
             'updated_at'
         ]
@@ -107,9 +111,40 @@ class AppointmentListSerializer(serializers.ModelSerializer):
         return paid
 
     def get_outstanding_balance(self, obj):
-        """Calcula el saldo pendiente."""
-        paid = self.get_paid_amount(obj)
-        return max(obj.price_at_purchase - paid, Decimal('0.00'))
+        """Retorna el saldo pendiente usando la propiedad del modelo."""
+        return obj.outstanding_balance
+    def get_available_actions(self, obj):
+        """
+        Returns available actions for this appointment.
+        Only included if 'request' is in context and has a user.
+        """
+        request = self.context.get('request')
+        if not request or not hasattr(request, 'user'):
+            return None
+
+        user = request.user
+
+        # Get all action permissions
+        can_reschedule, _ = obj.can_reschedule(user)
+        can_cancel, _ = obj.can_cancel(user)
+        can_mark_completed, _ = obj.can_mark_completed(user)
+        can_mark_no_show, _ = obj.can_mark_no_show(user)
+        can_complete_final_payment, _ = obj.can_complete_final_payment(user)
+        can_add_tip, _ = obj.can_add_tip(user)
+        can_download_ical, _ = obj.can_download_ical(user)
+        can_cancel_by_admin, _ = obj.can_cancel_by_admin(user)
+
+        return {
+            'can_reschedule': can_reschedule,
+            'can_cancel': can_cancel,
+            'can_mark_completed': can_mark_completed,
+            'can_mark_no_show': can_mark_no_show,
+            'can_complete_final_payment': can_complete_final_payment,
+            'can_add_tip': can_add_tip,
+            'can_download_ical': can_download_ical,
+            'can_cancel_by_admin': can_cancel_by_admin,
+        }
+
 
 
 AppointmentReadSerializer = AppointmentListSerializer
@@ -303,8 +338,9 @@ class AppointmentRescheduleSerializer(serializers.Serializer):
         if appointment.status not in [
             Appointment.AppointmentStatus.CONFIRMED,
             Appointment.AppointmentStatus.RESCHEDULED,
+            Appointment.AppointmentStatus.FULLY_PAID,
         ]:
-            raise serializers.ValidationError("Solo las citas confirmadas pueden ser reagendadas.")
+            raise serializers.ValidationError("Solo las citas confirmadas, reagendadas o totalmente pagadas pueden ser reagendadas.")
 
         service_ids = list(appointment.services.values_list('id', flat=True))
         if not service_ids:
@@ -362,7 +398,8 @@ class AdminAppointmentCreateSerializer(serializers.Serializer):
     service_ids = serializers.ListField(
         child=serializers.UUIDField(),
         min_length=1,
-        help_text="IDs de los servicios a agendar."
+        max_length=1,
+        help_text="ID del servicio a agendar (solo 1 servicio por cita)."
     )
     staff_member_id = serializers.UUIDField(
         required=False,
@@ -371,6 +408,23 @@ class AdminAppointmentCreateSerializer(serializers.Serializer):
     )
     start_time = serializers.DateTimeField(
         help_text="Fecha y hora de inicio de la cita."
+    )
+    payment_method = serializers.ChoiceField(
+        choices=['VOUCHER', 'CREDIT', 'PAYMENT_LINK', 'CASH'],
+        default='PAYMENT_LINK',
+        help_text="Método de pago: VOUCHER (usar voucher), CREDIT (usar crédito), PAYMENT_LINK (generar link Wompi), CASH (pago en efectivo)"
+    )
+    voucher_id = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+        help_text="UUID del voucher a usar (requerido si payment_method=VOUCHER)"
+    )
+    cash_amount = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+        help_text="Monto pagado en efectivo (requerido si payment_method=CASH)"
     )
     send_whatsapp = serializers.BooleanField(
         default=True,
@@ -403,7 +457,7 @@ class AdminAppointmentCreateSerializer(serializers.Serializer):
         return value.replace(second=0, microsecond=0)
 
     def validate(self, data):
-        """Valida disponibilidad y servicios."""
+        """Valida disponibilidad, servicios y método de pago."""
         # Obtener servicios
         service_ids = data['service_ids']
         services = Service.objects.filter(id__in=service_ids, is_active=True)
@@ -457,9 +511,60 @@ class AdminAppointmentCreateSerializer(serializers.Serializer):
                 {"start_time": "El horario seleccionado ya no está disponible."}
             )
         
+        # Validar método de pago
+        payment_method = data.get('payment_method', 'PAYMENT_LINK')
+        voucher_id = data.get('voucher_id')
+        
+        if payment_method == 'VOUCHER':
+            if not voucher_id:
+                raise serializers.ValidationError(
+                    {"voucher_id": "Se requiere un voucher_id cuando payment_method es VOUCHER."}
+                )
+            
+            # Validar que el voucher existe y está disponible
+            from ..models import Voucher
+            try:
+                voucher = Voucher.objects.get(
+                    id=voucher_id,
+                    user_id=data['client_id'],
+                    status=Voucher.VoucherStatus.AVAILABLE,
+                )
+            except Voucher.DoesNotExist:
+                raise serializers.ValidationError(
+                    {"voucher_id": "Voucher no encontrado, no disponible o no pertenece al cliente."}
+                )
+            
+            # Validar que el voucher no esté expirado
+            if voucher.expires_at and voucher.expires_at < timezone.now().date():
+                raise serializers.ValidationError(
+                    {"voucher_id": "El voucher ha expirado."}
+                )
+            
+            # Validar que el voucher sea para uno de los servicios solicitados
+            if voucher.service_id not in service_ids:
+                raise serializers.ValidationError(
+                    {"voucher_id": f"El voucher es para '{voucher.service.name}', no para los servicios seleccionados."}
+                )
+            
+            # Si hay múltiples servicios, solo uno puede ser cubierto por el voucher
+            if len(service_ids) > 1:
+                # Esto está permitido, pero solo un servicio será cubierto por el voucher
+                pass
+            
+            data['voucher'] = voucher
+        
+        # Validar cash_amount si payment_method es CASH
+        if payment_method == 'CASH':
+            cash_amount = data.get('cash_amount')
+            if not cash_amount or cash_amount <= 0:
+                raise serializers.ValidationError(
+                    {"cash_amount": "El monto en efectivo es requerido y debe ser mayor a 0 cuando payment_method es CASH."}
+                )
+        
         data['services'] = list(services)
         data['staff_member'] = staff_member
         return data
+
 
 
 class ReceiveAdvanceInPersonSerializer(serializers.Serializer):

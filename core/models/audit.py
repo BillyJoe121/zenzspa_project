@@ -20,6 +20,7 @@ class AuditLog(BaseModel):
         APPOINTMENT_COMPLETED = "APPOINTMENT_COMPLETED", "Cita completada"
         CLINICAL_PROFILE_ANONYMIZED = "CLINICAL_PROFILE_ANONYMIZED", "Perfil clínico anonimizado"
         VOUCHER_REDEEMED = "VOUCHER_REDEEMED", "Voucher redimido"
+        VOUCHER_CREATED = "VOUCHER_CREATED", "Voucher creado manualmente"
         LOYALTY_REWARD_ISSUED = "LOYALTY_REWARD_ISSUED", "Recompensa de lealtad otorgada"
         VIP_DOWNGRADED = "VIP_DOWNGRADED", "VIP degradado"
         MARKETPLACE_RETURN = "MARKETPLACE_RETURN", "Devolución marketplace procesada"

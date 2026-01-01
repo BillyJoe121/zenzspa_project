@@ -198,8 +198,8 @@ class AvailabilityExclusion(BaseModel):
 class Appointment(BaseModel):
     class AppointmentStatus(models.TextChoices):
         PENDING_PAYMENT = 'PENDING_PAYMENT', 'Pendiente de Pago'
-        PAID = 'PAID', 'Pago Final Pendiente'
         CONFIRMED = 'CONFIRMED', 'Confirmada'
+        FULLY_PAID = 'FULLY_PAID', 'Totalmente Pagado'
         RESCHEDULED = 'RESCHEDULED', 'Reagendada'
         COMPLETED = 'COMPLETED', 'Completada'
         CANCELLED = 'CANCELLED', 'Cancelada'
@@ -278,6 +278,290 @@ class Appointment(BaseModel):
 
     def get_service_names(self):
         return ", ".join(item.service.name for item in self.items.select_related('service'))
+
+    # ========================================
+    # ACTION PERMISSION METHODS
+    # ========================================
+    # These methods centralize the business logic for determining
+    # which actions are available for an appointment based on its
+    # current state, payment status, and user role.
+    # Returns: (can_perform: bool, reason: str)
+
+    def can_reschedule(self, user) -> tuple[bool, str]:
+        """
+        Determines if an appointment can be rescheduled.
+
+        Rules:
+        - Cannot reschedule cancelled or completed appointments
+        - Cannot reschedule appointments in the past
+        - Clients have a limit of 3 reschedulesules
+        - Clients must have paid advance to reschedule (or be in CONFIRMED/RESCHEDULED status)
+        - Admins/Staff bypass most restrictions
+        """
+        # Avoid circular import
+        from users.models import CustomUser
+
+        # Rule 1: Cannot reschedule if cancelled or completed
+        if self.status in [self.AppointmentStatus.CANCELLED, self.AppointmentStatus.COMPLETED]:
+            return False, "No puedes reagendar una cita cancelada o completada"
+
+        # Rule 2: Cannot reschedule appointments in the past
+        if self.start_time < timezone.now():
+            return False, "No puedes reagendar una cita que ya pasó"
+
+        # Rule 3: Must be in a reschedulable state
+        if self.status not in [
+            self.AppointmentStatus.PENDING_PAYMENT,
+            self.AppointmentStatus.CONFIRMED,
+            self.AppointmentStatus.RESCHEDULED,
+            self.AppointmentStatus.FULLY_PAID
+        ]:
+            return False, "La cita debe estar confirmada para poder reagendarla"
+
+        # Rule 4: Client-specific restrictions
+        if user.role == CustomUser.Role.CLIENT:
+            # Max 3 reschedules for clients
+            if self.reschedule_count >= 3:
+                return False, "Has alcanzado el límite de 3 reagendamientos para esta cita"
+
+        return True, ""
+
+    def can_cancel(self, user) -> tuple[bool, str]:
+        """
+        Determines if an appointment can be cancelled.
+
+        Rules:
+        - Cannot cancel if already cancelled or completed
+        - Clients cannot cancel with < 24h if advance was paid (must reschedule instead)
+        - Admins/Staff can always cancel
+        """
+        # Avoid circular import
+        from users.models import CustomUser
+
+        # Rule 1: Cannot cancel if already in terminal state
+        if self.status in [self.AppointmentStatus.CANCELLED, self.AppointmentStatus.COMPLETED]:
+            return False, "La cita ya está cancelada o completada"
+
+        # Rule 2: Client-specific 24h rule for paid appointments
+        if user.role == CustomUser.Role.CLIENT:
+            # If appointment is confirmed/rescheduled/fully_paid (advance was paid)
+            if self.status in [
+                self.AppointmentStatus.CONFIRMED,
+                self.AppointmentStatus.RESCHEDULED,
+                self.AppointmentStatus.FULLY_PAID
+            ]:
+                hours_until = (self.start_time - timezone.now()).total_seconds() / 3600
+                if hours_until < 24:
+                    return False, "Esta cita ya fue pagada. Debes usar la opción de reagendar (menos de 24h de anticipación)"
+
+        return True, ""
+
+    def can_mark_completed(self, user) -> tuple[bool, str]:
+        """
+        Determines if staff can mark an appointment as completed.
+
+        Rules:
+        - Only staff/admin can mark as completed
+        - Appointment must be confirmed, rescheduled, or paid
+        - Appointment cannot be in the future
+        """
+        # Avoid circular import
+        from users.models import CustomUser
+
+        # Rule 1: Only staff/admin
+        if user.role not in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
+            return False, "Solo el personal puede marcar citas como completadas"
+
+        # Rule 2: Must be in completable state
+        if self.status not in [
+            self.AppointmentStatus.CONFIRMED,
+            self.AppointmentStatus.RESCHEDULED,
+            self.AppointmentStatus.FULLY_PAID
+        ]:
+            return False, "Solo las citas confirmadas pueden marcarse como completadas"
+
+        # Rule 3: Cannot complete future appointments
+        if self.start_time > timezone.now():
+            return False, "No puedes marcar como completada una cita que aún no ha ocurrido"
+
+        return True, ""
+
+    def can_mark_no_show(self, user) -> tuple[bool, str]:
+        """
+        Determines if staff can mark an appointment as no-show.
+
+        Rules:
+        - Only staff/admin can mark no-show
+        - Appointment must be confirmed, rescheduled, or fully paid
+        - Appointment must be in the past
+        """
+        # Avoid circular import
+        from users.models import CustomUser
+
+        # Rule 1: Only staff/admin
+        if user.role not in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
+            return False, "Solo el personal puede marcar no-show"
+
+        # Rule 2: Must be in a confirmed state
+        if self.status not in [
+            self.AppointmentStatus.CONFIRMED,
+            self.AppointmentStatus.RESCHEDULED,
+            self.AppointmentStatus.FULLY_PAID
+        ]:
+            return False, "Solo las citas confirmadas pueden marcarse como no-show"
+
+        # Rule 3: Must be in the past
+        if self.start_time > timezone.now():
+            return False, "No se puede marcar como no-show una cita que aún no ha ocurrido"
+
+        return True, ""
+
+    def can_complete_final_payment(self, user) -> tuple[bool, str]:
+        """
+        Determines if staff can process final payment.
+
+        Rules:
+        - Only staff/admin can process payments
+        - Appointment must be confirmed, rescheduled, or paid
+        - Cannot process if already fully paid (status COMPLETED typically means fully paid)
+        """
+        # Avoid circular import
+        from users.models import CustomUser
+
+        # Rule 1: Only staff/admin
+        if user.role not in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]:
+            return False, "Solo el personal puede procesar pagos"
+
+        # Rule 2: Must be in payable state
+        if self.status not in [
+            self.AppointmentStatus.CONFIRMED,
+            self.AppointmentStatus.RESCHEDULED,
+            self.AppointmentStatus.FULLY_PAID
+        ]:
+            return False, "La cita debe estar confirmada para procesar el pago final"
+
+        # Note: We don't check if already fully paid here because that's a payment system concern
+        # The payment service will handle that validation
+
+        return True, ""
+
+    def can_add_tip(self, user) -> tuple[bool, str]:
+        """
+        Determines if a tip can be added.
+
+        Rules:
+        - Tips can be added to any confirmed, paid, or completed appointment
+        - No specific time restrictions
+        """
+        # Tips are flexible - can be added anytime for active or completed appointments
+        if self.status in [
+            self.AppointmentStatus.CONFIRMED,
+            self.AppointmentStatus.RESCHEDULED,
+            self.AppointmentStatus.FULLY_PAID,
+            self.AppointmentStatus.COMPLETED
+        ]:
+            return True, ""
+
+        return False, "Solo puedes agregar propinas a citas confirmadas o completadas"
+
+    def can_download_ical(self, user) -> tuple[bool, str]:
+        """
+        Determines if appointment can be exported to calendar.
+
+        Rules:
+        - Only for confirmed, rescheduled, or paid appointments
+        - Only for future appointments (past appointments don't make sense in calendar)
+        """
+        # Rule 1: Must be in active state
+        if self.status not in [
+            self.AppointmentStatus.CONFIRMED,
+            self.AppointmentStatus.RESCHEDULED,
+            self.AppointmentStatus.FULLY_PAID
+        ]:
+            return False, "Solo puedes exportar citas confirmadas"
+
+        # Rule 2: Should be a future appointment
+        if self.start_time < timezone.now():
+            return False, "No tiene sentido exportar una cita que ya pasó"
+
+        return True, ""
+
+    def can_cancel_by_admin(self, user) -> tuple[bool, str]:
+        """
+        Determines if admin can cancel appointment.
+
+        Rules:
+        - Only admin can use this action
+        - Cannot cancel already cancelled or completed appointments
+        """
+        # Avoid circular import
+        from users.models import CustomUser
+
+        # Rule 1: Only admin
+        if user.role != CustomUser.Role.ADMIN:
+            return False, "Solo administradores pueden usar esta acción"
+
+        # Rule 2: Cannot cancel terminal states
+        if self.status in [self.AppointmentStatus.CANCELLED, self.AppointmentStatus.COMPLETED]:
+            return False, "No puedes cancelar una cita que ya está cancelada o completada"
+
+        return True, ""
+
+    # ========================================
+    # HELPER PROPERTIES
+    # ========================================
+
+    @property
+    def is_active(self):
+        """Returns True if appointment is in an active state (can be modified)."""
+        return self.status in [
+            self.AppointmentStatus.PENDING_PAYMENT,
+            self.AppointmentStatus.CONFIRMED,
+            self.AppointmentStatus.RESCHEDULED,
+            self.AppointmentStatus.FULLY_PAID
+        ]
+
+    @property
+    def is_past(self):
+        """Returns True if appointment start time is in the past."""
+        return self.start_time < timezone.now()
+
+    @property
+    def is_upcoming(self):
+        """Returns True if appointment is in the future."""
+        return self.start_time > timezone.now()
+
+    @property
+    def hours_until_appointment(self):
+        """Returns hours until appointment (negative if past)."""
+        return (self.start_time - timezone.now()).total_seconds() / 3600
+
+    @property
+    def outstanding_balance(self):
+        """
+        Calcula el saldo pendiente de pago para esta cita.
+
+        Returns:
+            Decimal: Monto pendiente (price_at_purchase - total_paid)
+        """
+        from finances.models import Payment
+        from decimal import Decimal
+        from django.db.models import Sum
+
+        # Sumar todos los pagos aprobados
+        paid_amount = Payment.objects.filter(
+            appointment=self,
+            status__in=[
+                Payment.PaymentStatus.APPROVED,
+                Payment.PaymentStatus.PAID_WITH_CREDIT
+            ]
+        ).aggregate(
+            total=Sum('amount')
+        )['total'] or Decimal('0.00')
+
+        # Calcular pendiente
+        outstanding = self.price_at_purchase - paid_amount
+        return max(outstanding, Decimal('0.00'))
 
 
 class AppointmentItemManager(models.Manager):

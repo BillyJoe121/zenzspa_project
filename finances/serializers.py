@@ -16,7 +16,8 @@ CustomUser = get_user_model()
 
 class CommissionLedgerSerializer(serializers.ModelSerializer):
     payment_id = serializers.UUIDField(source="source_payment.id", read_only=True)
-    payment_type = serializers.CharField(source="source_payment.payment_type", read_only=True)
+    # Usar campos desnormalizados para mejor performance
+    # payment_type y payment_method ya están en el modelo
     payment_status = serializers.CharField(source="source_payment.status", read_only=True)
     payment_created_at = serializers.DateTimeField(source="source_payment.created_at", read_only=True)
     client_name = serializers.CharField(source="source_payment.user.get_full_name", read_only=True, default="Cliente no identificado")
@@ -33,7 +34,8 @@ class CommissionLedgerSerializer(serializers.ModelSerializer):
             "pending_amount",
             "status",
             "payment_id",
-            "payment_type",
+            "payment_type",        # Ahora del modelo, no de la relación
+            "payment_method",      # NUEVO: Método de pago (CASH, CARD, PSE, etc.)
             "payment_status",
             "payment_created_at",
             "payment_amount",

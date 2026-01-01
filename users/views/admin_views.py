@@ -54,6 +54,7 @@ class FlagNonGrataView(generics.UpdateAPIView):
                 Appointment.AppointmentStatus.CONFIRMED,
                 Appointment.AppointmentStatus.PENDING_PAYMENT,
                 Appointment.AppointmentStatus.RESCHEDULED,
+                Appointment.AppointmentStatus.FULLY_PAID,
             ],
         )
         future_appointments.update(
@@ -413,6 +414,7 @@ class AdminUserViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='search-by-phone')
     def search_by_phone(self, request):
         """
+        DEPRECATED: Usar search-clients en su lugar.
         Busca clientes por número de teléfono para creación de citas por admin.
         
         GET /api/v1/auth/admin/users/search-by-phone/?phone=+573...
@@ -433,6 +435,43 @@ class AdminUserViewSet(viewsets.ModelViewSet):
         # Buscar clientes y VIPs que coincidan con el teléfono
         users = CustomUser.objects.filter(
             Q(phone_number__icontains=phone),
+            role__in=[CustomUser.Role.CLIENT, CustomUser.Role.VIP],
+            is_persona_non_grata=False,
+            is_active=True,
+        ).select_related('profile')[:10]
+        
+        # Usar SimpleUserSerializer para la respuesta
+        from ..serializers import SimpleUserSerializer
+        return Response(SimpleUserSerializer(users, many=True).data)
+
+    @action(detail=False, methods=['get'], url_path='search-clients')
+    def search_clients(self, request):
+        """
+        Busca clientes por nombre, apellido o número de teléfono.
+        
+        GET /api/v1/auth/admin/users/search-clients/?query=...
+        
+        Query params:
+            - query: Texto a buscar (nombre, apellido o teléfono)
+        
+        Returns:
+            Lista de hasta 10 usuarios que coinciden con la búsqueda.
+            Excluye usuarios marcados como Persona Non Grata.
+        """
+        from django.db.models import Q
+        
+        query = request.query_params.get('query', '').strip()
+        if not query or len(query) < 2:
+            return Response(
+                {'error': 'Se requiere un texto de búsqueda con al menos 2 caracteres.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Buscar clientes y VIPs que coincidan con nombre, apellido o teléfono
+        users = CustomUser.objects.filter(
+            Q(phone_number__icontains=query) |
+            Q(first_name__icontains=query) |
+            Q(last_name__icontains=query),
             role__in=[CustomUser.Role.CLIENT, CustomUser.Role.VIP],
             is_persona_non_grata=False,
             is_active=True,

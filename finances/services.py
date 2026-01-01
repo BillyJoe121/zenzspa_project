@@ -31,175 +31,76 @@ def _to_decimal(value) -> Decimal:
     return Decimal(str(value))
 
 
-class WompiPayoutError(Exception):
-    """Errores al consultar o ejecutar dispersión con Wompi."""
+# Importar el nuevo cliente
+from .wompi_payouts_client import WompiPayoutsClient, WompiPayoutsError
+
+# Mantener alias para compatibilidad
+WompiPayoutError = WompiPayoutsError
 
 
 class WompiDisbursementClient:
     """
-    Cliente sencillo para consultar saldo y ejecutar payouts en Wompi.
-    Depende de las variables de entorno:
-        - WOMPI_PAYOUT_PRIVATE_KEY
-        - WOMPI_PAYOUT_BASE_URL
-        - WOMPI_DEVELOPER_DESTINATION
+    Cliente wrapper para mantener compatibilidad con código existente.
+
+    Delega todas las operaciones al nuevo WompiPayoutsClient que implementa
+    correctamente la API de Wompi Payouts.
     """
 
-    REQUEST_TIMEOUT = 10
-    MAX_RETRIES = 3
-    BACKOFF_FACTOR = 0.5
-    _CIRCUIT_CACHE_KEY = "wompi:disbursement:circuit"
-
     def __init__(self):
-        self.private_key = (
-            getattr(settings, "WOMPI_PAYOUT_PRIVATE_KEY", None)
-            or os.getenv("WOMPI_PAYOUT_PRIVATE_KEY")
-        )
-        configured_base_url = (
-            getattr(settings, "WOMPI_PAYOUT_BASE_URL", None)
-            or os.getenv("WOMPI_PAYOUT_BASE_URL")
-        )
-        self.base_url = configured_base_url.rstrip("/") if configured_base_url else None
-        self.balance_endpoint = f"{self.base_url}/accounts" if self.base_url else None
-        self.payout_endpoint = f"{self.base_url}/transfers" if self.base_url else None
-        self.destination = (
-            getattr(settings, "WOMPI_DEVELOPER_DESTINATION", None)
-            or os.getenv("WOMPI_DEVELOPER_DESTINATION")
-        )
-        self.currency = getattr(settings, "WOMPI_CURRENCY", "COP")
+        """Inicializa el cliente delegando al WompiPayoutsClient."""
+        self._client = WompiPayoutsClient()
 
-    @classmethod
-    def _circuit_allows(cls):
-        state = cache.get(cls._CIRCUIT_CACHE_KEY, {"failures": 0, "open_until": None})
-        open_until = state.get("open_until")
-        if open_until and open_until > timezone.now():
-            return False
-        return True
+    def get_available_balance(self, account_id: Optional[str] = None) -> Decimal:
+        """
+        Obtiene el saldo disponible.
 
-    @classmethod
-    def _record_failure(cls, max_failures=5, cooldown_seconds=60):
-        state = cache.get(cls._CIRCUIT_CACHE_KEY, {"failures": 0, "open_until": None})
-        failures = state.get("failures", 0) + 1
-        open_until = state.get("open_until")
-        if failures >= max_failures:
-            open_until = timezone.now() + timedelta(seconds=cooldown_seconds)
-            failures = 0
-        cache.set(cls._CIRCUIT_CACHE_KEY, {"failures": failures, "open_until": open_until}, timeout=cooldown_seconds)
+        Args:
+            account_id: ID de cuenta específica (opcional)
 
-    @classmethod
-    def _record_success(cls):
-        cache.set(cls._CIRCUIT_CACHE_KEY, {"failures": 0, "open_until": None}, timeout=60)
-
-    def _headers(self):
-        if not self.private_key:
-            raise WompiPayoutError("Falta WOMPI_PAYOUT_PRIVATE_KEY para intentar la dispersión.")
-        return {"Authorization": f"Bearer {self.private_key}"}
-
-    def _request_with_retry(self, method: str, url: str, **kwargs):
-        last_exc = None
-        for attempt in range(1, self.MAX_RETRIES + 1):
-            try:
-                response = requests.request(
-                    method=method,
-                    url=url,
-                    timeout=self.REQUEST_TIMEOUT,
-                    **kwargs,
-                )
-                response.raise_for_status()
-                self._record_success()
-                return response
-            except (requests.Timeout, requests.RequestException) as exc:
-                self._record_failure()
-                last_exc = exc
-                if attempt >= self.MAX_RETRIES:
-                    raise
-                sleep_for = self.BACKOFF_FACTOR * (2 ** (attempt - 1))
-                logger.warning(
-                    "Error en request %s %s (intento %s/%s): %s. Reintentando en %.1fs",
-                    method.upper(),
-                    url,
-                    attempt,
-                    self.MAX_RETRIES,
-                    exc,
-                    sleep_for,
-                )
-                time.sleep(sleep_for)
-        # Si salimos del bucle sin retorno ni excepción, relanzar la última
-        if last_exc:
-            raise last_exc
-        raise WompiPayoutError("No se pudo ejecutar la solicitud a Wompi.")
-
-    def get_available_balance(self) -> Decimal:
-        if not self._circuit_allows():
-            logger.warning("Circuito de Wompi (dispersión) abierto; se omite consulta de balance.")
-            return Decimal("0")
-        if not self.balance_endpoint:
-            raise WompiPayoutError("Configura WOMPI_PAYOUT_BASE_URL para consultar el balance de Wompi.")
-        if not self.private_key:
-            raise WompiPayoutError("Configura WOMPI_PAYOUT_PRIVATE_KEY para consultar el balance de Wompi.")
+        Returns:
+            Saldo en COP
+        """
         try:
-            response = self._request_with_retry(
-                "get",
-                self.balance_endpoint,
-                headers=self._headers(),
-            )
-            try:
-                data = response.json() or {}
-            except ValueError as exc:
-                raise WompiPayoutError("Respuesta inválida de Wompi al consultar balance.") from exc
-            accounts = data.get("data") or []
-            if isinstance(accounts, dict):
-                accounts = accounts.get("accounts") or []
-            if not accounts:
-                raise WompiPayoutError("Wompi no retornó cuentas activas para consultar el balance.")
-            account = accounts[0]
-            cents = account.get("balanceInCents") or account.get("balance_in_cents") or 0
-            amount = _to_decimal(cents) / Decimal("100")
-            return amount.quantize(Decimal("0.01"))
-        except requests.Timeout as exc:
-            logger.exception("Timeout consultando balance en Wompi: %s", exc)
-            raise WompiPayoutError("Timeout consultando balance en Wompi") from exc
-        except (requests.RequestException, ValueError) as exc:
-            logger.exception("No se pudo obtener el balance en Wompi: %s", exc)
-            raise WompiPayoutError("No se pudo obtener el balance en Wompi") from exc
+            return self._client.get_available_balance(account_id=account_id)
+        except WompiPayoutsError as exc:
+            # Convertir a excepción legacy para compatibilidad
+            raise WompiPayoutError(str(exc)) from exc
 
-    def create_payout(self, amount: Decimal) -> str:
-        if not self.payout_endpoint:
-            raise WompiPayoutError("Configura WOMPI_PAYOUT_BASE_URL para dispersar fondos.")
-        if not self.destination:
-            raise WompiPayoutError("Configura WOMPI_DEVELOPER_DESTINATION para dispersar fondos.")
-        if amount is None or _to_decimal(amount) <= Decimal("0"):
-            raise WompiPayoutError("El monto a dispersar debe ser mayor a cero.")
-        payload = {
-            "amount_in_cents": int(amount * Decimal("100")),
-            "currency": self.currency,
-            "destination_id": self.destination,
-            "purpose": "developer_commission",
-        }
+    def create_payout(self, amount: Decimal, reference: Optional[str] = None) -> str:
+        """
+        Crea una orden de pago al desarrollador.
+
+        Args:
+            amount: Monto a dispersar en COP
+            reference: Referencia única (opcional, se genera si no se provee)
+
+        Returns:
+            ID del lote de pago creado
+        """
+        if not reference:
+            # Generar referencia única si no se provee
+            reference = f"DEV-COMM-{timezone.now().strftime('%Y%m%d-%H%M%S')}"
+
         try:
-            response = self._request_with_retry(
-                "post",
-                self.payout_endpoint,
-                json=payload,
-                headers=self._headers(),
+            payout_id, payout_data = self._client.create_payout(
+                amount=amount,
+                reference=reference,
+                beneficiary_data=None,  # Usa datos del desarrollador por defecto
+                account_id=None,  # Usa primera cuenta disponible
             )
-            try:
-                data = response.json() or {}
-            except ValueError as exc:
-                raise WompiPayoutError("Respuesta inválida de Wompi al crear la dispersión.") from exc
-            transfer_data = data.get("data") or {}
-            if isinstance(transfer_data, dict):
-                transfer_id = transfer_data.get("id")
-            else:
-                transfer_id = None
-            transfer_id = transfer_id or data.get("id")
-            if not transfer_id:
-                logger.error("Wompi respondió sin transfer_id al crear payout: %s", data)
-                raise WompiPayoutError("La respuesta de Wompi no incluyó un identificador de transferencia.")
-            return transfer_id
-        except requests.Timeout as exc:
-            raise WompiPayoutError("Timeout al crear la dispersión en Wompi") from exc
-        except requests.RequestException as exc:
-            raise WompiPayoutError(f"No se pudo crear el payout: {exc}") from exc
+
+            logger.info(
+                "Payout creado para desarrollador: ID=%s, Monto=$%s, Estado=%s",
+                payout_id,
+                amount,
+                payout_data.get("status", "unknown")
+            )
+
+            return payout_id
+
+        except WompiPayoutsError as exc:
+            # Convertir a excepción legacy para compatibilidad
+            raise WompiPayoutError(str(exc)) from exc
 
 
 class DeveloperCommissionService:
@@ -234,6 +135,8 @@ class DeveloperCommissionService:
             amount=amount,
             source_payment=payment,
             status=CommissionLedger.Status.PENDING,
+            payment_type=payment.payment_type or "",
+            payment_method=payment.payment_method_type or "",
         )
 
     @staticmethod

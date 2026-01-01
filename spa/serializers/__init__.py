@@ -1,4 +1,5 @@
 from .appointment import (
+    AdminAppointmentCreateSerializer,
     AppointmentCancelSerializer,
     AppointmentCreateSerializer,
     AppointmentListSerializer,
@@ -6,6 +7,7 @@ from .appointment import (
     AppointmentRescheduleSerializer,
     AppointmentStatusUpdateSerializer,
     AvailabilityCheckSerializer,
+    ReceiveAdvanceInPersonSerializer,
     ServiceCategorySerializer,
     ServiceSerializer,
     StaffAvailabilitySerializer,
@@ -31,6 +33,7 @@ from .waitlist import (
 )
 
 __all__ = [
+    "AdminAppointmentCreateSerializer",
     "AppointmentCancelSerializer",
     "AppointmentCreateSerializer",
     "AppointmentListSerializer",
@@ -38,6 +41,7 @@ __all__ = [
     "AppointmentRescheduleSerializer",
     "AppointmentStatusUpdateSerializer",
     "AvailabilityCheckSerializer",
+    "ReceiveAdvanceInPersonSerializer",
     "ServiceCategorySerializer",
     "ServiceSerializer",
     "StaffAvailabilitySerializer",

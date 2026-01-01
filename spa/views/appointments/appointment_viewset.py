@@ -248,9 +248,10 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if appointment.status not in [
             Appointment.AppointmentStatus.CONFIRMED,
             Appointment.AppointmentStatus.RESCHEDULED,
+            Appointment.AppointmentStatus.FULLY_PAID,
         ]:
             return Response(
-                {'error': 'Solo se pueden completar pagos finales de citas confirmadas.'},
+                {'error': 'Solo se pueden completar pagos finales de citas confirmadas, reagendadas o totalmente pagadas.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         payment, outstanding = PaymentService.create_final_payment(appointment, request.user)
@@ -286,16 +287,22 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         mark_as_refunded = request.data.get('mark_as_refunded', False)
 
         if appointment.status not in [
+            Appointment.AppointmentStatus.PENDING_PAYMENT,
             Appointment.AppointmentStatus.CONFIRMED,
             Appointment.AppointmentStatus.RESCHEDULED,
+            Appointment.AppointmentStatus.FULLY_PAID,
         ]:
             return Response(
-                {'error': 'Solo se pueden cancelar citas confirmadas o reagendadas.'},
+                {'error': 'Solo se pueden cancelar citas pendientes, confirmadas, reagendadas o totalmente pagadas.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         appointment.status = Appointment.AppointmentStatus.CANCELLED
         appointment.outcome = Appointment.AppointmentOutcome.CANCELLED_BY_ADMIN
         appointment.save(update_fields=['status', 'outcome', 'updated_at'])
+
+        # Cancelar pagos pendientes para evitar bloqueo por deuda
+        PaymentService.cancel_pending_payments_for_appointment(appointment)
+
         AuditLog.objects.create(
             admin_user=request.user,
             action=AuditLog.Action.APPOINTMENT_CANCELLED_BY_ADMIN,
@@ -402,6 +409,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             appointment.status in [
                 Appointment.AppointmentStatus.CONFIRMED,
                 Appointment.AppointmentStatus.RESCHEDULED,
+                Appointment.AppointmentStatus.FULLY_PAID,
             ]
             and user.role not in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF]
         ):
@@ -422,6 +430,10 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             else Appointment.AppointmentOutcome.CANCELLED_BY_CLIENT
         )
         appointment.save(update_fields=['status', 'outcome', 'updated_at'])
+
+        # Cancelar pagos pendientes para evitar bloqueo por deuda
+        PaymentService.cancel_pending_payments_for_appointment(appointment)
+
         AuditLog.objects.create(
             admin_user=user if user.role in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF] else None,
             target_user=appointment.user,
@@ -436,7 +448,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         credit_amount = Decimal('0')
         if (
             appointment.outcome == Appointment.AppointmentOutcome.CANCELLED_BY_CLIENT
-            and previous_status == Appointment.AppointmentStatus.CONFIRMED
+            and previous_status in [Appointment.AppointmentStatus.CONFIRMED, Appointment.AppointmentStatus.FULLY_PAID]
         ):
             if appointment.start_time - timezone.now() >= timedelta(hours=24):
                 from finances.services import CreditManagementService
@@ -484,9 +496,10 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if appointment.status not in [
             Appointment.AppointmentStatus.CONFIRMED,
             Appointment.AppointmentStatus.RESCHEDULED,
+            Appointment.AppointmentStatus.FULLY_PAID,
         ]:
             return Response(
-                {'error': 'Solo las citas confirmadas pueden ser marcadas como "No Asistió".'},
+                {'error': 'Solo las citas confirmadas, reagendadas o totalmente pagadas pueden ser marcadas como "No Asistió".'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         if appointment.start_time > timezone.now():
@@ -498,6 +511,9 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         appointment.status = Appointment.AppointmentStatus.CANCELLED
         appointment.outcome = Appointment.AppointmentOutcome.NO_SHOW
         appointment.save(update_fields=['status', 'outcome', 'updated_at'])
+
+        # Cancelar pagos pendientes para evitar bloqueo por deuda
+        PaymentService.cancel_pending_payments_for_appointment(appointment)
 
         settings_obj = GlobalSettings.load()
         credit_generated = Decimal('0')
@@ -558,9 +574,10 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         if appointment.status not in [
             Appointment.AppointmentStatus.CONFIRMED,
             Appointment.AppointmentStatus.RESCHEDULED,
+            Appointment.AppointmentStatus.FULLY_PAID,
         ]:
             return Response(
-                {'error': 'Solo se pueden exportar citas confirmadas.'},
+                {'error': 'Solo se pueden exportar citas confirmadas, reagendadas o totalmente pagadas.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -584,6 +601,8 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             "service_ids": ["uuid", ...],
             "staff_member_id": "uuid" (optional),
             "start_time": "ISO datetime",
+            "payment_method": "VOUCHER|CREDIT|PAYMENT_LINK|CASH" (default: PAYMENT_LINK),
+            "voucher_id": "uuid" (requerido si payment_method=VOUCHER),
             "send_whatsapp": true/false (default: true)
         }
         
@@ -591,8 +610,9 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         {
             "appointment": {...},
             "payment": {...}, 
-            "payment_link": "https://checkout.wompi.co/...",
-            "whatsapp_sent": true/false
+            "payment_link": "https://checkout.wompi.co/..." (si aplica),
+            "whatsapp_sent": true/false,
+            "voucher_used": {...} (si aplica)
         }
         """
         from ...serializers import AdminAppointmentCreateSerializer
@@ -603,6 +623,7 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         
         # Obtener cliente
         client = CustomUser.objects.get(id=validated_data['client_id'])
+        payment_method = validated_data.get('payment_method', 'PAYMENT_LINK')
         
         try:
             # Crear la cita usando el servicio existente
@@ -618,50 +639,307 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         except ValueError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         
-        # Crear el pago de anticipo
-        payment_service = PaymentService(client)
-        payment = payment_service.create_advance_payment_for_appointment(appointment)
-        
-        # Generar link de pago si el anticipo no fue cubierto por crédito
+        # Variables para la respuesta
+        payment = None
         payment_link = None
-        if payment.status != payment.PaymentStatus.PAID_WITH_CREDIT:
-            payment_link = PaymentService.generate_checkout_url(payment)
-        
-        # Enviar notificación WhatsApp con link de pago
         whatsapp_sent = False
+        voucher_used = None
         send_whatsapp = validated_data.get('send_whatsapp', True)
         
-        if send_whatsapp and payment_link and client.phone_number:
+        # Procesar según método de pago
+        if payment_method == 'VOUCHER':
+            # Usar voucher para pagar
+            voucher = validated_data['voucher']
+            
+            # Marcar voucher como usado
+            voucher.status = voucher.VoucherStatus.USED
+            voucher.save(update_fields=['status', 'updated_at'])
+            
+            # Crear pago con estado PAID_WITH_CREDIT (reutilizamos este estado para vouchers)
+            from finances.models import Payment
+            payment = Payment.objects.create(
+                user=client,
+                appointment=appointment,
+                amount=appointment.price_at_purchase,
+                status=Payment.PaymentStatus.PAID_WITH_CREDIT,
+                payment_type=Payment.PaymentType.ADVANCE,
+                payment_method_type='VOUCHER',
+                transaction_id=f'VOUCHER-{voucher.code}'
+            )
+            
+            # Confirmar la cita inmediatamente
+            appointment.status = Appointment.AppointmentStatus.CONFIRMED
+            appointment.save(update_fields=['status', 'updated_at'])
+            
+            voucher_used = {
+                'id': str(voucher.id),
+                'code': voucher.code,
+                'service': voucher.service.name
+            }
+            
+            # Enviar notificación de cita confirmada con voucher
+            if send_whatsapp and client.phone_number:
+                try:
+                    from notifications.services import NotificationService
+                    service_names = ", ".join([s.name for s in validated_data['services']])
+                    start_time_local = timezone.localtime(appointment.start_time)
+                    
+                    NotificationService.send_notification(
+                        user=client,
+                        event_code="ADMIN_APPOINTMENT_CREATED_WITH_VOUCHER",
+                        context={
+                            "user_name": client.get_full_name() or client.first_name or "Cliente",
+                            "services": service_names,
+                            "start_date": start_time_local.strftime("%d de %B %Y"),
+                            "start_time": start_time_local.strftime("%I:%M %p"),
+                            "voucher_code": voucher.code,
+                        },
+                        priority="high"
+                    )
+                    whatsapp_sent = True
+                except Exception as e:
+                    logger.exception(
+                        "Error enviando WhatsApp de confirmación con voucher para cita %s: %s",
+                        appointment.id,
+                        str(e)
+                    )
+            
+            # Registrar en AuditLog
+            AuditLog.objects.create(
+                admin_user=request.user,
+                target_user=client,
+                target_appointment=appointment,
+                action=AuditLog.Action.VOUCHER_REDEEMED,
+                details=f"Admin '{request.user.first_name}' usó voucher {voucher.code} para cita {appointment.id}"
+            )
+        
+        elif payment_method == 'CREDIT':
+            # Intentar usar crédito disponible
+            payment_service = PaymentService(client)
+            payment = payment_service.create_advance_payment_for_appointment(appointment)
+            
+            # Si el crédito cubrió todo, confirmar cita
+            if payment.status == payment.PaymentStatus.PAID_WITH_CREDIT:
+                appointment.status = Appointment.AppointmentStatus.CONFIRMED
+                appointment.save(update_fields=['status', 'updated_at'])
+                
+                # Notificación de cita confirmada con crédito
+                if send_whatsapp and client.phone_number:
+                    try:
+                        from notifications.services import NotificationService
+                        service_names = ", ".join([s.name for s in validated_data['services']])
+                        start_time_local = timezone.localtime(appointment.start_time)
+                        
+                        NotificationService.send_notification(
+                            user=client,
+                            event_code="ADMIN_APPOINTMENT_CREATED_WITH_CREDIT",
+                            context={
+                                "user_name": client.get_full_name() or client.first_name or "Cliente",
+                                "services": service_names,
+                                "start_date": start_time_local.strftime("%d de %B %Y"),
+                                "start_time": start_time_local.strftime("%I:%M %p"),
+                                "amount": f"${payment.amount:,.0f}",
+                            },
+                            priority="high"
+                        )
+                        whatsapp_sent = True
+                    except Exception as e:
+                        logger.exception(
+                            "Error enviando WhatsApp de confirmación con crédito para cita %s: %s",
+                            appointment.id,
+                            str(e)
+                        )
+            else:
+                # Si no cubrió todo, generar link de pago por la diferencia
+                payment_link = PaymentService.generate_checkout_url(payment)
+                
+                # Enviar notificación con link de pago
+                if send_whatsapp and payment_link and client.phone_number:
+                    try:
+                        from notifications.services import NotificationService
+                        settings_obj = GlobalSettings.load()
+                        expiration_minutes = settings_obj.advance_expiration_minutes
+                        expiration_time = timezone.now() + timedelta(minutes=expiration_minutes)
+                        service_names = ", ".join([s.name for s in validated_data['services']])
+                        
+                        NotificationService.send_notification(
+                            user=client,
+                            event_code="ADMIN_APPOINTMENT_PAYMENT_LINK",
+                            context={
+                                "user_name": client.get_full_name() or client.first_name or "Cliente",
+                                "services": service_names,
+                                "amount": f"${payment.amount:,.0f}",
+                                "payment_url": payment_link,
+                                "expiration_time": expiration_time.strftime("%I:%M %p"),
+                            },
+                            priority="high"
+                        )
+                        whatsapp_sent = True
+                    except Exception as e:
+                        logger.exception(
+                            "Error enviando WhatsApp con link de pago para cita %s: %s",
+                            appointment.id,
+                            str(e)
+                        )
+        
+        
+        elif payment_method == 'CASH':
+            # Pago en efectivo - registrar transacción inmediatamente
+            logger.info(f"🔵 INICIANDO FLUJO DE PAGO EN EFECTIVO para cliente {client.id}")
+            
+            from finances.models import Payment
+            from decimal import Decimal
+            
+            cash_amount = Decimal(str(validated_data.get('cash_amount', 0)))
+            logger.info(f"🔵 cash_amount recibido: ${cash_amount}")
+            
+            # Crear el pago de anticipo
+            payment_service = PaymentService(client)
+            payment = payment_service.create_advance_payment_for_appointment(appointment)
+            
+            # Registrar el pago en efectivo recibido
             try:
-                from notifications.services import NotificationService
-                
-                # Calcular tiempo de expiración
-                settings_obj = GlobalSettings.load()
-                expiration_minutes = settings_obj.advance_expiration_minutes
-                expiration_time = timezone.now() + timedelta(minutes=expiration_minutes)
-                
-                # Obtener nombres de servicios
-                service_names = ", ".join([s.name for s in validated_data['services']])
-                
-                NotificationService.send_notification(
-                    user=client,
-                    event_code="ADMIN_APPOINTMENT_PAYMENT_LINK",
-                    context={
-                        "user_name": client.get_full_name() or client.first_name or "Cliente",
-                        "services": service_names,
-                        "amount": f"${payment.amount:,.0f}",
-                        "payment_url": payment_link,
-                        "expiration_time": expiration_time.strftime("%I:%M %p"),
-                    },
-                    priority="high"
+                # ✅ ACTUALIZAR payment.amount con el monto REAL recibido
+                payment.amount = cash_amount
+                payment.payment_method_type = 'CASH'
+
+                # Determinar estado del pago y de la cita según el monto recibido
+                if cash_amount >= appointment.price_at_purchase:
+                    # Pago completo - cubrió todo el servicio
+                    payment.status = Payment.PaymentStatus.APPROVED
+                    appointment.status = Appointment.AppointmentStatus.FULLY_PAID
+                    payment_status_msg = "completo (totalmente pagado)"
+                    logger.info(f"✅ Pago completo: ${cash_amount} >= ${appointment.price_at_purchase}")
+
+                elif cash_amount > Decimal('0'):
+                    # Pago parcial pero suficiente para confirmar
+                    payment.status = Payment.PaymentStatus.APPROVED
+                    appointment.status = Appointment.AppointmentStatus.CONFIRMED
+                    payment_status_msg = "parcial (cita confirmada)"
+                    logger.info(f"✅ Pago parcial: ${cash_amount} (confirmada con saldo pendiente)")
+
+                else:
+                    # Sin pago - la cita queda pendiente
+                    payment.status = Payment.PaymentStatus.PENDING
+                    appointment.status = Appointment.AppointmentStatus.PENDING_PAYMENT
+                    payment_status_msg = "sin pago (pendiente)"
+                    logger.warning(f"⚠️ Sin pago en efectivo, cita pendiente")
+
+                # ✅ Guardar con amount actualizado
+                payment.save(update_fields=['amount', 'status', 'payment_method_type', 'updated_at'])
+                appointment.save(update_fields=['status', 'updated_at'])
+
+                logger.info(
+                    "Pago en efectivo registrado para cita %s: $%s (%s)",
+                    appointment.id,
+                    cash_amount,
+                    payment_status_msg
                 )
-                whatsapp_sent = True
+
+                # 🔥 IMPORTANTE: Registrar comisión del desarrollador si el pago fue aprobado
+                if payment.status == Payment.PaymentStatus.APPROVED:
+                    from finances.services import DeveloperCommissionService
+                    try:
+                        ledger = DeveloperCommissionService.register_commission(payment)
+                        if ledger:
+                            logger.info(
+                                "✅ Comisión registrada para pago en efectivo %s: $%s",
+                                payment.id,
+                                ledger.amount
+                            )
+                            # Evaluar si es momento de pagar al desarrollador
+                            DeveloperCommissionService.evaluate_payout()
+                    except Exception as exc:
+                        logger.exception(
+                            "Error registrando comisión para pago en efectivo %s: %s",
+                            payment.id,
+                            exc
+                        )
+                
             except Exception as e:
                 logger.exception(
-                    "Error enviando WhatsApp con link de pago para cita %s: %s",
+                    "Error registrando pago en efectivo para cita %s: %s",
                     appointment.id,
                     str(e)
                 )
+                # Continuar con el flujo, el pago quedará pendiente
+            
+            # Notificación según estado del pago
+            if send_whatsapp and client.phone_number:
+                try:
+                    from notifications.services import NotificationService
+                    service_names = ", ".join([s.name for s in validated_data['services']])
+                    start_time_local = timezone.localtime(appointment.start_time)
+                    
+                    # Determinar evento según estado
+                    if payment.status == Payment.PaymentStatus.APPROVED:
+                        event_code = "ADMIN_APPOINTMENT_CASH_PAID"
+                    else:
+                        event_code = "ADMIN_APPOINTMENT_CASH_PARTIAL"
+                    
+                    NotificationService.send_notification(
+                        user=client,
+                        event_code=event_code,
+                        context={
+                            "user_name": client.get_full_name() or client.first_name or "Cliente",
+                            "services": service_names,
+                            "start_date": start_time_local.strftime("%d de %B %Y"),
+                            "start_time": start_time_local.strftime("%I:%M %p"),
+                            "cash_amount": f"${cash_amount:,.0f}",
+                            "total_amount": f"${appointment.price_at_purchase:,.0f}",
+                            "remaining": f"${appointment.price_at_purchase - cash_amount:,.0f}" if cash_amount < appointment.price_at_purchase else "$0",
+                        },
+                        priority="high"
+                    )
+                    whatsapp_sent = True
+                except Exception as e:
+                    logger.exception(
+                        "Error enviando WhatsApp de pago en efectivo para cita %s: %s",
+                        appointment.id,
+                        str(e)
+                    )
+        
+        else:  # PAYMENT_LINK (default)
+            # Crear el pago de anticipo
+            payment_service = PaymentService(client)
+            payment = payment_service.create_advance_payment_for_appointment(appointment)
+            
+            # Generar link de pago si el anticipo no fue cubierto por crédito
+            if payment.status != payment.PaymentStatus.PAID_WITH_CREDIT:
+                payment_link = PaymentService.generate_checkout_url(payment)
+            else:
+                # Si el crédito cubrió todo, confirmar cita
+                appointment.status = Appointment.AppointmentStatus.CONFIRMED
+                appointment.save(update_fields=['status', 'updated_at'])
+            
+            # Enviar notificación WhatsApp con link de pago
+            if send_whatsapp and payment_link and client.phone_number:
+                try:
+                    from notifications.services import NotificationService
+                    settings_obj = GlobalSettings.load()
+                    expiration_minutes = settings_obj.advance_expiration_minutes
+                    expiration_time = timezone.now() + timedelta(minutes=expiration_minutes)
+                    service_names = ", ".join([s.name for s in validated_data['services']])
+                    
+                    NotificationService.send_notification(
+                        user=client,
+                        event_code="ADMIN_APPOINTMENT_PAYMENT_LINK",
+                        context={
+                            "user_name": client.get_full_name() or client.first_name or "Cliente",
+                            "services": service_names,
+                            "amount": f"${payment.amount:,.0f}",
+                            "payment_url": payment_link,
+                            "expiration_time": expiration_time.strftime("%I:%M %p"),
+                        },
+                        priority="high"
+                    )
+                    whatsapp_sent = True
+                except Exception as e:
+                    logger.exception(
+                        "Error enviando WhatsApp con link de pago para cita %s: %s",
+                        appointment.id,
+                        str(e)
+                    )
         
         # Registrar en AuditLog
         AuditLog.objects.create(
@@ -669,23 +947,34 @@ class AppointmentViewSet(viewsets.ModelViewSet):
             target_user=client,
             target_appointment=appointment,
             action=AuditLog.Action.APPOINTMENT_CREATED_BY_ADMIN,
-            details=f"Admin '{request.user.first_name}' creó cita para cliente {client.phone_number}. WhatsApp enviado: {whatsapp_sent}."
+            details=f"Admin '{request.user.first_name}' creó cita para cliente {client.phone_number}. Método: {payment_method}. WhatsApp enviado: {whatsapp_sent}."
         )
         
         # Preparar respuesta
         appointment_serializer = AppointmentListSerializer(appointment, context={'request': request})
         
-        return Response({
+        response_data = {
             'appointment': appointment_serializer.data,
-            'payment': {
+            'payment_method': payment_method,
+            'whatsapp_sent': whatsapp_sent,
+        }
+        
+        if payment:
+            response_data['payment'] = {
                 'id': str(payment.id),
                 'amount': str(payment.amount),
                 'status': payment.status,
                 'payment_type': payment.payment_type,
-            },
-            'payment_link': payment_link,
-            'whatsapp_sent': whatsapp_sent,
-        }, status=status.HTTP_201_CREATED)
+            }
+        
+        if payment_link:
+            response_data['payment_link'] = payment_link
+        
+        if voucher_used:
+            response_data['voucher_used'] = voucher_used
+        
+        return Response(response_data, status=status.HTTP_201_CREATED)
+
 
     @action(detail=True, methods=['post'], permission_classes=[IsStaffOrAdmin], url_path='receive-advance-in-person')
     @transaction.atomic
@@ -763,5 +1052,96 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 'payment_method_type': payment.payment_method_type,
             },
             'message': f'Anticipo de ${amount:,.0f} registrado. Cita confirmada.',
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated, IsVerified], url_path='available-actions')
+    def available_actions(self, request, pk=None):
+        """
+        Returns which actions are available for this appointment.
+
+        This endpoint centralizes business logic for showing/hiding action buttons
+        in the frontend. Instead of hardcoding state checks in the UI, the frontend
+        can call this endpoint to know exactly which actions are permitted.
+
+        GET /api/appointments/{id}/available-actions/
+
+        Response:
+        {
+            "can_reschedule": true,
+            "can_reschedule_reason": "",
+            "can_cancel": true,
+            "can_cancel_reason": "",
+            "can_mark_completed": false,
+            "can_mark_completed_reason": "Solo el personal puede marcar citas como completadas",
+            "can_mark_no_show": false,
+            "can_mark_no_show_reason": "Solo el personal puede marcar no-show",
+            "can_complete_final_payment": false,
+            "can_complete_final_payment_reason": "Solo el personal puede procesar pagos",
+            "can_add_tip": true,
+            "can_add_tip_reason": "",
+            "can_download_ical": true,
+            "can_download_ical_reason": "",
+            "can_cancel_by_admin": false,
+            "can_cancel_by_admin_reason": "Solo administradores pueden usar esta acción",
+            "status": "CONFIRMED",
+            "is_active": true,
+            "is_past": false,
+            "hours_until": 48.5
+        }
+        """
+        appointment = self.get_object()
+        user = request.user
+
+        # Check all available actions
+        can_reschedule, reschedule_reason = appointment.can_reschedule(user)
+        can_cancel, cancel_reason = appointment.can_cancel(user)
+        can_mark_completed, mark_completed_reason = appointment.can_mark_completed(user)
+        can_mark_no_show, mark_no_show_reason = appointment.can_mark_no_show(user)
+        can_complete_final_payment, complete_final_payment_reason = appointment.can_complete_final_payment(user)
+        can_add_tip, add_tip_reason = appointment.can_add_tip(user)
+        can_download_ical, download_ical_reason = appointment.can_download_ical(user)
+        can_cancel_by_admin, cancel_by_admin_reason = appointment.can_cancel_by_admin(user)
+
+        return Response({
+            # Reschedule action
+            'can_reschedule': can_reschedule,
+            'can_reschedule_reason': reschedule_reason,
+
+            # Cancel action (client)
+            'can_cancel': can_cancel,
+            'can_cancel_reason': cancel_reason,
+
+            # Mark completed (staff)
+            'can_mark_completed': can_mark_completed,
+            'can_mark_completed_reason': mark_completed_reason,
+
+            # Mark no-show (staff)
+            'can_mark_no_show': can_mark_no_show,
+            'can_mark_no_show_reason': mark_no_show_reason,
+
+            # Complete final payment (staff)
+            'can_complete_final_payment': can_complete_final_payment,
+            'can_complete_final_payment_reason': complete_final_payment_reason,
+
+            # Add tip
+            'can_add_tip': can_add_tip,
+            'can_add_tip_reason': add_tip_reason,
+
+            # Download iCal
+            'can_download_ical': can_download_ical,
+            'can_download_ical_reason': download_ical_reason,
+
+            # Cancel by admin (admin only)
+            'can_cancel_by_admin': can_cancel_by_admin,
+            'can_cancel_by_admin_reason': cancel_by_admin_reason,
+
+            # Additional helpful info
+            'status': appointment.status,
+            'status_display': appointment.get_status_display(),
+            'is_active': appointment.is_active,
+            'is_past': appointment.is_past,
+            'is_upcoming': appointment.is_upcoming,
+            'hours_until': round(appointment.hours_until_appointment, 1),
+            'reschedule_count': appointment.reschedule_count,
         }, status=status.HTTP_200_OK)
 

@@ -80,6 +80,7 @@ class KpiService:
             status__in=[
                 Appointment.AppointmentStatus.CONFIRMED,
                 Appointment.AppointmentStatus.RESCHEDULED,
+                Appointment.AppointmentStatus.FULLY_PAID,
                 Appointment.AppointmentStatus.COMPLETED,
             ]
         ).count()
@@ -677,7 +678,7 @@ class KpiService:
         """
         qs = self._appointment_queryset()
         total = qs.count()
-        confirmed = qs.filter(status__in=[Appointment.AppointmentStatus.CONFIRMED, Appointment.AppointmentStatus.COMPLETED]).count()
+        confirmed = qs.filter(status__in=[Appointment.AppointmentStatus.CONFIRMED, Appointment.AppointmentStatus.FULLY_PAID, Appointment.AppointmentStatus.COMPLETED]).count()
         completed = qs.filter(status=Appointment.AppointmentStatus.COMPLETED).count()
         
         return {

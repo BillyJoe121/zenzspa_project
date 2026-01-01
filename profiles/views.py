@@ -47,8 +47,8 @@ class ClinicalProfileViewSet(viewsets.ModelViewSet):
     STAFF_LOOKBACK_DAYS = 30
     STAFF_ALLOWED_STATUSES = {
         Appointment.AppointmentStatus.PENDING_PAYMENT,
-        Appointment.AppointmentStatus.PAID,
         Appointment.AppointmentStatus.CONFIRMED,
+        Appointment.AppointmentStatus.FULLY_PAID,
         Appointment.AppointmentStatus.RESCHEDULED,
         Appointment.AppointmentStatus.COMPLETED,
     }

@@ -73,6 +73,7 @@ def send_appointment_reminder():
         status__in=[
             Appointment.AppointmentStatus.CONFIRMED,
             Appointment.AppointmentStatus.RESCHEDULED,
+            Appointment.AppointmentStatus.FULLY_PAID,
         ],
     )
     for appointment in appointments:
