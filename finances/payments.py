@@ -350,18 +350,35 @@ class PaymentService:
     @transaction.atomic
     def create_order_payment(user, order):
         """
-        Crea un registro de pago para una orden de marketplace y prepara los datos para Wompi.
+        Crea o actualiza un registro de pago para una orden de marketplace 
+        y prepara los datos para Wompi con una referencia única.
         """
+        # Generar SIEMPRE una nueva referencia para permitir reintentos
         reference = f"ORDER-{order.id}-{uuid.uuid4().hex[:8]}"
         
-        payment = Payment.objects.create(
-            user=user,
-            amount=order.total_amount,
+        # Buscar si ya existe un pago pendiente para esta orden para reutilizarlo
+        payment = Payment.objects.filter(
+            order=order, 
             status=Payment.PaymentStatus.PENDING,
-            payment_type=Payment.PaymentType.ORDER,
-            transaction_id=reference,
-            order=order,
-        )
+            payment_type=Payment.PaymentType.ORDER
+        ).first()
+
+        if payment:
+            # Actualizar pago existente con nueva referencia
+            payment.transaction_id = reference
+            payment.amount = order.total_amount
+            payment.user = user # Asegurar que el usuario sea el correcto
+            payment.save(update_fields=['transaction_id', 'amount', 'user', 'updated_at'])
+        else:
+            # Crear nuevo pago
+            payment = Payment.objects.create(
+                user=user,
+                amount=order.total_amount,
+                status=Payment.PaymentStatus.PENDING,
+                payment_type=Payment.PaymentType.ORDER,
+                transaction_id=reference,
+                order=order,
+            )
         
         order.wompi_transaction_id = reference
         order.save(update_fields=['wompi_transaction_id', 'updated_at'])
@@ -387,7 +404,7 @@ class PaymentService:
             'currency': getattr(settings, "WOMPI_CURRENCY", "COP"),
             'amountInCents': amount_in_cents,
             'reference': reference,
-            'signature:integrity': signature,
+            'signatureIntegrity': signature,
             'redirectUrl': settings.WOMPI_REDIRECT_URL,
             'acceptanceToken': acceptance_token,
             'paymentId': str(payment.id),

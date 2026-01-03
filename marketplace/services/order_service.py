@@ -179,6 +179,30 @@ class OrderService:
             "Pago confirmado: order_id=%s, user=%s, total=%s",
             order.id, order.user.id, order.total_amount
         )
+
+        # Vaciar el carrito del usuario ahora que el pago fue exitoso
+        try:
+            from ..models import Cart
+            # Buscar el carrito activo del usuario
+            cart = Cart.objects.filter(user=order.user, is_active=True).first()
+            if cart:
+                deleted_count = cart.items.all().delete()[0]
+                logger.info(
+                    "Carrito vaciado después de pago exitoso: user=%s, order=%s, items_deleted=%d",
+                    order.user.id, order.id, deleted_count
+                )
+            else:
+                logger.warning(
+                    "No se encontró carrito activo para vaciar: user=%s, order=%s",
+                    order.user.id, order.id
+                )
+        except Exception as e:
+            # Si falla, loguear el error pero no bloquear el pago
+            logger.error(
+                "Error al vaciar carrito después de pago: user=%s, order=%s, error=%s",
+                order.user.id, order.id, str(e)
+            )
+
         return order
 
     @classmethod
@@ -190,9 +214,14 @@ class OrderService:
             if order.user.is_vip and variant.vip_price:
                 current_price = variant.vip_price
             recalculated += current_price * item.quantity
+        
+        # Sumar costo de envío si existe
+        if order.shipping_cost:
+            recalculated += order.shipping_cost
+
         if recalculated != order.total_amount:
             raise BusinessLogicError(
-                detail="El precio de la orden no coincide con el de los productos actuales.",
+                detail=f"El precio de la orden ({order.total_amount}) no coincide con el cálculo actual ({recalculated}).",
                 internal_code="MKT-PRICE",
             )
 

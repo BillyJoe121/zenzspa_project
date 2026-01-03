@@ -495,6 +495,69 @@ class CreditManagementService:
         locked_user.cancellation_streak = []
         locked_user.save(update_fields=['cancellation_streak', 'updated_at'])
 
+    @classmethod
+    @transaction.atomic
+    def issue_credit_from_order(cls, *, order, created_by=None, reason=None):
+        """
+        Genera crédito a partir del pago de una orden del marketplace.
+
+        Args:
+            order: Orden cancelada del marketplace
+            created_by: Usuario que genera el crédito (puede ser None si es el cliente)
+            reason: Razón del crédito
+
+        Returns:
+            tuple: (monto_total_generado, lista_de_creditos_creados)
+        """
+        from finances.models import Payment, ClientCredit
+
+        # Buscar pagos aprobados de la orden
+        payments = Payment.objects.select_for_update().filter(
+            order=order,
+            status__in=[
+                Payment.PaymentStatus.APPROVED,
+                Payment.PaymentStatus.PAID_WITH_CREDIT,
+            ],
+        )
+
+        if not payments.exists():
+            return Decimal('0'), []
+
+        settings_obj = GlobalSettings.load()
+        expires_at = timezone.now().date() + timedelta(days=settings_obj.credit_expiration_days)
+        total_created = Decimal('0')
+        created_credits = []
+
+        for payment in payments:
+            # Verificar si ya se generó crédito para este pago
+            if ClientCredit.objects.filter(originating_payment=payment).exists():
+                continue
+
+            credit_amount = payment.amount or Decimal('0')
+            if credit_amount <= 0:
+                continue
+
+            credit = ClientCredit.objects.create(
+                user=order.user,
+                originating_payment=payment,
+                initial_amount=credit_amount,
+                remaining_amount=credit_amount,
+                status=ClientCredit.CreditStatus.AVAILABLE,
+                expires_at=expires_at,
+            )
+            total_created += credit_amount
+            created_credits.append(credit)
+
+        if total_created > 0:
+            AuditLog.objects.create(
+                admin_user=created_by,
+                target_user=order.user,
+                action=AuditLog.Action.APPOINTMENT_CANCELLED_BY_ADMIN,  # Reutilizamos esta acción
+                details=reason or f"Crédito generado por cancelación de orden {order.id}",
+            )
+
+        return total_created, created_credits
+
     @staticmethod
     def _get_available_credit(credit_id):
         if not credit_id:
@@ -503,7 +566,7 @@ class CreditManagementService:
             credit = ClientCredit.objects.select_for_update().get(id=credit_id)
         except ClientCredit.DoesNotExist:
             return None
-            
+
         if credit.status not in [
             ClientCredit.CreditStatus.AVAILABLE,
             ClientCredit.CreditStatus.PARTIALLY_USED,

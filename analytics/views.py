@@ -12,7 +12,7 @@ from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.db.models import Sum, Q
+from django.db.models import Sum, Q, F
 from django.db.models.functions import Coalesce
 from uuid import UUID
 
@@ -40,7 +40,7 @@ def _audit_analytics(request, action, extra=None):
 
 
 class DateFilterMixin:
-    MAX_RANGE_DAYS = 31
+    MAX_RANGE_DAYS = 365
     CACHE_TTL_SHORT = 300      # 5 minutos - para datos en tiempo real
     CACHE_TTL_MEDIUM = 1800    # 30 minutos - para KPIs diarios
     CACHE_TTL_LONG = 7200      # 2 horas - para reportes históricos
@@ -76,9 +76,9 @@ class DateFilterMixin:
             except ValueError:
                 raise ValueError(f"Formato inválido para {name}. Usa YYYY-MM-DD.")
             
-            # NUEVO - Validar que no sea fecha futura
-            if parsed > today:
-                raise ValueError(f"{name} no puede ser una fecha futura.")
+            # remove checking if parsed > today to allow future dates for forecasting
+            # if parsed > today:
+            #    raise ValueError(f"{name} no puede ser una fecha futura.")
             
             # NUEVO - Validar que no sea muy antigua (máximo 1 año)
             one_year_ago = today - timedelta(days=365)
@@ -409,7 +409,7 @@ class DashboardPagination(PageNumberPagination):
 class DashboardViewSet(viewsets.ViewSet):
     permission_classes = [CanViewAnalytics]
     pagination_class = DashboardPagination
-    CACHE_TTL = 300  # Aumentado a 5 minutos
+    CACHE_TTL = 300  # 5 minutos
 
     def list(self, request):
         return Response({"detail": "Usa las acciones del dashboard."})
@@ -433,72 +433,54 @@ class DashboardViewSet(viewsets.ViewSet):
         return f"analytics:dashboard:{role}:{suffix}"
 
     @action(detail=False, methods=["get"], url_path="agenda-today")
-    def agenda_today(self, request):
+    def agenda_week(self, request):
+        """
+        Retorna el número de citas agendadas para la semana en curso (Lunes a Domingo).
+        Excluye las canceladas.
+        """
         today = self._today()
-        cache_key = self._cache_key(request, f"agenda:{today.isoformat()}")
+        start_of_week = today - timedelta(days=today.weekday())
+        end_of_week = start_of_week + timedelta(days=6)
+        
+        cache_key = self._cache_key(request, f"agenda_week:{start_of_week.isoformat()}")
         cached = cache.get(cache_key)
         
-        # Nota: La paginación complica el caching de la lista completa vs paginada.
-        # Si cacheamos la lista completa, paginamos después.
-        
+        # Soporte para limpiar caché si es necesario
+        if request.query_params.get('force_refresh') == 'true':
+            cached = None
+
         if cached is not None:
-            _audit_analytics(
-                request,
-                "dashboard_agenda_today",
-                {"date": today.isoformat(), "cache": "hit"},
-            )
-            # Si está cacheado, asumimos que es la lista completa de dicts
-            # Necesitamos re-hidratar o paginar la lista de dicts
-            paginator = self.pagination_class()
-            # Paginator espera un queryset o lista
-            page = paginator.paginate_queryset(cached, request, view=self)
-            return paginator.get_paginated_response(page)
+            _audit_analytics(request, "dashboard_agenda_week", {"cache": "hit"})
+            return Response(cached)
 
-        appointments = (
-            Appointment.objects.select_related("user", "staff_member")
-            .filter(start_time__date=today)
-            .order_by("start_time")
-        )
-        data = []
-        for appointment in appointments:
-            user = appointment.user
-            data.append(
-                {
-                    "appointment_id": str(appointment.id),
-                    "start_time": appointment.start_time.isoformat(),
-                    "status": appointment.status,
-                    "client": self._user_payload(user),
-                    "staff": self._user_payload(appointment.staff_member),
-                    "has_debt": getattr(user, "has_pending_final_payment", lambda: False)(),
-                }
-            )
-        
+        # Contar citas de la semana que no estén canceladas
+        count = Appointment.objects.filter(
+            start_time__date__gte=start_of_week,
+            start_time__date__lte=end_of_week
+        ).exclude(
+            status=Appointment.AppointmentStatus.CANCELLED
+        ).count()
+
+        data = {"count": count, "start_of_week": start_of_week, "end_of_week": end_of_week}
         cache.set(cache_key, data, self.CACHE_TTL)
-        _audit_analytics(
-            request,
-            "dashboard_agenda_today",
-            {"date": today.isoformat(), "cache": "miss"},
-        )
-
-        # Paginación
-        paginator = self.pagination_class()
-        page = paginator.paginate_queryset(data, request, view=self)
-        return paginator.get_paginated_response(page)
+        _audit_analytics(request, "dashboard_agenda_week", {"cache": "miss"})
+        return Response(data)
 
     @action(detail=False, methods=["get"], url_path="pending-payments")
     def pending_payments(self, request):
-        cache_key = self._cache_key(request, "pending")
+        """
+        Retorna el número de citas con saldo pendiente (outstanding > 0), sin importar su estado.
+        """
+        cache_key = self._cache_key(request, "pending_count")
         cached = cache.get(cache_key)
+        if request.query_params.get('force_refresh') == 'true':
+            cached = None
+
         if cached is not None:
-            _audit_analytics(
-                request,
-                "dashboard_pending_payments",
-                {"cache": "hit"},
-            )
-            return Response({"results": cached})
-        pending_payments = Payment.objects.select_related("user").filter(
-            status=Payment.PaymentStatus.PENDING
-        )
+            _audit_analytics(request, "dashboard_pending_payments", {"cache": "hit"})
+            return Response(cached)
+
+        # Filtro para sumar solo pagos aprobados o con crédito
         payment_filter = Q(
             payments__payment_type__in=[
                 Payment.PaymentType.ADVANCE,
@@ -510,10 +492,14 @@ class DashboardViewSet(viewsets.ViewSet):
                 Payment.PaymentStatus.PAID_WITH_CREDIT,
             ]
         )
-        # Get appointments with outstanding balance (CONFIRMED, FULLY_PAID or COMPLETED with debt)
-        pending_appointments = (
-            Appointment.objects.select_related("user")
-            .filter(status__in=[Appointment.AppointmentStatus.CONFIRMED, Appointment.AppointmentStatus.FULLY_PAID, Appointment.AppointmentStatus.COMPLETED])
+
+        # Contar citas donde el precio > pagado
+        # Nota: Usamos una subquery o lógica simple.
+        # Para evitar complejidad excesiva en count(), filtramos por outstanding > 0
+        from django.db.models import F
+        
+        pending_count = (
+            Appointment.objects
             .annotate(
                 paid_amount=Coalesce(
                     Sum("payments__amount", filter=payment_filter),
@@ -524,103 +510,84 @@ class DashboardViewSet(viewsets.ViewSet):
                 outstanding=F("price_at_purchase") - F("paid_amount")
             )
             .filter(outstanding__gt=0)
-            .order_by("-start_time")
+            .count()
         )
-        payments_payload = [
-            {
-                "type": "payment",
-                "payment_id": str(payment.id),
-                "amount": float(payment.amount),
-                "user": self._user_payload(payment.user),
-                "created_at": payment.created_at.isoformat(),
-            }
-            for payment in pending_payments
-        ]
-        appointments_payload = [
-            {
-                "type": "appointment",
-                "appointment_id": str(appointment.id),
-                "user": self._user_payload(appointment.user),
-                "start_time": appointment.start_time.isoformat(),
-                "amount_due": float(
-                    max(
-                        (appointment.price_at_purchase or Decimal("0")) - (appointment.paid_amount or Decimal("0")),
-                        Decimal("0"),
-                    )
-                ),
-            }
-            for appointment in pending_appointments
-        ]
-        combined = payments_payload + appointments_payload
-        cache.set(cache_key, combined, self.CACHE_TTL)
-        _audit_analytics(
-            request,
-            "dashboard_pending_payments",
-            {"cache": "miss"},
-        )
-        return Response({"results": combined})
+
+        data = {"count": pending_count}
+        cache.set(cache_key, data, self.CACHE_TTL)
+        _audit_analytics(request, "dashboard_pending_payments", {"cache": "miss"})
+        return Response(data)
 
     @action(detail=False, methods=["get"], url_path="expiring-credits")
-    def expiring_credits(self, request):
-        today = self._today()
-        upcoming = today + timedelta(days=7)
-        cache_key = self._cache_key(request, f"credits:{today.isoformat()}")
+    def active_credits(self, request):
+        """
+        Retorna el número total de créditos vigentes (AVAILABLE o PARTIALLY_USED),
+        sin importar cuándo vencen.
+        """
+        cache_key = self._cache_key(request, "active_credits_count")
         cached = cache.get(cache_key)
+        
+        if request.query_params.get('force_refresh') == 'true':
+            cached = None
+
         if cached is not None:
-            _audit_analytics(
-                request,
-                "dashboard_expiring_credits",
-                {"date": today.isoformat(), "cache": "hit"},
-            )
-            return Response({"results": cached})
-        credits = ClientCredit.objects.select_related("user").filter(
-            expires_at__gte=today,
-            expires_at__lte=upcoming,
+            _audit_analytics(request, "dashboard_active_credits", {"cache": "hit"})
+            return Response(cached)
+
+        today = self._today()
+        
+        # Contar créditos válidos
+        # Se asume que expirados tienen status=EXPIRED o expires_at < today
+        count = ClientCredit.objects.filter(
             status__in=[
-                ClientCredit.CreditStatus.AVAILABLE,
-                ClientCredit.CreditStatus.PARTIALLY_USED,
+                ClientCredit.CreditStatus.AVAILABLE, 
+                ClientCredit.CreditStatus.PARTIALLY_USED
             ],
-        )
-        results = [
-            {
-                "credit_id": str(credit.id),
-                "user": self._user_payload(credit.user),
-                "remaining_amount": float(credit.remaining_amount),
-                "expires_at": credit.expires_at.isoformat(),
-            }
-            for credit in credits
-        ]
-        cache.set(cache_key, results, self.CACHE_TTL)
-        _audit_analytics(
-            request,
-            "dashboard_expiring_credits",
-            {"date": today.isoformat(), "cache": "miss"},
-        )
-        return Response({"results": results})
+            # Asegurarnos de no contar los vencidos por fecha si el status no se actualizó job
+            expires_at__gte=today
+        ).count()
+
+        data = {"count": count}
+        cache.set(cache_key, data, self.CACHE_TTL)
+        _audit_analytics(request, "dashboard_active_credits", {"cache": "miss"})
+        return Response(data)
 
     @action(detail=False, methods=["get"], url_path="renewals")
-    def renewals(self, request):
-        today = self._today()
-        upcoming = today + timedelta(days=7)
-        users = CustomUser.objects.filter(
-            role=CustomUser.Role.VIP,
-            vip_expires_at__gte=today,
-            vip_expires_at__lte=upcoming,
-        ).order_by("vip_expires_at")
-        results = [
-            {
-                "user": self._user_payload(user),
-                "vip_expires_at": user.vip_expires_at.isoformat() if user.vip_expires_at else None,
-                "auto_renew": getattr(user, "vip_auto_renew", False),
-            }
-            for user in users
-        ]
-        _audit_analytics(
-            request,
-            "dashboard_renewals",
-            {"date": today.isoformat()},
-        )
-        return Response({"results": results})
+    def vip_ratio(self, request):
+        """
+        Retorna la relación de clientes VIP vs Total Clientes.
+        Formato: { "vip_count": X, "total_count": Y }
+        """
+        cache_key = self._cache_key(request, "vip_ratio")
+        cached = cache.get(cache_key)
+        
+        if request.query_params.get('force_refresh') == 'true':
+            cached = None
+
+        if cached is not None:
+            _audit_analytics(request, "dashboard_vip_ratio", {"cache": "hit"})
+            return Response(cached)
+
+        # Total clientes (excluyendo staff/admin si se desea, aquí contamos roles de cliente)
+        # Asumimos que cualquier usuario puede ser cliente, o filtramos por rol si es estricto
+        # Vamos a contar todos los usuarios activos
+        total_count = CustomUser.objects.filter(is_active=True).exclude(is_superuser=True).count()
+        
+        # Total VIP
+        vip_count = CustomUser.objects.filter(
+            role=CustomUser.Role.VIP, 
+            is_active=True
+        ).count()
+
+        data = {
+            "vip_count": vip_count,
+            "total_count": total_count,
+            "formatted": f"{vip_count}/{total_count}"
+        }
+        
+        cache.set(cache_key, data, self.CACHE_TTL)
+        _audit_analytics(request, "dashboard_vip_ratio", {"cache": "miss"})
+        return Response(data)
 
 
 class OperationalInsightsView(DateFilterMixin, viewsets.ViewSet):
@@ -641,21 +608,30 @@ class OperationalInsightsView(DateFilterMixin, viewsets.ViewSet):
 
     @action(detail=False, methods=["get"])
     def heatmap(self, request):
-        service = self._get_service(request)
-        data = service.get_heatmap_data()
-        return Response(data)
+        try:
+            service = self._get_service(request)
+            data = service.get_heatmap_data()
+            return Response(data)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
 
     @action(detail=False, methods=["get"])
     def leaderboard(self, request):
-        service = self._get_service(request)
-        data = service.get_staff_leaderboard()
-        return Response(data)
+        try:
+            service = self._get_service(request)
+            data = service.get_staff_leaderboard()
+            return Response(data)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
 
     @action(detail=False, methods=["get"])
     def funnel(self, request):
-        service = self._get_service(request)
-        data = service.get_funnel_metrics()
-        return Response(data)
+        try:
+            service = self._get_service(request)
+            data = service.get_funnel_metrics()
+            return Response(data)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
 
 
 class BusinessIntelligenceView(DateFilterMixin, viewsets.ViewSet):

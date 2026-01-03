@@ -321,76 +321,48 @@ class CheckoutSerializer(serializers.Serializer):
 
     def _validate_delivery_address(self, address):
         """
-        Valida exhaustivamente la dirección de envío.
-
-        Formato esperado (Colombia):
-        Tipo de Vía + Número Principal + # + Número Secundario + - + Número Terciario
-        Ejemplo: Calle 123 # 45-67, Apartamento 801
+        Valida la dirección de envío de manera flexible.
+        Se busca asegurar que sea una dirección real pero sin bloquear formatos válidos.
         """
         import re
 
-        # Validación 1: Longitud mínima
-        if len(address.strip()) < 15:
+        # Validación 1: Longitud mínima (reducida para ser más flexible)
+        if len(address.strip()) < 10:
             raise serializers.ValidationError({
-                "delivery_address": "La dirección debe tener al menos 15 caracteres para ser considerada válida."
+                "delivery_address": "La dirección es muy corta. Por favor detalla más la ubicación."
             })
-
-        # Validación 2: No debe ser solo números o caracteres especiales
-        if re.match(r'^[\d\s\-#]+$', address):
-            raise serializers.ValidationError({
-                "delivery_address": "La dirección debe incluir el tipo de vía (Calle, Carrera, Avenida, etc.)."
-            })
-
-        # Validación 3: Debe contener el tipo de vía
-        via_types = [
-            'calle', 'carrera', 'avenida', 'transversal', 'diagonal',
-            'circular', 'autopista', 'manzana', 'vereda', 'kilometro',
-            'cra', 'cll', 'av', 'trans', 'diag', 'circ', 'km'
-        ]
 
         address_lower = address.lower()
-        if not any(via_type in address_lower for via_type in via_types):
-            raise serializers.ValidationError({
-                "delivery_address": "La dirección debe incluir el tipo de vía (Calle, Carrera, Avenida, Transversal, Diagonal, etc.)."
-            })
 
-        # Validación 4: Debe contener números (para la nomenclatura)
+        # Validación 2: Debe contener números (para la nomenclatura o identificación de casa)
         if not re.search(r'\d', address):
             raise serializers.ValidationError({
-                "delivery_address": "La dirección debe incluir la nomenclatura numérica (ej: Calle 123 #45-67)."
+                "delivery_address": "La dirección debe incluir números (ej: # de casa, calle, apartamento)."
             })
 
-        # Validación 5: Formato de nomenclatura colombiana (flexible)
-        # Busca patrones como "123 # 45-67" o "123 #45-67" o "123#45-67"
-        nomenclatura_pattern = r'\d+\s*[#]\s*\d+[\s\-]\d+'
-        if not re.search(nomenclatura_pattern, address):
-            raise serializers.ValidationError({
-                "delivery_address": "La dirección debe seguir el formato de nomenclatura colombiana (ej: Calle 123 #45-67). "
-                                    "Asegúrate de incluir el símbolo # y los números de vía correctamente."
-            })
-
-        # Validación 6: Verificar que no sea una dirección común inválida
+        # Validación 3: Verificar que no sea una dirección "basura" común
         invalid_patterns = [
-            r'^123.*456.*789',  # Direcciones de prueba
-            r'(test|prueba|ejemplo|xxx)',  # Palabras de prueba
-            r'^(no tengo|sin direccion|n/a|na)',  # Negaciones
+            r'^(test|prueba|ejemplo|xxx)', 
+            r'^(no tengo|sin direccion|n/a|na|pendiente)',
+            r'^(\.)+$', # Solo puntos
+            r'^(\-)+$', # Solo guiones
         ]
 
         for pattern in invalid_patterns:
             if re.search(pattern, address_lower):
                 raise serializers.ValidationError({
-                    "delivery_address": "La dirección proporcionada no parece ser válida. Por favor, ingresa tu dirección real."
+                    "delivery_address": "Por favor ingresa una dirección de envío válida."
                 })
 
-        # Validación 7: Recomendar información adicional si es muy corta
-        if len(address.strip()) < 25:
-            # No es error, pero advertimos que puede faltar información
-            import warnings
-            warnings.warn(
-                "Se recomienda incluir información adicional como barrio, apartamento, o puntos de referencia.",
-                UserWarning
-            )
-
+        # Advertencias (no bloqueantes)
+        # Si no detectamos palabras clave de vía comunes, solo sugerimos (opcional en frontend, aquí pasa)
+        via_types = [
+            'calle', 'carrera', 'avenida', 'transversal', 'diagonal',
+            'circular', 'autopista', 'manzana', 'vereda', 'kilometro',
+            'cra', 'cll', 'av', 'trans', 'diag', 'circ', 'km', '#', 'no'
+        ]
+        
+        # Simplemente retornamos limpia la dirección
         return address
 
     def validate(self, data):

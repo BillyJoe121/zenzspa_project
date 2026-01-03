@@ -135,7 +135,7 @@ class SessionAwareTokenRefreshSerializer(TokenRefreshSerializer):
 class SimpleUserSerializer(DataMaskingMixin, DynamicFieldsModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ('id', 'phone_number', 'email', 'first_name', 'last_name', 'role', 'is_superuser')
+        fields = ('id', 'phone_number', 'email', 'first_name', 'last_name', 'role', 'is_superuser', 'vip_expires_at', 'vip_auto_renew')
         mask_fields = {
             'phone_number': {'mask_with': 'phone', 'visible_for': ['STAFF']},
             'email': {'mask_with': 'email', 'visible_for': ['STAFF']},

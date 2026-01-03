@@ -139,8 +139,13 @@ class OrderCreationService:
         order.reservation_expires_at = timezone.now() + timedelta(minutes=30)
         order.save(update_fields=['total_amount', 'shipping_cost', 'reservation_expires_at', 'updated_at'])
 
-        # 5. Vaciar el carrito de compras
-        self.cart.items.all().delete()
+        # 6. Vaciar el carrito inmediatamente después de crear la orden
+        # Esto previene que el carrito se acumule si el usuario crea múltiples órdenes
+        deleted_count = self.cart.items.all().delete()[0]
+        logger.info(
+            "Carrito vaciado después de crear orden: user=%s, order=%s, items_deleted=%d",
+            self.user.id, order.id, deleted_count
+        )
 
         logger.info(
             "Orden creada: order_id=%s, user=%s, total=%s, items=%d",
