@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from spa.models import StaffAvailability
 import datetime
+import logging
 from core.models import AuditLog
 from core.utils import safe_audit_log
 
@@ -11,6 +12,32 @@ from .models import UserSession
 
 CustomUser = get_user_model()
 user_session_logged_in = Signal()
+logger = logging.getLogger(__name__)
+
+
+@receiver(post_save, sender=UserSession)
+def log_user_session_changes(sender, instance, created, **kwargs):
+    """Log de cambios en UserSession para debugging."""
+    import traceback
+    if created:
+        logger.info(
+            "[SESSION_CREATED] Nueva sesión para %s - ID: %s, JTI: %s, IP: %s",
+            instance.user.phone_number,
+            instance.id,
+            instance.refresh_token_jti,
+            instance.ip_address
+        )
+    else:
+        # Detectar si se marcó como inactiva
+        if not instance.is_active:
+            stack = ''.join(traceback.format_stack()[:-1])
+            logger.warning(
+                "[SESSION_DEACTIVATED] Sesión %s marcada como inactiva para %s. JTI: %s. Llamado desde:\n%s",
+                instance.id,
+                instance.user.phone_number,
+                instance.refresh_token_jti,
+                stack
+            )
 
 
 @receiver(post_save, sender=CustomUser)
@@ -71,6 +98,24 @@ def handle_user_session(sender, user, refresh_token_jti, ip_address, user_agent,
 def audit_role_change(sender, instance, created, **kwargs):
     if created:
         return
+
+    # Detectar qué campos cambiaron para logging
+    import traceback
+    changed_fields = []
+    if hasattr(instance, '_old_role'):
+        if instance._old_role != instance.role:
+            changed_fields.append(f"role: {instance._old_role} -> {instance.role}")
+
+    # Log de todos los saves de usuario para debugging
+    if changed_fields:
+        stack = ''.join(traceback.format_stack()[:-1])
+        logger.info(
+            "[USER_SAVE] Usuario %s modificado. Campos cambiados: %s. Llamado desde:\n%s",
+            instance.phone_number,
+            ', '.join(changed_fields),
+            stack
+        )
+
     old_role = getattr(instance, "_old_role", None)
     if old_role and old_role != instance.role:
         safe_audit_log(

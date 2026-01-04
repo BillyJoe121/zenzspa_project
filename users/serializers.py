@@ -114,9 +114,42 @@ class SessionAwareTokenRefreshSerializer(TokenRefreshSerializer):
     def validate(self, attrs):
         refresh = self.token_class(attrs['refresh'])
         jti = str(refresh[api_settings.JTI_CLAIM])
+        user_id = refresh.get('user_id')
+
+        logger.info(
+            "[SESSION_REFRESH] Intentando refrescar token - JTI: %s, user_id: %s",
+            jti,
+            user_id
+        )
+
         try:
             session = UserSession.objects.get(refresh_token_jti=jti, is_active=True)
+            logger.info(
+                "[SESSION_REFRESH] Sesión encontrada - ID: %s, User: %s, IP: %s",
+                session.id,
+                session.user.phone_number,
+                session.ip_address
+            )
         except UserSession.DoesNotExist:
+            logger.error(
+                "[SESSION_REFRESH_FAILED] Sesión NO encontrada - JTI: %s, user_id: %s",
+                jti,
+                user_id
+            )
+            # Buscar sesiones activas para este usuario para debugging
+            if user_id:
+                try:
+                    user = CustomUser.objects.get(phone_number=user_id)
+                    active_sessions = UserSession.objects.filter(user=user, is_active=True)
+                    logger.error(
+                        "[SESSION_DEBUG] Usuario %s tiene %d sesiones activas con JTIs: %s",
+                        user.phone_number,
+                        active_sessions.count(),
+                        [s.refresh_token_jti for s in active_sessions]
+                    )
+                except CustomUser.DoesNotExist:
+                    logger.error("[SESSION_DEBUG] Usuario %s no encontrado", user_id)
+
             raise serializers.ValidationError(
                 {"detail": "Token inválido o revocado.", "code": "token_not_valid"}
             )
@@ -124,9 +157,17 @@ class SessionAwareTokenRefreshSerializer(TokenRefreshSerializer):
         data = super().validate(attrs)
 
         new_refresh_token = data.get("refresh")
+        old_jti = session.refresh_token_jti
         if new_refresh_token:
             new_refresh = self.token_class(new_refresh_token)
-            session.refresh_token_jti = str(new_refresh[api_settings.JTI_CLAIM])
+            new_jti = str(new_refresh[api_settings.JTI_CLAIM])
+            session.refresh_token_jti = new_jti
+            logger.info(
+                "[SESSION_REFRESH] Token rotado - User: %s, Old JTI: %s, New JTI: %s",
+                session.user.phone_number,
+                old_jti,
+                new_jti
+            )
         session.last_activity = timezone.now()
         session.save(update_fields=['refresh_token_jti', 'last_activity'])
         return data

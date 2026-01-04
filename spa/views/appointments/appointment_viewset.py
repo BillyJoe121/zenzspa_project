@@ -616,15 +616,22 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         }
         """
         from ...serializers import AdminAppointmentCreateSerializer
-        
+
         serializer = AdminAppointmentCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
-        
+
         # Obtener cliente
         client = CustomUser.objects.get(id=validated_data['client_id'])
         payment_method = validated_data.get('payment_method', 'PAYMENT_LINK')
-        
+
+        logger.info(
+            "[ADMIN_CREATE_APPOINTMENT] Admin %s creando cita para cliente %s. Método de pago: %s",
+            request.user.phone_number,
+            client.phone_number,
+            payment_method
+        )
+
         try:
             # Crear la cita usando el servicio existente
             appointment_service = AppointmentService(
@@ -634,9 +641,25 @@ class AppointmentViewSet(viewsets.ModelViewSet):
                 start_time=validated_data['start_time']
             )
             appointment = appointment_service.create_appointment_with_lock()
+
+            logger.info(
+                "[ADMIN_CREATE_APPOINTMENT] Cita %s creada exitosamente para cliente %s",
+                appointment.id,
+                client.phone_number
+            )
         except BusinessLogicError as exc:
+            logger.error(
+                "[ADMIN_CREATE_APPOINTMENT] Error BusinessLogicError al crear cita para %s: %s",
+                client.phone_number,
+                str(exc)
+            )
             raise exc
         except ValueError as e:
+            logger.error(
+                "[ADMIN_CREATE_APPOINTMENT] ValueError al crear cita para %s: %s",
+                client.phone_number,
+                str(e)
+            )
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         
         # Variables para la respuesta

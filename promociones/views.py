@@ -53,15 +53,10 @@ class PromocionViewSet(viewsets.ModelViewSet):
         ).order_by('-prioridad', '-creada_en')
 
     def get_serializer_class(self):
-        """Usa el serializer simplificado para listas."""
-        if self.action == 'list':
-            return PromocionListSerializer
+        """Usa el serializer completo para devolver todos los campos (activa, paginas, etc.)"""
         return PromocionSerializer
 
-    @method_decorator(cache_page(60 * 5))  # Cache de 5 minutos
-    def list(self, request, *args, **kwargs):
-        """Lista todas las promociones activas."""
-        return super().list(request, *args, **kwargs)
+
 
     @action(detail=False, methods=['get'], url_path='activas')
     def activas(self, request):
