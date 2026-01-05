@@ -24,6 +24,19 @@ from spa.models import Appointment
 logger = logging.getLogger(__name__)
 
 
+class CreditApplicationResult:
+    """Resultado de aplicar créditos a un monto."""
+    def __init__(self, amount_remaining, credits_applied, credit_movements):
+        self.amount_remaining = amount_remaining
+        self.credits_applied = credits_applied
+        self.credit_movements = credit_movements  # List of (ClientCredit, Decimal amount_used)
+
+    @property
+    def fully_covered(self):
+        """Retorna True si los créditos cubrieron todo el monto."""
+        return self.amount_remaining <= Decimal('0')
+
+
 class PaymentService:
     """
     Servicio para manejar la lógica de negocio de los pagos,
@@ -33,6 +46,131 @@ class PaymentService:
 
     def __init__(self, user):
         self.user = user
+
+    @staticmethod
+    @transaction.atomic
+    def apply_credits_to_payment(user, total_amount):
+        """
+        Aplica créditos disponibles del usuario a un monto total.
+
+        Esta función:
+        1. Busca créditos disponibles y no expirados del usuario
+        2. Los aplica en orden FIFO (primero los más antiguos)
+        3. Actualiza el remaining_amount y status de cada crédito usado
+        4. Retorna cuánto falta por pagar y los movimientos de crédito
+
+        Args:
+            user: Usuario que posee los créditos
+            total_amount: Monto total a cubrir con créditos
+
+        Returns:
+            CreditApplicationResult con:
+                - amount_remaining: Decimal del monto que quedó sin cubrir
+                - credits_applied: Decimal del total de créditos usados
+                - credit_movements: List[(ClientCredit, Decimal)] movimientos realizados
+        """
+        if total_amount <= Decimal('0'):
+            return CreditApplicationResult(
+                amount_remaining=total_amount,
+                credits_applied=Decimal('0'),
+                credit_movements=[]
+            )
+
+        # Buscar créditos válidos (disponibles, no expirados) del usuario
+        available_credits = ClientCredit.objects.select_for_update().filter(
+            user=user,
+            status__in=[
+                ClientCredit.CreditStatus.AVAILABLE,
+                ClientCredit.CreditStatus.PARTIALLY_USED
+            ],
+            expires_at__gte=timezone.now().date()
+        ).order_by('created_at')  # FIFO: usar los créditos más antiguos primero
+
+        amount_remaining = total_amount
+        credit_movements = []
+
+        for credit in available_credits:
+            if amount_remaining <= Decimal('0'):
+                break
+
+            # Calcular cuánto tomar de este crédito
+            amount_from_this_credit = min(amount_remaining, credit.remaining_amount)
+
+            # Actualizar el crédito
+            credit.remaining_amount -= amount_from_this_credit
+
+            # Actualizar estado del crédito
+            if credit.remaining_amount <= Decimal('0'):
+                credit.status = ClientCredit.CreditStatus.USED
+            else:
+                credit.status = ClientCredit.CreditStatus.PARTIALLY_USED
+
+            credit.save(update_fields=['remaining_amount', 'status', 'updated_at'])
+
+            # Registrar el movimiento
+            credit_movements.append((credit, amount_from_this_credit))
+            amount_remaining -= amount_from_this_credit
+
+            logger.info(
+                "Crédito aplicado: credit_id=%s, user=%s, used=%s, remaining=%s",
+                credit.id, user.id, amount_from_this_credit, credit.remaining_amount
+            )
+
+        credits_applied = total_amount - amount_remaining
+
+        return CreditApplicationResult(
+            amount_remaining=amount_remaining,
+            credits_applied=credits_applied,
+            credit_movements=credit_movements
+        )
+
+    @staticmethod
+    def preview_credits_application(user, total_amount):
+        """
+        Calcula cuántos créditos se aplicarían a un monto SIN modificar la base de datos.
+        
+        Esta función es SOLO LECTURA - no modifica ningún crédito.
+        Usar para mostrar preview antes de confirmar el pago.
+        
+        Args:
+            user: Usuario que posee los créditos
+            total_amount: Monto total a evaluar
+            
+        Returns:
+            dict con:
+                - available_credits: Total de créditos disponibles
+                - credits_to_apply: Cuánto se aplicaría de créditos
+                - amount_remaining: Cuánto quedaría por pagar después de créditos
+                - fully_covered: Si los créditos cubren todo el monto
+        """
+        if total_amount <= Decimal('0'):
+            return {
+                'available_credits': Decimal('0'),
+                'credits_to_apply': Decimal('0'),
+                'amount_remaining': total_amount,
+                'fully_covered': True
+            }
+        
+        # Buscar créditos válidos (disponibles, no expirados) del usuario - SOLO LECTURA
+        available_credits = ClientCredit.objects.filter(
+            user=user,
+            status__in=[
+                ClientCredit.CreditStatus.AVAILABLE,
+                ClientCredit.CreditStatus.PARTIALLY_USED
+            ],
+            expires_at__gte=timezone.now().date()
+        ).order_by('created_at')  # FIFO: usar los créditos más antiguos primero
+        
+        total_available = sum(c.remaining_amount for c in available_credits)
+        credits_to_apply = min(total_amount, total_available)
+        amount_remaining = max(Decimal('0'), total_amount - credits_to_apply)
+        
+        return {
+            'available_credits': total_available,
+            'credits_to_apply': credits_to_apply,
+            'amount_remaining': amount_remaining,
+            'fully_covered': amount_remaining <= Decimal('0')
+        }
 
     @staticmethod
     def apply_gateway_status(payment, gateway_status, transaction_payload=None):
@@ -348,43 +486,149 @@ class PaymentService:
 
     @staticmethod
     @transaction.atomic
-    def create_order_payment(user, order):
+    def create_order_payment(user, order, use_credits=False):
         """
-        Crea o actualiza un registro de pago para una orden de marketplace 
+        Crea o actualiza un registro de pago para una orden de marketplace
         y prepara los datos para Wompi con una referencia única.
+
+        Si use_credits=True, aplica créditos disponibles del usuario al monto total.
+        Puede resultar en:
+        - Pago totalmente cubierto con créditos (sin ir a Wompi)
+        - Pago parcial con créditos + remanente para Wompi
+        - Pago normal si no hay créditos disponibles
+
+        Args:
+            user: Usuario que realiza el pago
+            order: Orden de marketplace
+            use_credits: Si debe aplicar créditos disponibles del usuario
+
+        Returns:
+            tuple: (payment, payment_payload)
+                - payment: Objeto Payment creado (o None si totalmente cubierto con crédito)
+                - payment_payload: Dict con datos para Wompi (o dict con status si pagado con crédito)
         """
+        total_amount = order.total_amount
+        credits_applied = Decimal('0')
+        credit_movements = []
+
+        # Aplicar créditos si el usuario lo solicita
+        if use_credits:
+            credit_result = PaymentService.apply_credits_to_payment(user, total_amount)
+            credits_applied = credit_result.credits_applied
+            credit_movements = credit_result.credit_movements
+            amount_to_pay = credit_result.amount_remaining
+
+            logger.info(
+                "Créditos aplicados a orden: order_id=%s, user=%s, credits_used=%s, remaining=%s",
+                order.id, user.id, credits_applied, amount_to_pay
+            )
+        else:
+            amount_to_pay = total_amount
+
+        # Si los créditos cubrieron TODO el monto
+        if use_credits and credits_applied > 0 and amount_to_pay <= Decimal('0'):
+            # Crear pago completamente cubierto con crédito
+            reference = f"ORDER-CREDIT-{order.id}-{uuid.uuid4().hex[:8]}"
+
+            payment = Payment.objects.create(
+                user=user,
+                amount=credits_applied,
+                status=Payment.PaymentStatus.PAID_WITH_CREDIT,
+                payment_type=Payment.PaymentType.ORDER,
+                transaction_id=reference,
+                order=order,
+                used_credit=credit_movements[0][0] if credit_movements else None
+            )
+
+            # Crear registros de uso de crédito para trazabilidad
+            PaymentCreditUsage.objects.bulk_create([
+                PaymentCreditUsage(
+                    payment=payment,
+                    credit=credit,
+                    amount=used_amount
+                )
+                for credit, used_amount in credit_movements
+            ])
+
+            # La orden se confirma automáticamente
+            from marketplace.services import OrderService
+            OrderService.confirm_payment(order)
+
+            # Registrar comisión del desarrollador
+            DeveloperCommissionService.handle_successful_payment(payment)
+
+            # Retornar payload especial indicando que se pagó con crédito
+            return payment, {
+                'status': 'paid_with_credit',
+                'paymentId': str(payment.id),
+                'credits_used': str(credits_applied),
+                'amount_paid': '0',
+                'order_status': order.status
+            }
+
+        # Si hay créditos parciales o no hay créditos, crear pago para Wompi
         # Generar SIEMPRE una nueva referencia para permitir reintentos
         reference = f"ORDER-{order.id}-{uuid.uuid4().hex[:8]}"
-        
-        # Buscar si ya existe un pago pendiente para esta orden para reutilizarlo
+
+        # Si se aplicaron créditos parcialmente, crear primero el pago con crédito
+        if use_credits and credits_applied > 0:
+            credit_payment = Payment.objects.create(
+                user=user,
+                amount=credits_applied,
+                status=Payment.PaymentStatus.PAID_WITH_CREDIT,
+                payment_type=Payment.PaymentType.ORDER,
+                transaction_id=f"ORDER-CREDIT-{order.id}-{uuid.uuid4().hex[:8]}",
+                order=order,
+                used_credit=credit_movements[0][0] if credit_movements else None
+            )
+
+            # Crear registros de uso de crédito
+            PaymentCreditUsage.objects.bulk_create([
+                PaymentCreditUsage(
+                    payment=credit_payment,
+                    credit=credit,
+                    amount=used_amount
+                )
+                for credit, used_amount in credit_movements
+            ])
+
+            # Registrar comisión del desarrollador para el pago con crédito
+            DeveloperCommissionService.handle_successful_payment(credit_payment)
+
+            logger.info(
+                "Pago parcial con crédito creado: order_id=%s, payment_id=%s, amount=%s",
+                order.id, credit_payment.id, credits_applied
+            )
+
+        # Buscar si ya existe un pago pendiente para esta orden
         payment = Payment.objects.filter(
-            order=order, 
+            order=order,
             status=Payment.PaymentStatus.PENDING,
             payment_type=Payment.PaymentType.ORDER
         ).first()
 
         if payment:
-            # Actualizar pago existente con nueva referencia
+            # Actualizar pago existente con nueva referencia y monto ajustado
             payment.transaction_id = reference
-            payment.amount = order.total_amount
-            payment.user = user # Asegurar que el usuario sea el correcto
+            payment.amount = amount_to_pay
+            payment.user = user
             payment.save(update_fields=['transaction_id', 'amount', 'user', 'updated_at'])
         else:
-            # Crear nuevo pago
+            # Crear nuevo pago pendiente por el remanente
             payment = Payment.objects.create(
                 user=user,
-                amount=order.total_amount,
+                amount=amount_to_pay,
                 status=Payment.PaymentStatus.PENDING,
                 payment_type=Payment.PaymentType.ORDER,
                 transaction_id=reference,
                 order=order,
             )
-        
+
         order.wompi_transaction_id = reference
         order.save(update_fields=['wompi_transaction_id', 'updated_at'])
-        
-        amount_in_cents = int(order.total_amount * 100)
-        
+
+        amount_in_cents = int(amount_to_pay * 100)
+
         # Obtener acceptance token
         try:
             acceptance_token = WompiPaymentClient.resolve_acceptance_token()
@@ -409,7 +653,13 @@ class PaymentService:
             'acceptanceToken': acceptance_token,
             'paymentId': str(payment.id),
         }
-        
+
+        # Si se aplicaron créditos parciales, agregar info al payload
+        if use_credits and credits_applied > 0:
+            payment_payload['credits_used'] = str(credits_applied)
+            payment_payload['original_amount'] = str(total_amount)
+            payment_payload['status'] = 'partial_credit'
+
         return payment, payment_payload
 
     @transaction.atomic

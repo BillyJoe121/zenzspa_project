@@ -23,7 +23,7 @@ CustomUser = get_user_model()
 class UserSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ['id', 'first_name', 'last_name']
+        fields = ['id', 'first_name', 'last_name', 'phone_number']
 
 
 class ServiceSummarySerializer(serializers.ModelSerializer):

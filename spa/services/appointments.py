@@ -461,8 +461,7 @@ class AppointmentService:
                 price_at_purchase=price,
             )
 
-        payment_service = PaymentService(user=self.user)
-        payment_service.create_advance_payment_for_appointment(appointment)
+
 
         return appointment
 

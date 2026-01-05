@@ -318,6 +318,7 @@ class CheckoutSerializer(serializers.Serializer):
     delivery_option = serializers.ChoiceField(choices=Order.DeliveryOptions.choices)
     delivery_address = serializers.CharField(required=False, allow_blank=True)
     associated_appointment_id = serializers.UUIDField(required=False)
+    use_credits = serializers.BooleanField(required=False, default=False)
 
     def _validate_delivery_address(self, address):
         """

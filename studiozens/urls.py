@@ -3,6 +3,7 @@ from django.contrib import admin
 from django.urls import include, path
 from django.conf import settings
 from django.conf.urls.static import static
+from django_prometheus import exports
 
 from .health import health_check_view
 
@@ -28,7 +29,7 @@ urlpatterns = [
     path('api/v1/promociones/', include('promociones.urls')),
     path('api/v1/', include(api_patterns)),
     path('health/', health_check_view, name='health-check'),
-    path('metrics/', include('django_prometheus.urls')),
+    path('metrics/', exports.ExportToDjangoView, name='prometheus-django-metrics'),
 ]
 
 # Servir archivos media en desarrollo

@@ -29,7 +29,7 @@ from spa.models import Appointment
 from .services import DeveloperCommissionService, WompiDisbursementClient
 from .wompi_payouts_client import WompiPayoutsClient, WompiPayoutsError
 from .webhooks_payouts import WompiPayoutsWebhookService
-from .models import ClientCredit, CommissionLedger, Payment, WebhookEvent
+from .models import ClientCredit, CommissionLedger, Payment, PaymentCreditUsage, WebhookEvent
 from .serializers import ClientCreditAdminSerializer, CommissionLedgerSerializer, ClientCreditSerializer, PaymentSerializer
 from .gateway import WompiPaymentClient, build_integrity_signature
 from .webhooks import WompiWebhookService
@@ -377,12 +377,19 @@ class PSEFinancialInstitutionsView(APIView):
 class InitiateAppointmentPaymentView(generics.GenericAPIView):
     """
     Inicia el flujo de pago para una cita.
-    Migrado desde spa.views.packages para centralizar lógica de pagos.
-
-    GET /api/finances/payments/appointment/<pk>/initiate/
     
+    IMPORTANTE: Este endpoint ahora separa PREVIEW de CONFIRMACIÓN.
+    
+    GET /api/finances/payments/appointment/<pk>/initiate/
+
     Query params:
     - payment_type: 'deposit' (default), 'full', o 'balance'
+    - use_credits: 'true' o 'false' (default) - Si debe mostrar preview de créditos
+    - confirm: 'true' o 'false' (default) - Si debe APLICAR créditos y crear pagos
+    
+    Comportamiento:
+    - Sin confirm=true: Retorna SOLO preview (no modifica nada)
+    - Con confirm=true: Aplica créditos, crea pagos, cambia estado de cita
     
     Estados soportados:
     - PENDING_PAYMENT: Puede pagar deposit (40%) o full (100%)
@@ -394,6 +401,8 @@ class InitiateAppointmentPaymentView(generics.GenericAPIView):
         appointment = generics.get_object_or_404(Appointment, pk=pk, user=request.user)
 
         payment_type = request.query_params.get('payment_type', 'deposit')
+        use_credits = request.query_params.get('use_credits', 'false').lower() == 'true'
+        confirm = request.query_params.get('confirm', 'false').lower() == 'true'
         total_price = appointment.price_at_purchase
 
         # Calcular outstanding_balance
@@ -419,21 +428,15 @@ class InitiateAppointmentPaymentView(generics.GenericAPIView):
                 # Pago de anticipo (porcentaje configurable)
                 global_settings = GlobalSettings.load()
                 advance_percentage = Decimal(global_settings.advance_payment_percentage / 100)
-                
-                # DEBUG LOGS
-                logger.info(f"=== INITIATING APPOINTMENT PAYMENT DEBUG ===")
-                logger.info(f"Appointment ID: {appointment.id}")
-                logger.info(f"User Role: {getattr(request.user, 'role', 'unknown')}")
-                logger.info(f"Price at Purchase (DB): {appointment.price_at_purchase}")
-                logger.info(f"Global Advance Percentage: {global_settings.advance_payment_percentage}")
-                logger.info(f"Calculated Advance Factor: {advance_percentage}")
-                
-                amount = total_price * advance_percentage
-                logger.info(f"Calculated Amount: {amount}")
-                logger.info(f"============================================")
 
+                logger.info(
+                    "Consultando pago de cita: appointment_id=%s, user=%s, price=%s, advance_pct=%s, confirm=%s",
+                    appointment.id, request.user.id, total_price, advance_percentage, confirm
+                )
+
+                amount = total_price * advance_percentage
                 payment_type_enum = Payment.PaymentType.ADVANCE
-                
+
         elif appointment.status in [
             Appointment.AppointmentStatus.CONFIRMED,
             Appointment.AppointmentStatus.RESCHEDULED,
@@ -447,72 +450,203 @@ class InitiateAppointmentPaymentView(generics.GenericAPIView):
                 )
             amount = outstanding
             payment_type_enum = Payment.PaymentType.FINAL
-            
+
         else:
             return Response(
                 {"error": f"No se puede iniciar pago para citas con estado '{appointment.get_status_display()}'."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Buscar o crear el pago pendiente
-        try:
-            payment = appointment.payments.get(
-                status=Payment.PaymentStatus.PENDING,
-                payment_type=payment_type_enum
-            )
-            # Actualizar el monto si cambió
-            payment.amount = amount
+        # ========================================
+        # MODO PREVIEW (sin confirm=true)
+        # Solo calcula, NO modifica nada
+        # ========================================
+        if not confirm:
+            preview_data = {
+                'mode': 'preview',
+                'appointmentId': str(appointment.id),
+                'appointmentStatus': appointment.status,
+                'paymentType': payment_type_enum,
+                'totalPrice': str(total_price),
+                'selectedAmount': str(amount),
+                'outstandingBalance': str(outstanding),
+            }
+            
+            # Si el usuario quiere ver preview de créditos
+            if use_credits:
+                credit_preview = PaymentService.preview_credits_application(request.user, amount)
+                preview_data['creditPreview'] = {
+                    'availableCredits': str(credit_preview['available_credits']),
+                    'creditsToApply': str(credit_preview['credits_to_apply']),
+                    'amountAfterCredits': str(credit_preview['amount_remaining']),
+                    'fullyCoveredByCredits': credit_preview['fully_covered'],
+                }
+            
+            return Response(preview_data, status=status.HTTP_200_OK)
+
+        # ========================================
+        # MODO CONFIRMACIÓN (con confirm=true)
+        # Aplica créditos, crea pagos, modifica estado
+        # ========================================
+        with transaction.atomic():
+            credits_applied = Decimal('0')
+            credit_movements = []
+
+            if use_credits:
+                credit_result = PaymentService.apply_credits_to_payment(request.user, amount)
+                credits_applied = credit_result.credits_applied
+                credit_movements = credit_result.credit_movements
+                amount_to_pay = credit_result.amount_remaining
+
+                logger.info(
+                    "Créditos aplicados a cita (CONFIRM): appointment_id=%s, user=%s, credits_used=%s, remaining=%s",
+                    appointment.id, request.user.id, credits_applied, amount_to_pay
+                )
+
+                # Si los créditos cubrieron TODO el monto
+                if credit_result.fully_covered:
+                    # Crear pago completamente cubierto con crédito
+                    reference = f"APPT-CREDIT-{appointment.id}-{uuid.uuid4().hex[:8]}"
+
+                    payment = Payment.objects.create(
+                        user=request.user,
+                        appointment=appointment,
+                        amount=credits_applied,
+                        payment_type=payment_type_enum,
+                        status=Payment.PaymentStatus.PAID_WITH_CREDIT,
+                        transaction_id=reference,
+                        used_credit=credit_movements[0][0] if credit_movements else None
+                    )
+
+                    # Crear registros de uso de crédito
+                    PaymentCreditUsage.objects.bulk_create([
+                        PaymentCreditUsage(
+                            payment=payment,
+                            credit=credit,
+                            amount=used_amount
+                        )
+                        for credit, used_amount in credit_movements
+                    ])
+
+                    # Actualizar estado de la cita según el tipo de pago
+                    new_outstanding = PaymentService.calculate_outstanding_amount(appointment)
+                    if new_outstanding <= Decimal('0'):
+                        appointment.status = Appointment.AppointmentStatus.FULLY_PAID
+                    else:
+                        appointment.status = Appointment.AppointmentStatus.CONFIRMED
+
+                    appointment.save(update_fields=['status', 'updated_at'])
+
+                    # Registrar comisión del desarrollador
+                    DeveloperCommissionService.handle_successful_payment(payment)
+
+                    # Retornar payload especial indicando que se pagó con crédito
+                    return Response({
+                        'status': 'paid_with_credit',
+                        'paymentId': str(payment.id),
+                        'credits_used': str(credits_applied),
+                        'amount_paid': '0',
+                        'appointmentStatus': appointment.status,
+                        'paymentType': payment_type_enum
+                    }, status=status.HTTP_200_OK)
+
+                # Si hay créditos parciales, crear primero el pago con crédito
+                if credits_applied > 0:
+                    credit_payment = Payment.objects.create(
+                        user=request.user,
+                        appointment=appointment,
+                        amount=credits_applied,
+                        payment_type=payment_type_enum,
+                        status=Payment.PaymentStatus.PAID_WITH_CREDIT,
+                        transaction_id=f"APPT-CREDIT-{appointment.id}-{uuid.uuid4().hex[:8]}",
+                        used_credit=credit_movements[0][0] if credit_movements else None
+                    )
+
+                    # Crear registros de uso de crédito
+                    PaymentCreditUsage.objects.bulk_create([
+                        PaymentCreditUsage(
+                            payment=credit_payment,
+                            credit=credit,
+                            amount=used_amount
+                        )
+                        for credit, used_amount in credit_movements
+                    ])
+
+                    # Registrar comisión del desarrollador para el pago con crédito
+                    DeveloperCommissionService.handle_successful_payment(credit_payment)
+
+                    logger.info(
+                        "Pago parcial con crédito creado: appointment_id=%s, payment_id=%s, amount=%s",
+                        appointment.id, credit_payment.id, credits_applied
+                    )
+
+                # Continuar con el remanente para Wompi
+                amount = amount_to_pay
+            else:
+                # No usar créditos, monto completo
+                amount_to_pay = amount
+
+            # Buscar o crear el pago pendiente por el remanente
+            try:
+                payment = appointment.payments.get(
+                    status=Payment.PaymentStatus.PENDING,
+                    payment_type=payment_type_enum
+                )
+                # Actualizar el monto con el remanente después de créditos
+                payment.amount = amount
+                payment.save()
+            except Payment.DoesNotExist:
+                # Crear nuevo pago con el tipo correcto
+                payment = Payment.objects.create(
+                    user=request.user,
+                    appointment=appointment,
+                    amount=amount,
+                    payment_type=payment_type_enum,
+                    status=Payment.PaymentStatus.PENDING
+                )
+
+            amount_in_cents = int(payment.amount * 100)
+            # Generar referencia única por intento para evitar error "La referencia ya ha sido usada"
+            suffix = uuid.uuid4().hex[:6]
+            reference = f"PAY-{str(payment.id)[-10:]}-{suffix}"
+            payment.transaction_id = reference
             payment.save()
-        except Payment.DoesNotExist:
-            # Crear nuevo pago con el tipo correcto
-            payment = Payment.objects.create(
-                user=request.user,
-                appointment=appointment,
-                amount=amount,
-                payment_type=payment_type_enum,
-                status=Payment.PaymentStatus.PENDING
+
+            signature = build_integrity_signature(
+                reference=reference,
+                amount_in_cents=amount_in_cents,
+                currency="COP"
             )
 
-        amount_in_cents = int(payment.amount * 100)
-        # Generar referencia única por intento para evitar error "La referencia ya ha sido usada"
-        # Usamos parte del ID del pago + sufijo aleatorio. Wompi soporta hasta 255 chars.
-        suffix = uuid.uuid4().hex[:6]
-        reference = f"PAY-{str(payment.id)[-10:]}-{suffix}"
-        payment.transaction_id = reference
-        payment.save()
+            # TEMPORAL: Override redirectUrl para desarrollo local
+            redirect_url = settings.WOMPI_REDIRECT_URL
+            if 'localhost' in redirect_url or '127.0.0.1' in redirect_url:
+                redirect_url = 'about:blank'
+                logger.warning(
+                    "[DEVELOPMENT] Usando 'about:blank' como redirectUrl porque "
+                    "WOMPI_REDIRECT_URL contiene localhost: %s", settings.WOMPI_REDIRECT_URL
+                )
 
-        signature = build_integrity_signature(
-            reference=reference,
-            amount_in_cents=amount_in_cents,
-            currency="COP"
-        )
+            payment_data = {
+                'publicKey': settings.WOMPI_PUBLIC_KEY,
+                'currency': "COP",
+                'amountInCents': amount_in_cents,
+                'reference': reference,
+                'signatureIntegrity': signature,
+                'redirectUrl': redirect_url,
+                # Campos adicionales para el frontend
+                'paymentId': str(payment.id),
+                'paymentType': payment_type_enum,
+                'appointmentStatus': appointment.status,
+            }
 
+            # Si se aplicaron créditos parciales, agregar info al payload
+            if use_credits and credits_applied > 0:
+                payment_data['credits_used'] = str(credits_applied)
+                payment_data['original_amount'] = str(amount + credits_applied)
+                payment_data['status'] = 'partial_credit'
 
-        # TEMPORAL: Override redirectUrl para desarrollo local
-        # Wompi no acepta localhost, pero acepta about:blank
-        redirect_url = settings.WOMPI_REDIRECT_URL
-        if 'localhost' in redirect_url or '127.0.0.1' in redirect_url:
-            # En desarrollo, usar about:blank para que Wompi no rechace
-            # El widget modal manejará el resultado sin redirigir
-            redirect_url = 'about:blank'
-            logger.warning(
-                f"[DEVELOPMENT] Usando 'about:blank' como redirectUrl porque "
-                f"WOMPI_REDIRECT_URL contiene localhost: {settings.WOMPI_REDIRECT_URL}"
-            )
-
-        payment_data = {
-            'publicKey': settings.WOMPI_PUBLIC_KEY,
-            'currency': "COP",
-            'amountInCents': amount_in_cents,
-            'reference': reference,
-            'signatureIntegrity': signature,
-            'redirectUrl': redirect_url,
-            # Campos adicionales para el frontend
-            'paymentId': str(payment.id),
-            'paymentType': payment_type_enum,
-            'appointmentStatus': appointment.status,
-        }
-        return Response(payment_data, status=status.HTTP_200_OK)
+            return Response(payment_data, status=status.HTTP_200_OK)
 
 
 class WompiWebhookView(generics.GenericAPIView):
@@ -930,7 +1064,7 @@ class PaymentHistoryView(generics.ListAPIView):
 class ClientCreditBalanceView(APIView):
     """
     Retorna el saldo total de créditos activos disponibles para el usuario autenticado.
-    
+
     GET /api/v1/finances/credits/balance/
     Response: { "balance": 150000.00 }
     """
@@ -946,9 +1080,78 @@ class ClientCreditBalanceView(APIView):
             expires_at__gte=timezone.now().date()
         )
         total_balance = sum(c.remaining_amount for c in active_credits)
-        
+
         return Response({
             'balance': total_balance,
+            'currency': 'COP'
+        })
+
+
+class CreditPaymentPreviewView(APIView):
+    """
+    Retorna un preview de cómo se aplicarían los créditos a un monto específico.
+
+    POST /api/v1/finances/credits/preview/
+    Body: {
+        "amount": 100000
+    }
+
+    Response: {
+        "original_amount": "100000.00",
+        "available_credits": "40000.00",
+        "credits_to_use": "40000.00",
+        "final_amount": "60000.00",
+        "fully_covered": false,
+        "currency": "COP"
+    }
+    """
+    permission_classes = [IsAuthenticated, IsVerified]
+
+    def post(self, request):
+        # Validar el monto
+        amount = request.data.get('amount')
+        if not amount:
+            return Response(
+                {"error": "El campo 'amount' es requerido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            amount_decimal = Decimal(str(amount))
+            if amount_decimal <= Decimal('0'):
+                return Response(
+                    {"error": "El monto debe ser mayor a cero."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        except (ValueError, ArithmeticError):
+            return Response(
+                {"error": "Monto inválido."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Calcular saldo disponible del usuario
+        active_credits = ClientCredit.objects.filter(
+            user=request.user,
+            status__in=[
+                ClientCredit.CreditStatus.AVAILABLE,
+                ClientCredit.CreditStatus.PARTIALLY_USED
+            ],
+            expires_at__gte=timezone.now().date()
+        ).order_by('created_at')
+
+        total_available = sum(c.remaining_amount for c in active_credits)
+
+        # Calcular cuánto se usaría
+        credits_to_use = min(amount_decimal, total_available)
+        final_amount = max(Decimal('0'), amount_decimal - credits_to_use)
+        fully_covered = final_amount <= Decimal('0')
+
+        return Response({
+            'original_amount': str(amount_decimal),
+            'available_credits': str(total_available),
+            'credits_to_use': str(credits_to_use),
+            'final_amount': str(final_amount),
+            'fully_covered': fully_covered,
             'currency': 'COP'
         })
 
@@ -1252,4 +1455,605 @@ class WompiPayoutsWebhookView(APIView):
                 },
                 status=status.HTTP_200_OK
             )
+
+
+# ========================================
+# ANALYTICS DE FINANZAS - SERVICIOS
+# ========================================
+
+class ServicesRevenueView(APIView):
+    """
+    Retorna ingresos mensuales SOLO de servicios (appointments).
+
+    GET /api/v1/finances/services/revenue/
+
+    Query params:
+    - month: Mes en formato YYYY-MM (default: mes actual)
+
+    Response:
+    {
+        "month": "2026-01",
+        "total_revenue": "5450000.00",
+        "advance_payments": "2180000.00",
+        "final_payments": "3270000.00",
+        "cash_payments": "820000.00",
+        "online_payments": "4630000.00"
+    }
+    """
+    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+
+    def get(self, request):
+        from datetime import datetime
+        from dateutil.relativedelta import relativedelta
+
+        # Parsear mes
+        month_param = request.query_params.get('month')
+        if month_param:
+            try:
+                month_date = datetime.strptime(month_param, '%Y-%m').date()
+            except ValueError:
+                return Response(
+                    {"error": "Formato inválido para month. Usa YYYY-MM."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            month_date = timezone.now().date().replace(day=1)
+
+        # Calcular rango del mes
+        month_start = month_date.replace(day=1)
+        month_end = (month_start + relativedelta(months=1)) - timezone.timedelta(days=1)
+
+        # Filtrar pagos de servicios (ADVANCE y FINAL)
+        payments_qs = Payment.objects.filter(
+            payment_type__in=[Payment.PaymentType.ADVANCE, Payment.PaymentType.FINAL],
+            status__in=[Payment.PaymentStatus.APPROVED, Payment.PaymentStatus.PAID_WITH_CREDIT],
+            created_at__date__gte=month_start,
+            created_at__date__lte=month_end
+        )
+
+        # Aggregations
+        stats = payments_qs.aggregate(
+            total=Coalesce(Sum('amount'), Decimal('0')),
+            advance=Coalesce(
+                Sum('amount', filter=Q(payment_type=Payment.PaymentType.ADVANCE)),
+                Decimal('0')
+            ),
+            final=Coalesce(
+                Sum('amount', filter=Q(payment_type=Payment.PaymentType.FINAL)),
+                Decimal('0')
+            ),
+            cash=Coalesce(
+                Sum('amount', filter=Q(payment_method_type='CASH')),
+                Decimal('0')
+            ),
+            online=Coalesce(
+                Sum('amount', filter=~Q(payment_method_type='CASH')),
+                Decimal('0')
+            )
+        )
+
+        return Response({
+            'month': month_start.strftime('%Y-%m'),
+            'total_revenue': str(stats['total']),
+            'advance_payments': str(stats['advance']),
+            'final_payments': str(stats['final']),
+            'cash_payments': str(stats['cash']),
+            'online_payments': str(stats['online'])
+        })
+
+
+class ServicesCompletedAppointmentsView(APIView):
+    """
+    Retorna cantidad de citas finalizadas en el mes.
+
+    GET /api/v1/finances/services/completed-appointments/
+
+    Query params:
+    - month: Mes en formato YYYY-MM (default: mes actual)
+
+    Response:
+    {
+        "month": "2026-01",
+        "count": 142,
+        "total_revenue": "4230000.00"
+    }
+    """
+    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+
+    def get(self, request):
+        from datetime import datetime
+        from dateutil.relativedelta import relativedelta
+
+        # Parsear mes
+        month_param = request.query_params.get('month')
+        if month_param:
+            try:
+                month_date = datetime.strptime(month_param, '%Y-%m').date()
+            except ValueError:
+                return Response(
+                    {"error": "Formato inválido para month. Usa YYYY-MM."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            month_date = timezone.now().date().replace(day=1)
+
+        # Calcular rango del mes
+        month_start = month_date.replace(day=1)
+        month_end = (month_start + relativedelta(months=1)) - timezone.timedelta(days=1)
+
+        # Contar citas completadas en el mes (basado en updated_at)
+        completed = Appointment.objects.filter(
+            status=Appointment.AppointmentStatus.COMPLETED,
+            updated_at__date__gte=month_start,
+            updated_at__date__lte=month_end
+        ).aggregate(
+            count=models.Count('id'),
+            revenue=Coalesce(Sum('price_at_purchase'), Decimal('0'))
+        )
+
+        return Response({
+            'month': month_start.strftime('%Y-%m'),
+            'count': completed['count'],
+            'total_revenue': str(completed['revenue'])
+        })
+
+
+class ServicesStatusDistributionView(APIView):
+    """
+    Retorna distribución de servicios para gráfica pastel.
+
+    Categorías:
+    - Servicios pagados y finalizados (COMPLETED)
+    - Servicios confirmados futuros (CONFIRMED/FULLY_PAID con fecha futura)
+    - Servicios en limbo (CONFIRMED/RESCHEDULED/FULLY_PAID con fecha pasada)
+    - Servicios cancelados (CANCELLED)
+
+    GET /api/v1/finances/services/status-distribution/
+
+    Query params:
+    - month: Mes en formato YYYY-MM (default: mes actual)
+
+    Response:
+    {
+        "month": "2026-01",
+        "distribution": {
+            "completed_paid": {
+                "count": 142,
+                "revenue": "4230000.00",
+                "label": "Servicios Pagados y Finalizados"
+            },
+            "confirmed_future": {
+                "count": 38,
+                "revenue": "1140000.00",
+                "label": "Servicios Confirmados Futuros"
+            },
+            "limbo": {
+                "count": 7,
+                "revenue": "210000.00",
+                "label": "Servicios en Limbo"
+            },
+            "cancelled": {
+                "count": 12,
+                "revenue": "360000.00",
+                "label": "Servicios Cancelados"
+            }
+        }
+    }
+    """
+    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+
+    def get(self, request):
+        from datetime import datetime
+        from dateutil.relativedelta import relativedelta
+
+        # Parsear mes
+        month_param = request.query_params.get('month')
+        if month_param:
+            try:
+                month_date = datetime.strptime(month_param, '%Y-%m').date()
+            except ValueError:
+                return Response(
+                    {"error": "Formato inválido para month. Usa YYYY-MM."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            month_date = timezone.now().date().replace(day=1)
+
+        # Calcular rango del mes
+        month_start = month_date.replace(day=1)
+        month_end = (month_start + relativedelta(months=1)) - timezone.timedelta(days=1)
+        today = timezone.now().date()
+
+        # Base queryset: citas del mes
+        base_qs = Appointment.objects.filter(
+            start_time__date__gte=month_start,
+            start_time__date__lte=month_end
+        )
+
+        # 1. Servicios completados y pagados
+        completed_paid = base_qs.filter(
+            status=Appointment.AppointmentStatus.COMPLETED
+        ).aggregate(
+            count=models.Count('id'),
+            revenue=Coalesce(Sum('price_at_purchase'), Decimal('0'))
+        )
+
+        # 2. Servicios confirmados futuros (fecha de mañana en adelante)
+        confirmed_future = base_qs.filter(
+            status__in=[
+                Appointment.AppointmentStatus.CONFIRMED,
+                Appointment.AppointmentStatus.FULLY_PAID
+            ],
+            start_time__date__gt=today
+        ).aggregate(
+            count=models.Count('id'),
+            revenue=Coalesce(Sum('price_at_purchase'), Decimal('0'))
+        )
+
+        # 3. Servicios en limbo (fecha ya pasó pero no se completaron ni cancelaron)
+        limbo = base_qs.filter(
+            status__in=[
+                Appointment.AppointmentStatus.CONFIRMED,
+                Appointment.AppointmentStatus.RESCHEDULED,
+                Appointment.AppointmentStatus.FULLY_PAID
+            ],
+            start_time__date__lt=today
+        ).aggregate(
+            count=models.Count('id'),
+            revenue=Coalesce(Sum('price_at_purchase'), Decimal('0'))
+        )
+
+        # 4. Servicios cancelados
+        cancelled = base_qs.filter(
+            status=Appointment.AppointmentStatus.CANCELLED
+        ).aggregate(
+            count=models.Count('id'),
+            revenue=Coalesce(Sum('price_at_purchase'), Decimal('0'))
+        )
+
+        return Response({
+            'month': month_start.strftime('%Y-%m'),
+            'distribution': {
+                'completed_paid': {
+                    'count': completed_paid['count'],
+                    'revenue': str(completed_paid['revenue']),
+                    'label': 'Servicios Pagados y Finalizados'
+                },
+                'confirmed_future': {
+                    'count': confirmed_future['count'],
+                    'revenue': str(confirmed_future['revenue']),
+                    'label': 'Servicios Confirmados Futuros'
+                },
+                'limbo': {
+                    'count': limbo['count'],
+                    'revenue': str(limbo['revenue']),
+                    'label': 'Servicios en Limbo'
+                },
+                'cancelled': {
+                    'count': cancelled['count'],
+                    'revenue': str(cancelled['revenue']),
+                    'label': 'Servicios Cancelados'
+                }
+            }
+        })
+
+
+# ========================================
+# ANALYTICS DE FINANZAS - MARKETPLACE
+# ========================================
+
+class MarketplaceRevenueView(APIView):
+    """
+    Retorna total vendido en marketplace por mes.
+
+    GET /api/v1/finances/marketplace/revenue/
+
+    Query params:
+    - month: Mes en formato YYYY-MM (default: mes actual)
+
+    Response:
+    {
+        "month": "2026-01",
+        "total_revenue": "2340000.00",
+        "orders_count": 67,
+        "average_order_value": "34925.37"
+    }
+    """
+    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+
+    def get(self, request):
+        from datetime import datetime
+        from dateutil.relativedelta import relativedelta
+
+        # Parsear mes
+        month_param = request.query_params.get('month')
+        if month_param:
+            try:
+                month_date = datetime.strptime(month_param, '%Y-%m').date()
+            except ValueError:
+                return Response(
+                    {"error": "Formato inválido para month. Usa YYYY-MM."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            month_date = timezone.now().date().replace(day=1)
+
+        # Calcular rango del mes
+        month_start = month_date.replace(day=1)
+        month_end = (month_start + relativedelta(months=1)) - timezone.timedelta(days=1)
+
+        # Filtrar pagos de órdenes aprobados
+        payments_stats = Payment.objects.filter(
+            payment_type=Payment.PaymentType.ORDER,
+            status__in=[Payment.PaymentStatus.APPROVED, Payment.PaymentStatus.PAID_WITH_CREDIT],
+            created_at__date__gte=month_start,
+            created_at__date__lte=month_end
+        ).aggregate(
+            total=Coalesce(Sum('amount'), Decimal('0')),
+            count=models.Count('order_id', distinct=True)
+        )
+
+        total_revenue = payments_stats['total']
+        orders_count = payments_stats['count']
+
+        # Calcular promedio
+        if orders_count > 0:
+            average = total_revenue / orders_count
+        else:
+            average = Decimal('0')
+
+        return Response({
+            'month': month_start.strftime('%Y-%m'),
+            'total_revenue': str(total_revenue),
+            'orders_count': orders_count,
+            'average_order_value': str(average.quantize(Decimal('0.01')))
+        })
+
+
+class MarketplaceProductsRevenueView(APIView):
+    """
+    Retorna ingresos desglosados por producto.
+
+    GET /api/v1/finances/marketplace/products-revenue/
+
+    Query params:
+    - month: Mes en formato YYYY-MM (default: mes actual)
+    - limit: Límite de productos a retornar (default: 20)
+
+    Response:
+    {
+        "month": "2026-01",
+        "products": [
+            {
+                "product_id": "uuid-123",
+                "product_name": "Crema Facial Hidratante",
+                "variant_name": "50ml",
+                "quantity_sold": 45,
+                "total_revenue": "675000.00"
+            },
+            ...
+        ]
+    }
+    """
+    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+
+    def get(self, request):
+        from datetime import datetime
+        from dateutil.relativedelta import relativedelta
+        from marketplace.models import OrderItem, Order
+
+        # Parsear mes
+        month_param = request.query_params.get('month')
+        if month_param:
+            try:
+                month_date = datetime.strptime(month_param, '%Y-%m').date()
+            except ValueError:
+                return Response(
+                    {"error": "Formato inválido para month. Usa YYYY-MM."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            month_date = timezone.now().date().replace(day=1)
+
+        # Límite de productos
+        try:
+            limit = int(request.query_params.get('limit', 20))
+        except ValueError:
+            limit = 20
+
+        # Calcular rango del mes
+        month_start = month_date.replace(day=1)
+        month_end = (month_start + relativedelta(months=1)) - timezone.timedelta(days=1)
+
+        # Obtener items de órdenes pagadas en el mes
+        products_data = OrderItem.objects.filter(
+            order__status__in=[
+                Order.OrderStatus.PAID,
+                Order.OrderStatus.PREPARING,
+                Order.OrderStatus.SHIPPED,
+                Order.OrderStatus.DELIVERED
+            ],
+            order__created_at__date__gte=month_start,
+            order__created_at__date__lte=month_end
+        ).values(
+            'product_variant__product_id',
+            'product_variant__product__name',
+            'product_variant__name'
+        ).annotate(
+            quantity_sold=Sum('quantity'),
+            total_revenue=Sum(F('quantity') * F('price_at_purchase'))
+        ).order_by('-total_revenue')[:limit]
+
+        # Formatear respuesta
+        products = [
+            {
+                'product_id': str(item['product_variant__product_id']),
+                'product_name': item['product_variant__product__name'],
+                'variant_name': item['product_variant__name'] or 'Predeterminado',
+                'quantity_sold': item['quantity_sold'],
+                'total_revenue': str(item['total_revenue'])
+            }
+            for item in products_data
+        ]
+
+        return Response({
+            'month': month_start.strftime('%Y-%m'),
+            'products': products
+        })
+
+
+class MarketplaceOrdersStatsView(APIView):
+    """
+    Retorna estadísticas generales de órdenes.
+
+    GET /api/v1/finances/marketplace/orders-stats/
+
+    Query params:
+    - month: Mes en formato YYYY-MM (default: mes actual)
+
+    Response:
+    {
+        "month": "2026-01",
+        "orders_by_status": {
+            "paid": 45,
+            "preparing": 12,
+            "shipped": 8,
+            "delivered": 67,
+            "cancelled": 3
+        },
+        "delivery_methods": {
+            "pickup": 38,
+            "delivery": 22,
+            "associate_to_appointment": 7
+        },
+        "credits_used": "245000.00"
+    }
+    """
+    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+
+    def get(self, request):
+        from datetime import datetime
+        from dateutil.relativedelta import relativedelta
+        from marketplace.models import Order
+
+        # Parsear mes
+        month_param = request.query_params.get('month')
+        if month_param:
+            try:
+                month_date = datetime.strptime(month_param, '%Y-%m').date()
+            except ValueError:
+                return Response(
+                    {"error": "Formato inválido para month. Usa YYYY-MM."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            month_date = timezone.now().date().replace(day=1)
+
+        # Calcular rango del mes
+        month_start = month_date.replace(day=1)
+        month_end = (month_start + relativedelta(months=1)) - timezone.timedelta(days=1)
+
+        # Base queryset
+        base_qs = Order.objects.filter(
+            created_at__date__gte=month_start,
+            created_at__date__lte=month_end
+        )
+
+        # Órdenes por estado
+        orders_by_status_raw = base_qs.values('status').annotate(
+            count=models.Count('id')
+        )
+        orders_by_status = {item['status'].lower(): item['count'] for item in orders_by_status_raw}
+
+        # Métodos de entrega
+        delivery_methods_raw = base_qs.values('delivery_option').annotate(
+            count=models.Count('id')
+        )
+        delivery_methods = {item['delivery_option'].lower(): item['count'] for item in delivery_methods_raw}
+
+        # Créditos usados en órdenes
+        credits_used = Payment.objects.filter(
+            payment_type=Payment.PaymentType.ORDER,
+            status=Payment.PaymentStatus.PAID_WITH_CREDIT,
+            created_at__date__gte=month_start,
+            created_at__date__lte=month_end
+        ).aggregate(
+            total=Coalesce(Sum('amount'), Decimal('0'))
+        )
+
+        return Response({
+            'month': month_start.strftime('%Y-%m'),
+            'orders_by_status': orders_by_status,
+            'delivery_methods': delivery_methods,
+            'credits_used': str(credits_used['total'])
+        })
+
+
+class MarketplaceDailyRevenueView(APIView):
+    """
+    Retorna ingresos diarios de marketplace para gráficas.
+
+    GET /api/v1/finances/marketplace/daily-revenue/
+
+    Query params:
+    - month: Mes en formato YYYY-MM (default: mes actual)
+
+    Response:
+    {
+        "month": "2026-01",
+        "daily_data": [
+            {"date": "2026-01-01", "revenue": "45000.00", "orders": 3},
+            {"date": "2026-01-02", "revenue": "67500.00", "orders": 5},
+            ...
+        ]
+    }
+    """
+    permission_classes = [IsAuthenticated, IsStaffOrAdmin]
+
+    def get(self, request):
+        from datetime import datetime
+        from dateutil.relativedelta import relativedelta
+
+        # Parsear mes
+        month_param = request.query_params.get('month')
+        if month_param:
+            try:
+                month_date = datetime.strptime(month_param, '%Y-%m').date()
+            except ValueError:
+                return Response(
+                    {"error": "Formato inválido para month. Usa YYYY-MM."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            month_date = timezone.now().date().replace(day=1)
+
+        # Calcular rango del mes
+        month_start = month_date.replace(day=1)
+        month_end = (month_start + relativedelta(months=1)) - timezone.timedelta(days=1)
+
+        # Agrupar por día
+        daily_stats = Payment.objects.filter(
+            payment_type=Payment.PaymentType.ORDER,
+            status__in=[Payment.PaymentStatus.APPROVED, Payment.PaymentStatus.PAID_WITH_CREDIT],
+            created_at__date__gte=month_start,
+            created_at__date__lte=month_end
+        ).values('created_at__date').annotate(
+            revenue=Coalesce(Sum('amount'), Decimal('0')),
+            orders=models.Count('order_id', distinct=True)
+        ).order_by('created_at__date')
+
+        # Formatear respuesta
+        daily_data = [
+            {
+                'date': item['created_at__date'].isoformat(),
+                'revenue': str(item['revenue']),
+                'orders': item['orders']
+            }
+            for item in daily_stats
+        ]
+
+        return Response({
+            'month': month_start.strftime('%Y-%m'),
+            'daily_data': daily_data
+        })
 

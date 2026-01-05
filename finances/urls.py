@@ -23,12 +23,22 @@ from .views import (
     CreateDaviplataPaymentView,
     CreateBancolombiaTransferPaymentView,
     ClientCreditBalanceView,
+    CreditPaymentPreviewView,
     # Wompi Payouts API
     WompiPayoutsAccountsView,
     WompiPayoutsBanksView,
     WompiPayoutsBalanceView,
     WompiPayoutsRechargeView,
     WompiPayoutsWebhookView,
+    # Analytics de Finanzas - Servicios
+    ServicesRevenueView,
+    ServicesCompletedAppointmentsView,
+    ServicesStatusDistributionView,
+    # Analytics de Finanzas - Marketplace
+    MarketplaceRevenueView,
+    MarketplaceProductsRevenueView,
+    MarketplaceOrdersStatsView,
+    MarketplaceDailyRevenueView,
 )
 
 router = DefaultRouter()
@@ -45,6 +55,7 @@ urlpatterns = [
 
     # Créditos del usuario
     path("credits/balance/", ClientCreditBalanceView.as_view(), name="client-credit-balance"),
+    path("credits/preview/", CreditPaymentPreviewView.as_view(), name="credit-payment-preview"),
 
     # PSE
     path("pse-banks/", PSEFinancialInstitutionsView.as_view(), name="pse-banks"),
@@ -72,6 +83,17 @@ urlpatterns = [
     path("wompi-payouts/balance/", WompiPayoutsBalanceView.as_view(), name="wompi-payouts-balance"),
     path("wompi-payouts/sandbox/recharge/", WompiPayoutsRechargeView.as_view(), name="wompi-payouts-sandbox-recharge"),
     path("wompi-payouts/webhook/", WompiPayoutsWebhookView.as_view(), name="wompi-payouts-webhook"),
+
+    # Analytics de Finanzas - SERVICIOS
+    path("services/revenue/", ServicesRevenueView.as_view(), name="services-revenue"),
+    path("services/completed-appointments/", ServicesCompletedAppointmentsView.as_view(), name="services-completed"),
+    path("services/status-distribution/", ServicesStatusDistributionView.as_view(), name="services-distribution"),
+
+    # Analytics de Finanzas - MARKETPLACE/TIENDA
+    path("marketplace/revenue/", MarketplaceRevenueView.as_view(), name="marketplace-revenue"),
+    path("marketplace/products-revenue/", MarketplaceProductsRevenueView.as_view(), name="marketplace-products"),
+    path("marketplace/orders-stats/", MarketplaceOrdersStatsView.as_view(), name="marketplace-orders-stats"),
+    path("marketplace/daily-revenue/", MarketplaceDailyRevenueView.as_view(), name="marketplace-daily"),
 
     # Rutas administrativas
     path("", include(router.urls)),

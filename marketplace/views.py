@@ -421,8 +421,15 @@ class CartViewSet(viewsets.GenericViewSet):
             order = order_service.create_order()
 
             # Crear registro de pago y obtener payload para Wompi usando servicio centralizado
+            # Extraer el parámetro use_credits del request validado
+            use_credits = validated_data.get('use_credits', False)
+
             try:
-                payment, payment_payload = PaymentService.create_order_payment(request.user, order)
+                payment, payment_payload = PaymentService.create_order_payment(
+                    request.user,
+                    order,
+                    use_credits=use_credits
+                )
             except ValueError as e:
                 logger.error("Error al iniciar pago de orden %s: %s", order.id, e)
                 from .services import OrderService
@@ -482,6 +489,9 @@ class OrderViewSet(viewsets.ModelViewSet):
         """
         Permite reintentar el pago de una orden existente que esté pendiente.
         Genera una nueva referencia de Wompi para evitar errores de "referencia duplicada".
+
+        Body (opcional):
+            use_credits: bool - Si debe usar créditos disponibles del usuario
         """
         try:
             order = self.get_object() # Valida permission classes y queryset filter
@@ -494,9 +504,16 @@ class OrderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Extraer el parámetro use_credits del request
+        use_credits = request.data.get('use_credits', False)
+
         # Regenerar pago y referencia usando el servicio
         try:
-            payment, payment_payload = PaymentService.create_order_payment(request.user, order)
+            payment, payment_payload = PaymentService.create_order_payment(
+                request.user,
+                order,
+                use_credits=use_credits
+            )
         except ValueError as e:
             logger.error("Error al reintentar pago de orden %s: %s", order.id, e)
             return Response(

@@ -633,6 +633,24 @@ class OperationalInsightsView(DateFilterMixin, viewsets.ViewSet):
         except ValueError as e:
             return Response({"error": str(e)}, status=400)
 
+    @action(detail=False, methods=["get"], url_path="top-services")
+    def top_services(self, request):
+        try:
+            service = self._get_service(request)
+            data = service.get_top_services()
+            return Response(data)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+
+    @action(detail=False, methods=["get"], url_path="status-distribution")
+    def status_distribution(self, request):
+        try:
+            service = self._get_service(request)
+            data = service.get_appointment_status_distribution()
+            return Response(data)
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)
+
 
 class BusinessIntelligenceView(DateFilterMixin, viewsets.ViewSet):
     """

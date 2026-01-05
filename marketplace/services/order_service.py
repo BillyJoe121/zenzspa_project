@@ -143,9 +143,12 @@ class OrderService:
         """
         Confirma el pago de una orden.
 
+        Soporta pagos mixtos (créditos + pasarela) sumando todos los pagos exitosos
+        asociados a la orden (APPROVED + PAID_WITH_CREDIT).
+
         Args:
             order: Orden a confirmar
-            paid_amount: Monto pagado según gateway (opcional pero recomendado)
+            paid_amount: Monto pagado según gateway (opcional, solo para compatibilidad)
         """
         if order.status == Order.OrderStatus.PAID:
             raise BusinessLogicError(detail="La orden ya ha sido pagada.")
@@ -155,17 +158,27 @@ class OrderService:
 
         cls._validate_pricing(order)
 
-        # Validar monto pagado si se proporciona
-        if paid_amount is not None:
-            # Convertir a Decimal si es necesario
-            if not isinstance(paid_amount, Decimal):
-                paid_amount = Decimal(str(paid_amount))
+        # Calcular el total pagado sumando TODOS los pagos exitosos de la orden
+        from finances.models import Payment
+        from django.db.models import Sum, Q
 
-            if abs(paid_amount - order.total_amount) > Decimal('0.01'):
-                raise BusinessLogicError(
-                    detail=f"El monto pagado ({paid_amount}) no coincide con el total de la orden ({order.total_amount}).",
-                    internal_code="MKT-AMOUNT-MISMATCH"
-                )
+        total_paid = order.payments.filter(
+            Q(status=Payment.PaymentStatus.APPROVED) | Q(status=Payment.PaymentStatus.PAID_WITH_CREDIT)
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+        # Validar que la suma de pagos cubra el total de la orden
+        if abs(total_paid - order.total_amount) > Decimal('0.01'):
+            raise BusinessLogicError(
+                detail=f"El total pagado ({total_paid}) no coincide con el total de la orden ({order.total_amount}).",
+                internal_code="MKT-AMOUNT-MISMATCH",
+                extra={
+                    "total_paid": str(total_paid),
+                    "order_total": str(order.total_amount),
+                    "payments_count": order.payments.filter(
+                        status__in=[Payment.PaymentStatus.APPROVED, Payment.PaymentStatus.PAID_WITH_CREDIT]
+                    ).count()
+                }
+            )
 
         # Reforzar atomicidad y lock sobre la orden
         order = Order.objects.select_for_update().get(pk=order.pk)

@@ -508,14 +508,14 @@ class KpiService:
         # Usuario nuevo = creado en este periodo
         new_user_revenue = (
             self._payment_queryset()
-            .filter(user__date_joined__date__gte=self.start_date)
+            .filter(user__created_at__date__gte=self.start_date)
             .aggregate(total=Coalesce(Sum('amount'), Decimal('0')))['total']
         )
         
         # Usuario recurrente = creado antes de este periodo
         returning_user_revenue = (
             self._payment_queryset()
-            .filter(user__date_joined__date__lt=self.start_date)
+            .filter(user__created_at__date__lt=self.start_date)
             .aggregate(total=Coalesce(Sum('amount'), Decimal('0')))['total']
         )
         
@@ -672,6 +672,7 @@ class KpiService:
             "shrinkage_items": abs(shrinkage['total_items'] or 0)
         }
 
+
     def get_funnel_metrics(self):
         """
         Embudo de conversión de citas.
@@ -689,3 +690,56 @@ class KpiService:
             ],
             "conversion_rate": float(completed / total * 100) if total > 0 else 0
         }
+
+    def get_top_services(self):
+        """
+        Top servicios por ingresos y cantidad.
+        """
+        services = (
+            AppointmentItem.objects
+            .filter(
+                appointment__start_time__date__gte=self.start_date,
+                appointment__start_time__date__lte=self.end_date
+            )
+            .values('service__name')
+            .annotate(
+                count=Count('id'),
+                revenue=Sum('price_at_purchase')
+            )
+            .order_by('-revenue')[:10]
+        )
+
+        return [
+            {
+                "name": item['service__name'],
+                "count": item['count'],
+                "revenue": float(item['revenue'] or 0)
+            }
+            for item in services
+        ]
+
+    def get_appointment_status_distribution(self):
+        """
+        Distribución de estados de citas.
+        """
+        # Agrupar por status y outcome para mayor detalle
+        distribution = (
+            self._appointment_queryset()
+            .values('status', 'outcome')
+            .annotate(count=Count('id'))
+            .order_by('-count')
+        )
+
+        data = []
+        for item in distribution:
+            label = item['status']
+            # Si es cancelada, agregar el motivo (outcome)
+            if item['status'] == Appointment.AppointmentStatus.CANCELLED and item['outcome'] != Appointment.AppointmentOutcome.NONE:
+                label = f"CANCELLED ({item['outcome']})"
+            
+            data.append({
+                "label": label,
+                "value": item['count']
+            })
+            
+        return data
