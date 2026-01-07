@@ -54,6 +54,13 @@ class Product(BaseModel):
         verbose_name="Modo de Uso",
         help_text="Instrucciones de aplicación o uso del producto."
     )
+    image_url = models.URLField(
+        max_length=500,
+        blank=True,
+        null=True,
+        verbose_name="URL de Imagen Externa",
+        help_text="URL de la imagen del producto para optimización en frontend (prioridad sobre ProductImage)."
+    )
 
     class Meta:
         verbose_name = "Producto"
@@ -129,6 +136,42 @@ class ProductVariant(BaseModel):
             raise ValidationError("La cantidad mínima no puede ser mayor que la cantidad máxima.")
 
 
+class ProductVariantImage(BaseModel):
+    """
+    Imagen asociada a una variante específica de producto.
+    Permite tener múltiples imágenes por variante usando URLs externas.
+    """
+    variant = models.ForeignKey(
+        ProductVariant,
+        on_delete=models.CASCADE,
+        related_name='images',
+        verbose_name="Variante"
+    )
+    image_url = models.URLField(
+        max_length=500,
+        verbose_name="URL de Imagen",
+        help_text="URL de la imagen para esta variante."
+    )
+    alt_text = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name="Texto Alternativo"
+    )
+    display_order = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name="Orden de Visualización",
+        help_text="Orden en el que se muestra la imagen (menor = primero)"
+    )
+
+    class Meta:
+        verbose_name = "Imagen de Variante"
+        verbose_name_plural = "Imágenes de Variantes"
+        ordering = ['display_order', 'created_at']
+
+    def __str__(self):
+        return f"Imagen para {self.variant}"
+
+
 class InventoryMovement(BaseModel):
     class MovementType(models.TextChoices):
         SALE = 'SALE', 'Venta'
@@ -174,6 +217,11 @@ class InventoryMovement(BaseModel):
         ]
 
 class ProductImage(BaseModel):
+    """
+    Imagen secundaria de un producto.
+    Puede ser un archivo subido (image) o una URL externa (image_url).
+    Al menos uno de los dos debe estar presente.
+    """
     product = models.ForeignKey(
         Product,
         on_delete=models.CASCADE,
@@ -181,7 +229,17 @@ class ProductImage(BaseModel):
     )
     image = models.ImageField(
         upload_to='product_images/',
-        verbose_name="Imagen"
+        verbose_name="Imagen (archivo)",
+        blank=True,
+        null=True,
+        help_text="Sube una imagen o proporciona una URL externa."
+    )
+    image_url = models.URLField(
+        max_length=500,
+        blank=True,
+        null=True,
+        verbose_name="URL de Imagen Externa",
+        help_text="URL de imagen externa. Se usa si no hay archivo subido."
     )
     is_primary = models.BooleanField(
         default=False,
@@ -192,17 +250,36 @@ class ProductImage(BaseModel):
         blank=True,
         verbose_name="Texto Alternativo"
     )
+    display_order = models.PositiveSmallIntegerField(
+        default=0,
+        verbose_name="Orden de Visualización",
+        help_text="Orden en el que se muestra la imagen (menor = primero)"
+    )
 
     class Meta:
         verbose_name = "Imagen de Producto"
         verbose_name_plural = "Imágenes de Producto"
-        ordering = ['-is_primary', 'created_at']
+        ordering = ['-is_primary', 'display_order', 'created_at']
 
     def __str__(self):
         return f"Imagen para {self.product.name}"
 
+    def get_image_url(self):
+        """Retorna la URL de la imagen, priorizando el archivo subido."""
+        if self.image:
+            return self.image.url
+        return self.image_url
+
     def clean(self):
         super().clean()
+        
+        # Validar que al menos uno de los campos de imagen esté presente
+        if not self.image and not self.image_url:
+            raise ValidationError(
+                "Debes proporcionar una imagen (archivo subido) o una URL de imagen externa."
+            )
+        
+        # Si hay archivo, validar el archivo
         file = self.image
         if not file:
             return

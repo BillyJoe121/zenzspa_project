@@ -8,6 +8,7 @@ from .models import (
     ProductCategory,
     ProductImage,
     ProductVariant,
+    ProductVariantImage,
     Cart,
     CartItem,
     Order,
@@ -43,16 +44,32 @@ def _show_sensitive_data(context):
 
 class ProductImageSerializer(serializers.ModelSerializer):
     """Serializador para las imágenes de un producto."""
+    url = serializers.SerializerMethodField()
+
     class Meta:
         model = ProductImage
-        fields = ['image', 'is_primary', 'alt_text']
+        fields = ['id', 'image', 'image_url', 'url', 'is_primary', 'alt_text', 'display_order']
+
+    def get_url(self, obj):
+        """Retorna la URL efectiva de la imagen (prioriza archivo subido)."""
+        return obj.get_image_url()
+
+
+class ProductVariantImageSerializer(serializers.ModelSerializer):
+    """Serializador para las imágenes de una variante."""
+
+    class Meta:
+        model = ProductVariantImage
+        fields = ['id', 'image_url', 'alt_text', 'display_order']
+
 
 class ProductVariantSerializer(serializers.ModelSerializer):
     """Serializador para variantes individuales."""
+    images = ProductVariantImageSerializer(many=True, read_only=True)
 
     class Meta:
         model = ProductVariant
-        fields = ['id', 'sku', 'name', 'price', 'vip_price', 'stock']
+        fields = ['id', 'sku', 'name', 'price', 'vip_price', 'stock', 'images']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -75,7 +92,7 @@ class ProductListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Product
-        fields = ['id', 'name', 'price', 'vip_price', 'stock', 'main_image', 'category']
+        fields = ['id', 'name', 'price', 'vip_price', 'stock', 'main_image', 'category', 'image_url']
 
     def get_main_image(self, obj):
         # Busca la imagen marcada como principal o la primera que encuentre
@@ -127,6 +144,7 @@ class ProductDetailSerializer(ProductListSerializer):
             'what_is_included',
             'benefits',
             'how_to_use',
+            'image_url',
         ]
 
     def get_average_rating(self, obj):
@@ -524,6 +542,7 @@ class AdminProductSerializer(serializers.ModelSerializer):
             'what_is_included',
             'benefits',
             'how_to_use',
+            'image_url',
             'created_at',
             'updated_at',
         ]
@@ -555,10 +574,50 @@ class AdminProductVariantSerializer(serializers.ModelSerializer):
 
 class AdminProductImageSerializer(serializers.ModelSerializer):
     """Permite gestionar imágenes de productos."""
+    url = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductImage
-        fields = ['id', 'product', 'image', 'is_primary', 'alt_text', 'created_at', 'updated_at']
+        fields = [
+            'id', 'product', 'image', 'image_url', 'url',
+            'is_primary', 'alt_text', 'display_order',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'url', 'created_at', 'updated_at']
+
+    def get_url(self, obj):
+        """Retorna la URL efectiva de la imagen."""
+        return obj.get_image_url()
+
+    def validate(self, data):
+        """Valida que al menos uno de image o image_url esté presente."""
+        image = data.get('image')
+        image_url = data.get('image_url')
+        
+        # Para actualizaciones, considerar valores existentes
+        if self.instance:
+            if image is None and 'image' not in data:
+                image = self.instance.image
+            if image_url is None and 'image_url' not in data:
+                image_url = self.instance.image_url
+        
+        if not image and not image_url:
+            raise serializers.ValidationError(
+                "Debes proporcionar una imagen (archivo subido) o una URL de imagen externa."
+            )
+        
+        return data
+
+
+class AdminProductVariantImageSerializer(serializers.ModelSerializer):
+    """Permite gestionar imágenes de variantes de productos."""
+
+    class Meta:
+        model = ProductVariantImage
+        fields = [
+            'id', 'variant', 'image_url', 'alt_text', 'display_order',
+            'created_at', 'updated_at'
+        ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 

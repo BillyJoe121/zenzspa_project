@@ -77,6 +77,14 @@ class OrderService:
                 changed_by=changed_by,
             )
 
+        if new_status in [Order.OrderStatus.CANCELLED, Order.OrderStatus.REFUNDED]:
+            try:
+                from finances.cashback_service import CashbackService
+                CashbackService.revert_cashback(order)
+            except Exception as e:
+                logger.error("Error reverting cashback for order %s: %s", order.id, e)
+
+
         cls._dispatch_notifications(order, new_status)
         return order
 

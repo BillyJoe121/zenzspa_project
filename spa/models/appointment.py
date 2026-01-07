@@ -64,6 +64,12 @@ class Service(SoftDeleteModel):
         blank=True,
         help_text="Contraindicaciones médicas o de salud."
     )
+    image_url = models.URLField(
+        max_length=500,
+        blank=True,
+        null=True,
+        help_text="URL externa de la imagen del servicio (para optimización en frontend)."
+    )
     history = HistoricalRecords(inherit=True)
 
     class Meta:

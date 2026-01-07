@@ -17,11 +17,12 @@ from django.db import transaction, models
 from django.db.models import Sum, Q
 from django.db.models.functions import Coalesce
 from django.utils import timezone
-from rest_framework import generics, status, viewsets
+from rest_framework import generics, status, viewsets, filters
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django_filters.rest_framework import DjangoFilterBackend
 
 from users.permissions import IsAdminUser, IsStaffOrAdmin, IsVerified
 from core.models import AuditLog, GlobalSettings
@@ -986,10 +987,25 @@ class ClientCreditAdminViewSet(viewsets.ModelViewSet):
     """
     CRUD administrativo para créditos de clientes.
     Permite ajustar saldo disponible tras reembolsos en efectivo u otros casos.
+
+    Búsqueda: ?search=nombre, teléfono o email del usuario
+    Filtros: ?status=AVAILABLE&user=uuid
+    Ordenamiento: ?ordering=-expires_at
     """
     permission_classes = [IsAuthenticated, IsAdminUser]
     serializer_class = ClientCreditAdminSerializer
     queryset = ClientCredit.objects.select_related("user", "originating_payment").order_by("-created_at")
+
+    # Configuración de búsqueda y filtros
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    search_fields = [
+        'user__first_name',
+        'user__last_name',
+        'user__phone_number',
+        'user__email'
+    ]
+    filterset_fields = ['status', 'user']
+    ordering_fields = ['created_at', 'expires_at', 'remaining_amount', 'initial_amount']
 
     def _compute_status(self, credit: ClientCredit) -> str:
         # Marcar expirado si la fecha ya pasó

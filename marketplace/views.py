@@ -33,6 +33,7 @@ from .models import (
     ProductImage,
     ProductReview,
     ProductVariant,
+    ProductVariantImage,
 )
 from .serializers import (
     ProductCategorySerializer,
@@ -51,6 +52,7 @@ from .serializers import (
     AdminReviewResponseSerializer,
     AdminInventoryMovementSerializer,
     AdminProductImageSerializer,
+    AdminProductVariantImageSerializer,
     AdminProductSerializer,
     AdminProductVariantSerializer,
     AdminOrderSerializer,
@@ -841,6 +843,22 @@ class AdminProductImageViewSet(viewsets.ModelViewSet):
     queryset = ProductImage.objects.select_related('product')
     serializer_class = AdminProductImageSerializer
     http_method_names = ['get', 'post', 'put', 'patch', 'delete']
+
+
+class AdminProductVariantImageViewSet(viewsets.ModelViewSet):
+    """CRUD administrativo para imágenes de variantes de producto."""
+    permission_classes = [DomainIsStaffOrAdmin]
+    queryset = ProductVariantImage.objects.select_related('variant__product')
+    serializer_class = AdminProductVariantImageSerializer
+    http_method_names = ['get', 'post', 'put', 'patch', 'delete']
+
+    def get_queryset(self):
+        """Opcionalmente filtra por variante."""
+        queryset = super().get_queryset()
+        variant_id = self.request.query_params.get('variant', None)
+        if variant_id:
+            queryset = queryset.filter(variant_id=variant_id)
+        return queryset
 
 
 class AdminInventoryMovementViewSet(

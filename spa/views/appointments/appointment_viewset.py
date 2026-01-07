@@ -303,6 +303,13 @@ class AppointmentViewSet(viewsets.ModelViewSet):
         # Cancelar pagos pendientes para evitar bloqueo por deuda
         PaymentService.cancel_pending_payments_for_appointment(appointment)
 
+        # Revertir cashback si hubo
+        try:
+            from finances.cashback_service import CashbackService
+            CashbackService.revert_cashback(appointment)
+        except Exception as e:
+            logger.error("Error reverting cashback for appointment %s: %s", appointment.id, e)
+
         AuditLog.objects.create(
             admin_user=request.user,
             action=AuditLog.Action.APPOINTMENT_CANCELLED_BY_ADMIN,
@@ -433,6 +440,14 @@ class AppointmentViewSet(viewsets.ModelViewSet):
 
         # Cancelar pagos pendientes para evitar bloqueo por deuda
         PaymentService.cancel_pending_payments_for_appointment(appointment)
+
+        # Revertir cashback si hubo
+        try:
+            from finances.cashback_service import CashbackService
+            CashbackService.revert_cashback(appointment)
+        except Exception as e:
+            logger.error("Error reverting cashback for appointment %s: %s", appointment.id, e)
+
 
         AuditLog.objects.create(
             admin_user=user if user.role in [CustomUser.Role.ADMIN, CustomUser.Role.STAFF] else None,

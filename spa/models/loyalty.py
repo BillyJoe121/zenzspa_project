@@ -17,6 +17,13 @@ class LoyaltyRewardLog(BaseModel):
         null=True,
         blank=True
     )
+    credit = models.ForeignKey(
+        'finances.ClientCredit',
+        on_delete=models.SET_NULL,
+        related_name='loyalty_rewards',
+        null=True,
+        blank=True
+    )
     rewarded_at = models.DateField()
 
     def __str__(self):

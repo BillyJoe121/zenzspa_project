@@ -4,6 +4,7 @@ from .models import (
     ProductCategory,
     Product,
     ProductVariant,
+    ProductVariantImage,
     ProductImage,
     Cart,
     CartItem,
@@ -24,7 +25,13 @@ class ProductVariantInline(admin.TabularInline):
 class ProductImageInline(admin.TabularInline):
     model = ProductImage
     extra = 1
-    fields = ('image', 'is_primary', 'alt_text')
+    fields = ('image', 'image_url', 'is_primary', 'alt_text', 'display_order')
+
+
+class ProductVariantImageInline(admin.TabularInline):
+    model = ProductVariantImage
+    extra = 1
+    fields = ('image_url', 'alt_text', 'display_order')
 
 
 @admin.register(ProductCategory)
@@ -48,6 +55,7 @@ class ProductVariantAdmin(admin.ModelAdmin):
     search_fields = ('name', 'sku', 'product__name')
     list_filter = ('product__category',)
     raw_id_fields = ('product',)
+    inlines = [ProductVariantImageInline]
 
 
 class CartItemInline(admin.TabularInline):

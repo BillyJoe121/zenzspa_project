@@ -260,6 +260,14 @@ class WompiWebhookService:
                             payment_record.status = Payment.PaymentStatus.APPROVED
                             payment_record.raw_response = transaction_data
                             payment_record.save(update_fields=['status', 'raw_response', 'updated_at'])
+                            
+                            # Trigger Cashback
+                            try:
+                                from finances.cashback_service import CashbackService
+                                CashbackService.process_cashback(payment_record)
+                            except Exception as e:
+                                logger.error("Error generating cashback for payment %s: %s", payment_record.id, e)
+
                     except BusinessLogicError as exc:
                         payload = exc.detail if isinstance(exc.detail, dict) else {}
                         code = payload.get("code")

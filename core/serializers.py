@@ -226,8 +226,12 @@ class GlobalSettingsSerializer(ReadOnlyModelSerializer):
             # Membresía VIP
             'vip_monthly_price',
             'loyalty_months_required',
+            'vip_loyalty_credit_reward',
             'loyalty_voucher_service',
+
             'loyalty_voucher_service_name',
+            'vip_discount_percentage',
+            'vip_cashback_percentage',
 
             # Créditos y devoluciones
             'credit_expiration_days',
@@ -284,7 +288,10 @@ class GlobalSettingsUpdateSerializer(serializers.ModelSerializer):
             # Membresía VIP
             'vip_monthly_price',
             'loyalty_months_required',
+            'vip_loyalty_credit_reward',
             'loyalty_voucher_service',
+            'vip_discount_percentage',
+            'vip_cashback_percentage',
 
             # Créditos y devoluciones
             'credit_expiration_days',
@@ -317,6 +324,22 @@ class GlobalSettingsUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'quiet_hours_start': 'La hora de inicio debe ser menor que la hora de fin.'
             })
+            
+        # Validar porcentaje VIP
+        vip_pct = data.get('vip_discount_percentage')
+        if vip_pct is not None:
+             if vip_pct < 0 or vip_pct > 100:
+                 raise serializers.ValidationError({
+                     'vip_discount_percentage': 'El porcentaje debe estar entre 0 y 100.'
+                 })
+                 
+        # Validar porcentaje Cashback
+        cashback_pct = data.get('vip_cashback_percentage')
+        if cashback_pct is not None:
+             if cashback_pct < 0 or cashback_pct > 100:
+                 raise serializers.ValidationError({
+                     'vip_cashback_percentage': 'El porcentaje de cashback debe estar entre 0 y 100.'
+                 })
         
         return data
     

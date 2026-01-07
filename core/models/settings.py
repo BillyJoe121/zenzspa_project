@@ -64,11 +64,25 @@ class GlobalSettings(BaseModel):
         help_text="Minutos de búfer que se añadirán después de cada cita para preparación.",
     )
     vip_monthly_price = models.DecimalField(
-        max_digits=10,
+        max_digits=12,
         decimal_places=2,
         default=0,
         verbose_name="Precio Mensual VIP",
         help_text="Costo en COP para una suscripción mensual VIP.",
+    )
+    vip_discount_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("15.00"),
+        verbose_name="Porcentaje de Descuento VIP (%)",
+        help_text="Porcentaje de descuento aplicado a servicios para usuarios VIP.",
+    )
+    vip_cashback_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("1.00"),
+        verbose_name="Porcentaje de Cashback VIP (%)",
+        help_text="Porcentaje de reintegro en créditos para usuarios VIP sobre pagos realizados.",
     )
     advance_expiration_minutes = models.PositiveIntegerField(
         default=20,
@@ -101,6 +115,13 @@ class GlobalSettings(BaseModel):
         default=3,
         verbose_name="Meses continuos para recompensa VIP",
         help_text="Cantidad de meses continuos como VIP para recibir un beneficio.",
+    )
+    vip_loyalty_credit_reward = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("50000.00"),
+        verbose_name="Recompensa de lealtad VIP (Créditos)",
+        help_text="Cantidad de créditos otorgados automáticamente al cumplir la lealtad.",
     )
     loyalty_voucher_service = models.ForeignKey(
         "spa.Service",
@@ -182,6 +203,10 @@ class GlobalSettings(BaseModel):
             errors["appointment_buffer_time"] = "No debería exceder 180 minutos."
         if self.vip_monthly_price is not None and self.vip_monthly_price < 0:
             errors["vip_monthly_price"] = "Debe ser un valor positivo."
+        if self.vip_discount_percentage < 0 or self.vip_discount_percentage > 100:
+            errors["vip_discount_percentage"] = "El porcentaje debe estar entre 0 y 100."
+        if self.vip_cashback_percentage < 0 or self.vip_cashback_percentage > 100:
+            errors["vip_cashback_percentage"] = "El porcentaje de cashback debe estar entre 0 y 100."
         if self.advance_expiration_minutes < 1:
             errors["advance_expiration_minutes"] = "Debe ser al menos 1 minuto."
         if self.credit_expiration_days < 1:
@@ -190,6 +215,8 @@ class GlobalSettings(BaseModel):
             errors["return_window_days"] = "No puede ser negativo."
         if self.loyalty_months_required < 1:
             errors["loyalty_months_required"] = "Debe ser al menos 1."
+        if self.vip_loyalty_credit_reward < 0:
+             errors["vip_loyalty_credit_reward"] = "La recompensa en créditos no puede ser negativa."
         if self.waitlist_ttl_minutes < 5:
             errors["waitlist_ttl_minutes"] = "Debe ser al menos 5 minutos."
         commission = self.developer_commission_percentage
@@ -228,17 +255,21 @@ class GlobalSettings(BaseModel):
         # Forzamos UUID singleton
         self.pk = self.id = GLOBAL_SETTINGS_SINGLETON_UUID
 
+        should_update_prices = False
+
         # Log cambios importantes en campos críticos
         if self.pk:
             try:
                 old = GlobalSettings.objects.get(pk=self.pk)
                 changes = []
                 for field in ['advance_payment_percentage', 'low_supervision_capacity',
-                             'developer_commission_percentage']:
+                             'developer_commission_percentage', 'vip_discount_percentage']:
                     old_val = getattr(old, field)
                     new_val = getattr(self, field)
                     if old_val != new_val:
                         changes.append(f"{field}: {old_val} -> {new_val}")
+                        if field == 'vip_discount_percentage':
+                            should_update_prices = True
 
                 if changes:
                     logger.warning(
@@ -252,6 +283,11 @@ class GlobalSettings(BaseModel):
         super().save(*args, **kwargs)
         # Invalida/actualiza caché después de guardar
         cache.set(GLOBAL_SETTINGS_CACHE_KEY, self, timeout=None)
+
+        # Trigger update if needed (using on_commit to be safe with transactions)
+        if should_update_prices:
+            from spa.services.pricing import update_service_vip_prices
+            transaction.on_commit(lambda: update_service_vip_prices(self.vip_discount_percentage))
 
     @classmethod
     def load(cls) -> "GlobalSettings":

@@ -8,7 +8,7 @@ from django.utils import timezone
 from core.models import GlobalSettings, AuditLog
 from users.models import CustomUser
 from .models import Appointment, WaitlistEntry, Voucher, LoyaltyRewardLog
-from finances.models import Payment
+from finances.models import Payment, ClientCredit
 from finances.payments import PaymentService
 from notifications.services import NotificationService
 
@@ -200,39 +200,96 @@ def check_pending_payments():
 def check_vip_loyalty():
     """
     Otorga beneficios VIP automáticos a usuarios que han mantenido la membresía.
+    Prioriza créditos si están configurados; de lo contrario usa vouchers.
     """
     settings_obj = GlobalSettings.load()
+    credit_reward = settings_obj.vip_loyalty_credit_reward
     loyalty_service = settings_obj.loyalty_voucher_service
-    if not loyalty_service:
-        return "No hay servicio configurado para recompensas."
+
+    if credit_reward <= 0 and not loyalty_service:
+        return "No hay recompensa de lealtad configurada (ni créditos ni servicio)."
+
     required_months = max(1, settings_obj.loyalty_months_required)
-    window = timezone.now().date() - timedelta(days=required_months * 30)
+    # Fecha de corte: usuario debe ser VIP desde hace al menos X meses
+    eligibility_cutoff = timezone.now().date() - timedelta(days=required_months * 30)
+    
     users = CustomUser.objects.filter(
         role=CustomUser.Role.VIP,
         vip_active_since__isnull=False,
-        vip_active_since__lte=window,
+        vip_active_since__lte=eligibility_cutoff,
     )
-    rewards = 0
+    
+    rewards_issued = 0
     for user in users:
+        # Verificar última recompensa para no duplicar en el ciclo actual
         last_reward = LoyaltyRewardLog.objects.filter(
             user=user).order_by('-rewarded_at').first()
-        if last_reward and last_reward.rewarded_at >= window:
-            continue
-        voucher = Voucher.objects.create(
-            user=user,
-            service=loyalty_service,
-            expires_at=timezone.now().date() + timedelta(days=settings_obj.credit_expiration_days),
-        )
-        LoyaltyRewardLog.objects.create(
-            user=user, voucher=voucher, rewarded_at=timezone.now().date())
-        AuditLog.objects.create(
-            admin_user=None,
-            target_user=user,
-            action=AuditLog.Action.LOYALTY_REWARD_ISSUED,
-            details=f"Voucher de lealtad otorgado a {user.id}",
-        )
-        rewards += 1
-    return f"Recompensas emitidas: {rewards}"
+        
+        # Si ya recibió recompensa recientemente (dentro del periodo actual de lealtad)
+        # La lógica es: si la última recompensa fue hace MENOS de required_months, esperar.
+        if last_reward:
+             # Aproximación simple de meses: 30 días
+             days_since_reward = (timezone.now().date() - last_reward.rewarded_at).days
+             if days_since_reward < (required_months * 30):
+                 continue
+
+        # Otorgar recompensa
+        if credit_reward > 0:
+            # Opción 1: Créditos (Prioridad)
+            try:
+                credit = ClientCredit.objects.create(
+                    user=user,
+                    initial_amount=credit_reward,
+                    remaining_amount=credit_reward,
+                    status=ClientCredit.CreditStatus.AVAILABLE,
+                    expires_at=timezone.now().date() + timedelta(days=settings_obj.credit_expiration_days)
+                )
+                LoyaltyRewardLog.objects.create(
+                    user=user, 
+                    credit=credit, 
+                    rewarded_at=timezone.now().date()
+                )
+                AuditLog.objects.create(
+                    admin_user=None,
+                    target_user=user,
+                    action=AuditLog.Action.LOYALTY_REWARD_ISSUED,
+                    details=f"Crédito de lealtad otorgado automáticamente: {credit_reward}",
+                )
+                rewards_issued += 1
+                
+                # Notificar al usuario
+                NotificationService.send_notification(
+                    user=user,
+                    event_code="LOYALTY_REWARD_CREDIT",
+                    context={
+                        "amount": f"{credit_reward:,.0f}",
+                        "user_name": user.get_full_name() or "Cliente"
+                    }
+                )
+            except Exception as e:
+                logger.error("Error otorgando crédito de lealtad a usuario %s: %s", user.id, e)
+                
+        elif loyalty_service:
+            # Opción 2: Vouchers (Legacy fallback)
+            try:
+                voucher = Voucher.objects.create(
+                    user=user,
+                    service=loyalty_service,
+                    expires_at=timezone.now().date() + timedelta(days=settings_obj.credit_expiration_days),
+                )
+                LoyaltyRewardLog.objects.create(
+                    user=user, voucher=voucher, rewarded_at=timezone.now().date())
+                AuditLog.objects.create(
+                    admin_user=None,
+                    target_user=user,
+                    action=AuditLog.Action.LOYALTY_REWARD_ISSUED,
+                    details=f"Voucher de lealtad otorgado a {user.id}",
+                )
+                rewards_issued += 1
+            except Exception as e:
+                logger.error("Error otorgando voucher de lealtad a usuario %s: %s", user.id, e)
+
+    return f"Recompensas de lealtad emitidas: {rewards_issued}"
 
 
 # MIGRADO A finances.tasks.process_recurring_subscriptions

@@ -8,6 +8,7 @@ from .views import (
     AdminProductViewSet,
     AdminProductVariantViewSet,
     AdminProductImageViewSet,
+    AdminProductVariantImageViewSet,
     AdminInventoryMovementViewSet,
     AdminOrderViewSet,
     ProductCategoryViewSet,
@@ -32,6 +33,7 @@ router.register(r'reviews', ProductReviewViewSet, basename='review')
 router.register(r'admin/products', AdminProductViewSet, basename='admin-product')
 router.register(r'admin/variants', AdminProductVariantViewSet, basename='admin-product-variant')
 router.register(r'admin/product-images', AdminProductImageViewSet, basename='admin-product-image')
+router.register(r'admin/variant-images', AdminProductVariantImageViewSet, basename='admin-variant-image')
 router.register(r'admin/inventory-movements', AdminInventoryMovementViewSet, basename='admin-inventory-movement')
 router.register(r'admin/orders', AdminOrderViewSet, basename='admin-order')
 
@@ -39,3 +41,4 @@ router.register(r'admin/orders', AdminOrderViewSet, basename='admin-order')
 urlpatterns = [
     path('', include(router.urls)),
 ]
+

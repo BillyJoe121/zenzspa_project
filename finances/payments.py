@@ -258,6 +258,14 @@ class PaymentService:
                     Payment.PaymentType.ORDER,
                 ):
                     DeveloperCommissionService.handle_successful_payment(payment)
+                    
+                    # Generar Cashback VIP (si aplica)
+                    try:
+                        from finances.cashback_service import CashbackService
+                        CashbackService.process_cashback(payment)
+                    except Exception as e:
+                        logger.error("Error generating cashback for payment %s: %s", payment.id, e)
+
             elif normalized in ('DECLINED', 'VOIDED'):
                 payment.status = Payment.PaymentStatus.DECLINED
                 payment.save(update_fields=[
@@ -787,6 +795,14 @@ class PaymentService:
                 status=Payment.PaymentStatus.APPROVED,
             )
             DeveloperCommissionService.handle_successful_payment(payment)
+            
+            # Generar Cashback VIP para pago final (efectivo/transferencia manual)
+            try:
+                from finances.cashback_service import CashbackService
+                CashbackService.process_cashback(payment)
+            except Exception as e:
+                logger.error("Error generating cashback for manual final payment %s: %s", payment.id, e)
+
 
             # Recalculate outstanding to determine new status
             # Use PaymentService to ensure consistency (includes APPROVED + PAID_WITH_CREDIT)

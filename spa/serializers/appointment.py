@@ -53,7 +53,8 @@ class ServiceSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'description', 'duration', 'price',
             'vip_price', 'category', 'category_name', 'is_active',
-            'what_is_included', 'benefits', 'contraindications'
+            'what_is_included', 'benefits', 'contraindications',
+            'image_url'
         ]
 
 
