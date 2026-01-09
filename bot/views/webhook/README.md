@@ -6,11 +6,13 @@ Este módulo contiene las vistas relacionadas con los webhooks del bot, organiza
 
 ```
 bot/views/webhook/
-├── __init__.py           # Exporta las 3 vistas principales
-├── utils.py              # Utilidades compartidas
-├── bot_webhook.py        # BotWebhookView - Webhook principal para mensajes web
-├── health_check.py       # BotHealthCheckView - Health check del servicio
-└── whatsapp_webhook.py   # WhatsAppWebhookView - Webhook de WhatsApp/Twilio
+├── __init__.py                 # Exporta las vistas principales
+├── utils.py                    # Utilidades compartidas
+├── bot_webhook.py              # Contenedor: reexporta BotWebhookView
+├── bot_webhook_security.py     # Lógica de seguridad y prechecks del webhook
+├── bot_webhook_processing.py   # Lógica de IA, logging y handoff
+├── health_check.py             # BotHealthCheckView - Health check del servicio
+└── whatsapp_webhook.py         # WhatsAppWebhookView - Webhook de WhatsApp/Twilio
 ```
 
 ## Archivos
@@ -27,12 +29,9 @@ Contiene funciones de utilidad compartidas por múltiples vistas:
 - `normalize_chat_response(text)`: Normaliza respuestas para formato de chat
 
 ### `bot_webhook.py`
-Vista principal del webhook del bot:
-- Maneja mensajes entrantes del chat web
-- Validaciones de seguridad (rate limiting, jailbreak detection, etc.)
-- Integración con Gemini API
-- Sistema de handoff a humanos
-- Soporte para modo asíncrono con Celery
+Contenedor para mantener compatibilidad con imports existentes. La lógica se divide en:
+- `bot_webhook_security.py`: prechecks, validaciones y deduplicación
+- `bot_webhook_processing.py`: IA, logging, handoff y cache de deduplicación
 
 ### `health_check.py`
 Endpoint de health check:

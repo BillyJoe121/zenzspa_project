@@ -6,6 +6,7 @@ from simple_history.admin import SimpleHistoryAdmin
 from .models import (
     ServiceCategory,
     Service,
+    ServiceMedia,
     StaffAvailability,
     AvailabilityExclusion,
     Appointment,
@@ -28,6 +29,17 @@ class ServiceCategoryAdmin(SimpleHistoryAdmin):
     search_fields = ('name',)
 
 
+class ServiceMediaInline(admin.TabularInline):
+    """
+    Permite gestionar medios (imágenes/videos) de servicios
+    directamente desde la página del servicio.
+    """
+    model = ServiceMedia
+    extra = 1
+    fields = ('media_url', 'media_type', 'alt_text', 'display_order')
+    ordering = ('display_order', 'created_at')
+
+
 @admin.register(Service)
 class ServiceAdmin(SimpleHistoryAdmin):
     list_display = ('name', 'category', 'duration',
@@ -35,6 +47,22 @@ class ServiceAdmin(SimpleHistoryAdmin):
     list_filter = ('category', 'is_active')
     search_fields = ('name', 'description')
     list_editable = ('price', 'vip_price', 'is_active')
+    inlines = [ServiceMediaInline]
+    fieldsets = (
+        ('Información Básica', {
+            'fields': ('name', 'category', 'description', 'duration', 'is_active')
+        }),
+        ('Precios', {
+            'fields': ('price', 'vip_price')
+        }),
+        ('Detalles del Servicio', {
+            'fields': ('what_is_included', 'benefits', 'contraindications')
+        }),
+        ('Medio Principal', {
+            'fields': ('main_media_url', 'is_main_media_video'),
+            'description': 'Configura el medio principal (imagen o video) del servicio.'
+        }),
+    )
 
 
 @admin.register(StaffAvailability)

@@ -6,7 +6,7 @@ from model_bakery import baker
 
 from spa.services import AppointmentService
 from spa.models import Appointment, AppointmentItem, ServiceCategory, Service, StaffAvailability
-from core.exceptions import BusinessLogicError
+from core.utils.exceptions import BusinessLogicError
 
 
 @pytest.mark.django_db

@@ -11,7 +11,7 @@ from rest_framework import serializers, status
 from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from core.exceptions import BusinessLogicError
+from core.utils.exceptions import BusinessLogicError
 from spa.models import StaffAvailability
 from users.permissions import (
     IsAdminUser,

@@ -236,7 +236,7 @@ class WhatsAppWebhookView(APIView):
             client_ip = get_client_ip(request)
 
             # 8. Procesar mensaje con la lógica compartida
-            from ...services_shared import process_bot_message
+            from ...services.shared import process_bot_message
 
             response_data = process_bot_message(
                 user=user,

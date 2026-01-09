@@ -6,7 +6,7 @@ from django.core.management import call_command
 
 from core import services, signals, selectors
 from core.models import AuditLog, GlobalSettings
-from core.caching import CacheKeys
+from core.utils.caching import CacheKeys
 
 
 @pytest.mark.django_db

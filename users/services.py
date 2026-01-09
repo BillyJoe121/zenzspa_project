@@ -8,7 +8,7 @@ from django.conf import settings
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 
-from core.exceptions import BusinessLogicError
+from core.utils.exceptions import BusinessLogicError
 
 logger = logging.getLogger(__name__)
 

@@ -3,7 +3,7 @@ from rest_framework.request import Request
 from rest_framework.test import APIRequestFactory
 
 from core import pagination, routers, schema
-from core.throttling import AdminThrottle
+from core.api.throttling import AdminThrottle
 
 
 def test_default_pagination_response():

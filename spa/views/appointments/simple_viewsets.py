@@ -11,11 +11,12 @@ from django_filters import rest_framework as django_filters
 from users.models import CustomUser
 from users.permissions import IsAdminUser, IsStaff
 
-from ...models import Package, Service, ServiceCategory, StaffAvailability
+from ...models import Package, Service, ServiceCategory, ServiceMedia, StaffAvailability
 from ...permissions import IsAdminOrReadOnly
 from ...serializers import (
     PackageSerializer,
     ServiceCategorySerializer,
+    ServiceMediaSerializer,
     ServiceSerializer,
     StaffAvailabilitySerializer,
 )
@@ -73,11 +74,41 @@ class ServiceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """Filtrar servicios según rol del usuario."""
-        base = Service.objects.select_related('category').all()
+        base = Service.objects.select_related('category').prefetch_related('media').all()
         user = getattr(self.request, "user", None)
         if user and getattr(user, "role", None) == CustomUser.Role.ADMIN:
             return base
         return base.filter(is_active=True)
+
+
+class ServiceMediaFilter(django_filters.FilterSet):
+    """Filtro para medios de servicios."""
+    service = django_filters.UUIDFilter(field_name='service__id')
+    media_type = django_filters.ChoiceFilter(choices=ServiceMedia.MediaType.choices)
+
+    class Meta:
+        model = ServiceMedia
+        fields = ['service', 'media_type']
+
+
+class ServiceMediaViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gestión de medios de servicios (imágenes/videos).
+
+    Solo administradores pueden crear, editar y eliminar.
+    Cualquier usuario autenticado puede ver los medios.
+
+    Filtros disponibles:
+    - service: UUID del servicio (ej: ?service=uuid)
+    - media_type: IMAGE o VIDEO
+    """
+    queryset = ServiceMedia.objects.select_related('service').all()
+    serializer_class = ServiceMediaSerializer
+    permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
+    filterset_class = ServiceMediaFilter
+    ordering_fields = ['display_order', 'created_at']
+    ordering = ['display_order', 'created_at']
 
 
 class PackageViewSet(viewsets.ReadOnlyModelViewSet):

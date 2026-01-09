@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from django.conf import settings
 
-from core.exceptions import BusinessLogicError
+from core.utils.exceptions import BusinessLogicError
 from ..models import InventoryMovement, Order, OrderItem, ProductVariant
 
 logger = logging.getLogger(__name__)

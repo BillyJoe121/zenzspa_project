@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework.views import APIView
 
-from core.decorators import idempotent_view
+from core.utils.decorators import idempotent_view
 from core.models import IdempotencyKey
 
 

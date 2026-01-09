@@ -107,10 +107,6 @@ CELERY_BEAT_SCHEDULE = {
         "task": "notifications.tasks.check_upcoming_appointments_2h",
         "schedule": crontab(minute="*/5"),  # Revisar cada 5 min
     },
-    "notify-expiring-vouchers-daily": {
-        "task": "spa.tasks.notify_expiring_vouchers",
-        "schedule": crontab(hour=9, minute=0),  # 9:00 AM
-    },
     "check-vip-loyalty-rewards": {
         "task": "spa.tasks.check_vip_loyalty",
         "schedule": crontab(hour=6, minute=0),  # 6:00 AM

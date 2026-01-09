@@ -10,7 +10,7 @@ from .serializers import (
 
 
 from rest_framework import mixins, permissions, viewsets
-from core.permissions import IsAdmin
+from core.api.permissions import IsAdmin
 
 class IsAdminOrReadOnly(permissions.BasePermission):
     def has_permission(self, request, view):

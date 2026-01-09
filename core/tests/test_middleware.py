@@ -4,7 +4,7 @@ from unittest.mock import patch, Mock
 from django.test import TestCase, RequestFactory
 from django.http import HttpResponse
 from django.contrib.auth.models import AnonymousUser
-from core.middleware import (
+from core.infra.middleware import (
     RequestIDMiddleware,
     AdminAuditMiddleware,
     PerformanceLoggingMiddleware,
@@ -39,7 +39,7 @@ class MiddlewareTests(TestCase):
         middleware.process_request(request)
         self.assertEqual(request.request_id, existing_id)
 
-    @patch('core.middleware.safe_audit_log')
+    @patch('core.infra.middleware.safe_audit_log')
     def test_admin_audit_middleware_admin_route(self, mock_audit):
         middleware = AdminAuditMiddleware(lambda r: HttpResponse("OK"))
         request = self.factory.get('/api/v1/admin/users/')
@@ -64,7 +64,7 @@ class MiddlewareTests(TestCase):
         self.assertEqual(kwargs['action'], "ADMIN_ENDPOINT_HIT")
         self.assertEqual(kwargs['admin_user'], user)
 
-    @patch('core.middleware.safe_audit_log')
+    @patch('core.infra.middleware.safe_audit_log')
     def test_admin_audit_middleware_non_admin_route(self, mock_audit):
         middleware = AdminAuditMiddleware(lambda r: HttpResponse("OK"))
         request = self.factory.get('/api/v1/public/')
@@ -73,7 +73,7 @@ class MiddlewareTests(TestCase):
         middleware.process_response(request, HttpResponse("OK"))
         mock_audit.assert_not_called()
 
-    @patch('core.middleware.safe_audit_log')
+    @patch('core.infra.middleware.safe_audit_log')
     def test_admin_audit_middleware_unauthenticated(self, mock_audit):
         middleware = AdminAuditMiddleware(lambda r: HttpResponse("OK"))
         request = self.factory.get('/api/v1/admin/users/')
@@ -82,7 +82,7 @@ class MiddlewareTests(TestCase):
         middleware.process_response(request, HttpResponse("OK"))
         mock_audit.assert_not_called()
 
-    @patch('core.middleware.logger')
+    @patch('core.infra.middleware.logger')
     def test_performance_middleware_fast_request(self, mock_logger):
         middleware = PerformanceLoggingMiddleware(lambda r: HttpResponse("OK"))
         request = self.factory.get('/')
@@ -94,8 +94,8 @@ class MiddlewareTests(TestCase):
         self.assertTrue(response.has_header('X-Response-Time'))
         mock_logger.warning.assert_not_called()
 
-    @patch('core.middleware.logger')
-    @patch('core.middleware.time')
+    @patch('core.infra.middleware.logger')
+    @patch('core.infra.middleware.time')
     def test_performance_middleware_slow_request(self, mock_time, mock_logger):
         middleware = PerformanceLoggingMiddleware(lambda r: HttpResponse("OK"))
         request = self.factory.get('/')
@@ -112,8 +112,8 @@ class MiddlewareTests(TestCase):
         self.assertIn("Slow request detected", args[0])
         self.assertEqual(kwargs['extra']['duration'], 2.0)
 
-    @patch('core.middleware.logger')
-    @patch('core.middleware.time')
+    @patch('core.infra.middleware.logger')
+    @patch('core.infra.middleware.time')
     def test_performance_middleware_exception(self, mock_time, mock_logger):
         middleware = PerformanceLoggingMiddleware(lambda r: HttpResponse("OK"))
         request = self.factory.get('/')
@@ -128,7 +128,7 @@ class MiddlewareTests(TestCase):
         self.assertIn("Request failed", args[0])
         self.assertEqual(kwargs['extra']['exception'], "Test error")
 
-    @patch('core.middleware.safe_audit_log', side_effect=RuntimeError("fail"))
+    @patch('core.infra.middleware.safe_audit_log', side_effect=RuntimeError("fail"))
     def test_admin_audit_middleware_swallows_errors_when_debug_false(self, mock_audit):
         middleware = AdminAuditMiddleware(lambda r: HttpResponse("OK"))
         request = self.factory.get('/api/v1/admin/users/')

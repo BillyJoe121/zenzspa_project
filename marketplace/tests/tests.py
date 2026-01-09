@@ -8,7 +8,7 @@ from django.urls import reverse
 from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 from rest_framework import status
 
-from core.exceptions import BusinessLogicError
+from core.utils.exceptions import BusinessLogicError
 from core.models import GlobalSettings
 from users.models import CustomUser
 from spa.models import ServiceCategory, Appointment, Payment

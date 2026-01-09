@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 from django.core.cache import cache
-from core.caching import CacheKeys
+from core.utils.caching import CacheKeys
 
 class Command(BaseCommand):
     help = "Reconstruye cachés comunes sin tumbar el servidor."

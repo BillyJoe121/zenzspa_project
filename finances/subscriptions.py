@@ -75,3 +75,31 @@ class VipSubscriptionService:
             start_date=start_date,
             end_date=end_date
         )
+
+        # Enviar notificación de bienvenida VIP solo si es primera suscripción
+        # (no renovaciones, ya que start_date sería en el futuro para renovaciones)
+        if start_date == timezone.now().date():
+            try:
+                from notifications.services import NotificationService
+                from core.models import GlobalSettings
+                settings_obj = GlobalSettings.load()
+                
+                # Construir resumen de beneficios
+                benefits = []
+                if settings_obj.vip_discount_percentage > 0:
+                    benefits.append(f"{settings_obj.vip_discount_percentage}% de descuento en servicios")
+                if settings_obj.cashback_percentage > 0:
+                    benefits.append(f"{settings_obj.cashback_percentage}% de cashback")
+                benefits_summary = ", ".join(benefits) if benefits else "beneficios exclusivos"
+                
+                NotificationService.send_notification(
+                    user=user,
+                    event_code="VIP_WELCOME",
+                    context={
+                        "user_name": user.get_full_name() or user.first_name or "Cliente",
+                        "benefits_summary": benefits_summary,
+                    },
+                    priority="high"
+                )
+            except Exception:
+                logger.exception("Error enviando notificación de bienvenida VIP para usuario %s", user.id)

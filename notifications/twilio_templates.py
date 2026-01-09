@@ -32,21 +32,12 @@ TWILIO_TEMPLATE_MAP = {
         "description": "Cita cancelada automáticamente por falta de pago",
     },
 
-    # ===== NO-SHOW =====
-    "APPOINTMENT_NO_SHOW_CREDIT": {
-        # TODO: Reemplazar con SID real
-        "content_sid": "HXa84b86ef7d24a921a4f417a2896f5fe8",
-        "variables": ["user_name", "start_date", "credit_amount"],
-        "description": "No-show con crédito generado",
-    },
-
-
-    # ===== LISTA DE ESPERA =====
-    "APPOINTMENT_WAITLIST_AVAILABLE": {
-        # TODO: Reemplazar con SID real
-        "content_sid": "HX83da0026a8d25244d52af581c5c9c88a",
-        "variables": ["user_name", "date", "time", "service"],
-        "description": "Espacio disponible en lista de espera",
+    # ===== REAGENDAMIENTOS =====
+    "APPOINTMENT_RESCHEDULED": {
+        # TODO: Reemplazar con SID real cuando Meta apruebe el template
+        "content_sid": "HX00000000000000000000000000000028",
+        "variables": ["user_name", "new_date", "new_time", "services"],
+        "description": "Cita reagendada a nueva fecha/hora",
     },
 
     # ===== VIP MEMBERSHIP =====
@@ -67,14 +58,6 @@ TWILIO_TEMPLATE_MAP = {
         "content_sid": "HX7ebb5c819f7ececf516dcf868115f3e6",
         "variables": ["user_name", "visits_count", "reward_description"],
         "description": "Logro VIP alcanzado",
-    },
-
-    # ===== VOUCHERS =====
-    "VOUCHER_EXPIRING_SOON": {
-        # TODO: Reemplazar con SID real
-        "content_sid": "HXd19b5ed150271059aa325e3b713a9902",
-        "variables": ["user_name", "amount", "expiry_date", "voucher_code"],
-        "description": "Voucher próximo a expirar",
     },
 
     # ===== PAGOS =====
@@ -151,12 +134,6 @@ TWILIO_TEMPLATE_MAP = {
         "variables": ["alert_type", "user_identifier", "alert_detail", "timestamp"],
         "description": "Alerta de seguridad del bot",
     },
-    "BOT_AUTO_BLOCK": {
-        # TODO: Reemplazar con SID real
-        "content_sid": "HX00000000000000000000000000000026",
-        "variables": ["user_identifier", "block_reason", "timestamp", "admin_url"],
-        "description": "Usuario auto-bloqueado",
-    },
 
     # ===== CITAS CREADAS POR ADMIN =====
     "ADMIN_APPOINTMENT_PAYMENT_LINK": {
@@ -164,6 +141,44 @@ TWILIO_TEMPLATE_MAP = {
         "content_sid": "HX00000000000000000000000000000027",
         "variables": ["user_name", "services", "amount", "payment_url", "expiration_time"],
         "description": "Link de pago para cita creada por admin",
+    },
+    "ADMIN_APPOINTMENT_CONFIRMED": {
+        # TODO: Reemplazar con SID real cuando Meta apruebe el template
+        "content_sid": "HX00000000000000000000000000000029",
+        "variables": ["user_name", "services", "start_date", "start_time"],
+        "description": "Cita creada y confirmada por admin (pagada con crédito, voucher o efectivo)",
+    },
+
+    # ===== CANCELACIÓN POR ADMIN =====
+    "APPOINTMENT_CANCELLED_BY_ADMIN": {
+        # TODO: Reemplazar con SID real cuando Meta apruebe el template
+        "content_sid": "HX00000000000000000000000000000030",
+        "variables": ["user_name", "services", "start_date", "credit_message"],
+        "description": "Cita cancelada por admin, con información de créditos si aplica",
+    },
+
+    # ===== CRÉDITOS =====
+    "ORDER_CREDIT_ISSUED": {
+        # TODO: Reemplazar con SID real cuando Meta apruebe el template
+        "content_sid": "HX00000000000000000000000000000031",
+        "variables": ["user_name", "credit_amount", "reason"],
+        "description": "Crédito generado por cancelación o devolución",
+    },
+
+    # ===== VIP =====
+    "VIP_WELCOME": {
+        # TODO: Reemplazar con SID real cuando Meta apruebe el template
+        "content_sid": "HX00000000000000000000000000000032",
+        "variables": ["user_name", "benefits_summary"],
+        "description": "Bienvenida a nuevo miembro VIP",
+    },
+
+    # ===== MARKETPLACE =====
+    "ORDER_CONFIRMED": {
+        # TODO: Reemplazar con SID real cuando Meta apruebe el template
+        "content_sid": "HX00000000000000000000000000000033",
+        "variables": ["user_name", "order_id", "total", "items_summary"],
+        "description": "Pedido confirmado y pagado",
     },
 }
 

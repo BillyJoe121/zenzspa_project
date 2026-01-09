@@ -10,7 +10,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 
-from core.throttling import PasswordChangeThrottle
+from core.api.throttling import PasswordChangeThrottle
 from ..models import CustomUser, OTPAttempt
 from ..serializers import PasswordResetConfirmSerializer, PasswordResetRequestSerializer
 from ..services import TwilioService, verify_recaptcha

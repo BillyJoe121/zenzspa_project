@@ -41,4 +41,3 @@ router.register(r'admin/orders', AdminOrderViewSet, basename='admin-order')
 urlpatterns = [
     path('', include(router.urls)),
 ]
-

@@ -2,7 +2,7 @@ from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.core.cache import cache
 
-from .caching import CacheKeys
+from core.utils.caching import CacheKeys
 from .models import GlobalSettings
 
 

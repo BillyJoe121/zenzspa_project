@@ -1,7 +1,7 @@
 
 import pytest
 from unittest.mock import patch
-from core.caching import CacheKeys, acquire_lock, GLOBAL_SETTINGS_CACHE_KEY
+from core.utils.caching import CacheKeys, acquire_lock, GLOBAL_SETTINGS_CACHE_KEY
 
 def test_cache_keys_constants():
     assert CacheKeys.GLOBAL_SETTINGS == "core:global_settings:v1"

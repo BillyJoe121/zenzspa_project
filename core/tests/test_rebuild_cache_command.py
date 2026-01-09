@@ -8,7 +8,7 @@ from django.core.cache import cache
 from django.core.management import call_command
 
 from core.models import GlobalSettings
-from core.caching import CacheKeys
+from core.utils.caching import CacheKeys
 
 
 @pytest.mark.django_db

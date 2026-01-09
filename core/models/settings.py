@@ -20,7 +20,7 @@ from .base import BaseModel
 logger = logging.getLogger(__name__)
 
 # Importar la clave de caché desde el módulo centralizado
-from ..caching import GLOBAL_SETTINGS_CACHE_KEY
+from core.utils.caching import GLOBAL_SETTINGS_CACHE_KEY
 
 # UUID fijo para garantizar singleton
 GLOBAL_SETTINGS_SINGLETON_UUID = uuid.UUID("00000000-0000-0000-0000-000000000001")

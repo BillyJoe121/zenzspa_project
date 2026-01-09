@@ -110,7 +110,7 @@ class FinancialAdjustmentServiceTest(TestCase):
         self.assertTrue(ClientCredit.objects.filter(user=self.user, initial_amount=100).exists())
 
     def test_create_adjustment_limit_exceeded(self):
-        from core.exceptions import BusinessLogicError
+        from core.utils.exceptions import BusinessLogicError
         with self.assertRaises(BusinessLogicError):
             FinancialAdjustmentService.create_adjustment(
                 user=self.user,

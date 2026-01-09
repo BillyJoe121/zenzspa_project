@@ -265,7 +265,7 @@ class CancelPaymentOnCancelAppointmentTestCase(TestCase):
         )
 
         # Intentar crear nueva cita - DEBE estar bloqueado
-        from core.exceptions import BusinessLogicError
+        from core.utils.exceptions import BusinessLogicError
 
         service_obj = AppointmentService(
             user=self.client_user,

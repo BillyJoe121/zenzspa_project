@@ -48,7 +48,8 @@
       "Bash(del test_breakdown_endpoints.py test_breakdown_simple.py)",
       "Bash(Select-String -Pattern \"Orden creada|Respuesta de eliminación|Error al eliminar|Orden existe|Stock|Movimientos|bloqueado\")",
       "Bash(del test_order_deletion.py)",
-      "Bash(Select-String -Pattern \"HTTP|search-clients|404|200\" -Context 1)"
+      "Bash(Select-String -Pattern \"HTTP|search-clients|404|200\" -Context 1)",
+      "Bash(Select-String \"0021\")"
     ],
     "deny": [],
     "ask": []

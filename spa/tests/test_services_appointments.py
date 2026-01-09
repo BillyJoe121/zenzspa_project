@@ -8,7 +8,7 @@ from model_bakery import baker
 from spa.services import AppointmentService
 from spa.services.appointments import AvailabilityService
 from spa.models import Appointment, Service, ServiceCategory, StaffAvailability, AvailabilityExclusion
-from core.exceptions import BusinessLogicError
+from core.utils.exceptions import BusinessLogicError
 from core.models import GlobalSettings, AuditLog
 from finances.models import Payment
 from users.models import CustomUser

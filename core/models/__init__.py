@@ -11,7 +11,7 @@ from .settings import GLOBAL_SETTINGS_SINGLETON_UUID, GlobalSettings
 from .about import AboutPage, TeamMember, GalleryImage
 
 # Importar GLOBAL_SETTINGS_CACHE_KEY desde el módulo centralizado de caché
-from ..caching import GLOBAL_SETTINGS_CACHE_KEY
+from core.utils.caching import GLOBAL_SETTINGS_CACHE_KEY
 
 __all__ = [
     # Base models

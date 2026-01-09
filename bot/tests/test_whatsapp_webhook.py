@@ -27,7 +27,7 @@ class TestWhatsAppWebhook:
         # No debe ser 404
         assert response.status_code != 404
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     @patch('bot.views.webhook.whatsapp_webhook.WhatsAppWebhookView._get_user_from_phone')
     def test_whatsapp_message_creates_anonymous_user(self, mock_get_user, mock_process):
         """Verifica que un mensaje de WhatsApp crea un usuario anónimo"""
@@ -47,7 +47,7 @@ class TestWhatsAppWebhook:
         assert '<Response>' in content
         assert '<Message>' in content
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     def test_whatsapp_registered_user(self, mock_process):
         """Verifica que un usuario registrado se detecta correctamente"""
         from users.models import CustomUser
@@ -90,7 +90,7 @@ class TestWhatsAppWebhook:
         assert response.status_code == 200
         assert b'No recib' in response.content
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     @patch('bot.views.webhook.whatsapp_webhook.WhatsAppWebhookView._get_user_from_phone')
     def test_normalize_phone_number(self, mock_get_user, mock_process):
         """Verifica que el número de teléfono se normaliza correctamente"""
@@ -110,7 +110,7 @@ class TestWhatsAppWebhook:
         call_args = mock_process.call_args[1]
         assert call_args['user_id_for_security'].startswith('whatsapp_+5730')
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     @patch('bot.views.webhook.whatsapp_webhook.WhatsAppWebhookView._get_user_from_phone')
     def test_permission_error_handling(self, mock_get_user, mock_process):
         """Verifica el manejo de PermissionError (usuario bloqueado)"""
@@ -125,7 +125,7 @@ class TestWhatsAppWebhook:
         assert response.status_code == 200
         assert b'Usuario bloqueado' in response.content
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     @patch('bot.views.webhook.whatsapp_webhook.WhatsAppWebhookView._get_user_from_phone')
     def test_value_error_handling(self, mock_get_user, mock_process):
         """Verifica el manejo de ValueError (error de validación)"""
@@ -141,7 +141,7 @@ class TestWhatsAppWebhook:
         assert b'Error:' in response.content
         assert b'Mensaje demasiado largo' in response.content
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     @patch('bot.views.webhook.whatsapp_webhook.WhatsAppWebhookView._get_user_from_phone')
     def test_runtime_error_handling(self, mock_get_user, mock_process):
         """Verifica el manejo de RuntimeError (error del sistema)"""
@@ -156,7 +156,7 @@ class TestWhatsAppWebhook:
         assert response.status_code == 200
         assert b'temporalmente no disponible' in response.content
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     def test_unexpected_error_handling(self, mock_process):
         """Verifica el manejo de errores inesperados"""
         mock_process.side_effect = Exception("Error inesperado")
@@ -183,7 +183,7 @@ class TestWhatsAppWebhook:
         assert '<Message>' in content
         assert '</Message>' in content
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     def test_special_characters_escaped_in_twiml(self, mock_process):
         """Verifica que caracteres especiales XML se escapan correctamente"""
         mock_process.return_value = {'reply': 'Test <tag> & "quote"'}
@@ -194,7 +194,7 @@ class TestWhatsAppWebhook:
         assert '&lt;tag&gt;' in content or '<tag>' not in content.split('<Message>')[1].split('</Message>')[0]
         assert '&amp;' in content or '& ' not in content.split('<Message>')[1].split('</Message>')[0]
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     @patch('bot.views.webhook.whatsapp_webhook.WhatsAppWebhookView._get_user_from_phone')
     def test_anonymous_user_phone_stored(self, mock_get_user, mock_process):
         """Verifica que el teléfono del usuario anónimo se almacena"""
@@ -212,7 +212,7 @@ class TestWhatsAppWebhook:
         assert call_args['anonymous_user'] == anon_user
         assert call_args['user'] is None
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     @patch('bot.views.webhook.whatsapp_webhook.WhatsAppWebhookView._get_user_from_phone')
     def test_passes_user_to_process_bot_message(self, mock_get_user, mock_process):
         """Verifica que pasa el usuario correcto a process_bot_message"""
@@ -234,7 +234,7 @@ class TestWhatsAppWebhook:
         assert call_args['anonymous_user'] == existing_user
         assert call_args['user'] is None
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     @patch('bot.views.webhook.whatsapp_webhook.WhatsAppWebhookView._get_user_from_phone')
     def test_passes_correct_user_id_for_security(self, mock_get_user, mock_process):
         """Verifica que pasa el user_id_for_security correcto"""
@@ -264,7 +264,7 @@ class TestWhatsAppWebhookWithNotifications:
             'MessageSid': 'SM123',
         }
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     def test_includes_last_notification_in_context(self, mock_process):
         """Verifica que incluye la última notificación en el contexto"""
         from users.models import CustomUser
@@ -299,7 +299,7 @@ class TestWhatsAppWebhookWithNotifications:
         assert extra_context['last_notification']['event_code'] == 'TEST_EVENT'
         assert extra_context['last_notification']['channel'] == 'WhatsApp'
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     def test_no_notification_context_when_none_exists(self, mock_process):
         """Verifica que no pasa contexto de notificación si no existe"""
         from users.models import CustomUser
@@ -335,7 +335,7 @@ class TestWhatsAppWebhookSignatureValidation:
             'MessageSid': 'SM123',
         }
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     def test_signature_validation_disabled_by_default(self, mock_process, settings):
         """Verifica que la validación de firma está desactivada por defecto"""
         settings.VALIDATE_TWILIO_SIGNATURE = False
@@ -345,7 +345,7 @@ class TestWhatsAppWebhookSignatureValidation:
 
         assert response.status_code == 200
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     @patch('twilio.request_validator.RequestValidator')
     def test_signature_validation_with_valid_signature(self, mock_validator_cls, mock_process, settings):
         """Verifica el manejo de firma válida"""
@@ -383,7 +383,7 @@ class TestWhatsAppWebhookSignatureValidation:
         assert response.status_code == 403
         assert b'Error de autenticaci' in response.content
 
-    @patch('bot.services_shared.process_bot_message')
+    @patch('bot.services.shared.process_bot_message')
     def test_signature_validation_without_auth_token(self, mock_process, settings):
         """Verifica que sin auth token se salta la validación"""
         settings.VALIDATE_TWILIO_SIGNATURE = True

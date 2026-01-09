@@ -14,11 +14,11 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from core.models import GlobalSettings, AuditLog, IdempotencyKey
-from core.decorators import idempotent_view
+from core.utils.decorators import idempotent_view
 from core.utils import get_client_ip
-from core.permissions import RoleAllowed, IsAdmin, IsStaff
+from core.api.permissions import RoleAllowed, IsAdmin, IsStaff
 from core.tasks import cleanup_old_idempotency_keys
-from core.caching import CacheKeys
+from core.utils.caching import CacheKeys
 
 
 @pytest.mark.django_db

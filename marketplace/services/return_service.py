@@ -8,7 +8,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
-from core.exceptions import BusinessLogicError
+from core.utils.exceptions import BusinessLogicError
 from core.models import AuditLog, GlobalSettings
 from ..models import InventoryMovement, Order
 from ..tasks import notify_order_status_change

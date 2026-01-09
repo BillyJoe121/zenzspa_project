@@ -3,7 +3,7 @@ import importlib
 import pytest
 from django.urls import reverse
 from rest_framework.test import APIClient
-from core.views import HealthCheckView, GlobalSettingsView
+from core.api.views import HealthCheckView, GlobalSettingsView
 import core.views
 
 def test_views_module_imports_render():

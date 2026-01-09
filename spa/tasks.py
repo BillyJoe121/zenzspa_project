@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from core.models import GlobalSettings, AuditLog
 from users.models import CustomUser
-from .models import Appointment, WaitlistEntry, Voucher, LoyaltyRewardLog
+from .models import Appointment, WaitlistEntry, LoyaltyRewardLog
 from finances.models import Payment, ClientCredit
 from finances.payments import PaymentService
 from notifications.services import NotificationService
@@ -82,45 +82,7 @@ def send_appointment_reminder():
                 appointments.count())
 
 
-@shared_task
-def notify_waitlist_availability(waitlist_entry_id):
-    """
-    Notifica al usuario de la lista de espera cuando se libera un horario.
-    Migrado al sistema centralizado de NotificationService.
-    """
-    try:
-        entry = WaitlistEntry.objects.select_related('user').get(id=waitlist_entry_id)
-    except WaitlistEntry.DoesNotExist:
-        logger.error("La entrada de lista de espera %s no existe.", waitlist_entry_id)
-        return
 
-    user = entry.user
-
-    if not user:
-        logger.warning("Entrada de waitlist %s no tiene usuario asignado", waitlist_entry_id)
-        return
-
-    # Preparar contexto para NotificationService
-    # Nota: Es posible que entry tenga campos como date, time, service
-    # Ajustar según el modelo real de WaitlistEntry
-    context = {
-        "user_name": user.get_full_name() or user.first_name or "Cliente",
-        "date": entry.preferred_date.strftime("%d de %B %Y") if hasattr(entry, 'preferred_date') and entry.preferred_date else "próximamente",
-        "time": entry.preferred_time.strftime("%I:%M %p") if hasattr(entry, 'preferred_time') and entry.preferred_time else "por confirmar",
-        "service": entry.service.name if hasattr(entry, 'service') and entry.service else "el servicio solicitado",
-    }
-
-    try:
-        # Enviar notificación usando el sistema centralizado
-        NotificationService.send_notification(
-            user=user,
-            event_code="APPOINTMENT_WAITLIST_AVAILABLE",
-            context=context,
-            priority="high"
-        )
-        logger.info("Notificación de lista de espera enviada a %s", user.email or user.phone_number)
-    except Exception as e:
-        logger.error("Error enviando notificación de waitlist %s: %s", waitlist_entry_id, e)
 
 
 @shared_task
@@ -256,16 +218,6 @@ def check_vip_loyalty():
                     details=f"Crédito de lealtad otorgado automáticamente: {credit_reward}",
                 )
                 rewards_issued += 1
-                
-                # Notificar al usuario
-                NotificationService.send_notification(
-                    user=user,
-                    event_code="LOYALTY_REWARD_CREDIT",
-                    context={
-                        "amount": f"{credit_reward:,.0f}",
-                        "user_name": user.get_full_name() or "Cliente"
-                    }
-                )
             except Exception as e:
                 logger.error("Error otorgando crédito de lealtad a usuario %s: %s", user.id, e)
                 
@@ -318,57 +270,7 @@ def downgrade_expired_vips():
     return new_downgrade_expired_vips()
 
 
-@shared_task
-def notify_expiring_vouchers():
-    """
-    Notifica a los usuarios sobre vouchers que expiran en 3 días.
-    """
-    target_date = timezone.now().date() + timedelta(days=3)
-    vouchers = Voucher.objects.select_related('user', 'service').filter(
-        status=Voucher.VoucherStatus.AVAILABLE,
-        expires_at=target_date,
-    )
-    notified = 0
-    for voucher in vouchers:
-        user = voucher.user
-        if not user:
-            logger.warning(
-                "Voucher %s no tiene usuario asociado; se omite notificación de expiración",
-                voucher.code,
-            )
-            continue
 
-        user_name = user.get_full_name() or user.first_name or "Cliente"
-        service_name = voucher.service.name if voucher.service else "tu beneficio"
-        service_price = getattr(voucher.service, "price", None)
-        formatted_amount = (
-            f"{service_price:,.0f}" if service_price is not None else "0"
-        )
-        expiry_display = (
-            voucher.expires_at.strftime("%d de %B %Y")
-            if voucher.expires_at
-            else "próximamente"
-        )
-
-        context = {
-            "user_name": user_name,
-            "amount": formatted_amount,
-            "expiry_date": expiry_display,
-            "voucher_code": voucher.code,
-            "expires_at": voucher.expires_at.isoformat() if voucher.expires_at else None,
-            "service_name": service_name,
-        }
-        try:
-            NotificationService.send_notification(
-                user=voucher.user,
-                event_code="VOUCHER_EXPIRING_SOON",
-                context=context,
-            )
-            notified += 1
-        except Exception:
-            logger.exception(
-                "No se pudo notificar vencimiento de voucher %s", voucher.code)
-    return f"Vouchers notificados: {notified}"
 
 
 @shared_task

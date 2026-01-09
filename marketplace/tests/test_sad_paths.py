@@ -9,7 +9,7 @@ from django.db.utils import IntegrityError
 from rest_framework.test import APIClient
 from rest_framework import status
 
-from core.exceptions import BusinessLogicError
+from core.utils.exceptions import BusinessLogicError
 from users.models import CustomUser
 from spa.models import ServiceCategory, Appointment
 from marketplace.models import (

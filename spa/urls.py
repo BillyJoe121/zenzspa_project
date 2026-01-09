@@ -18,6 +18,7 @@ from .viewsets import (
     ServiceCategoryViewSet,
     AvailabilityExclusionViewSet,
 )
+from .views.appointments.simple_viewsets import ServiceMediaViewSet
 
 router = DefaultRouter()
 router.register(r'appointments', AppointmentViewSet, basename='appointment')
@@ -30,6 +31,7 @@ router.register(r'admin/packages', AdminPackageViewSet, basename='admin-package'
 # Nuevos endpoints de administración
 router.register(r'services', ServiceViewSet, basename='service')
 router.register(r'service-categories', ServiceCategoryViewSet, basename='service-category')
+router.register(r'service-media', ServiceMediaViewSet, basename='service-media')
 router.register(r'availability-exclusions', AvailabilityExclusionViewSet, basename='availability-exclusion')
 
 

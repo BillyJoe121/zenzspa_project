@@ -11,11 +11,11 @@ Define los endpoints principales del núcleo del sistema:
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from .views import (
+from core.api.views import (
     HealthCheckView, 
     GlobalSettingsView
 )
-from .viewsets import (
+from core.api.viewsets import (
     GlobalSettingsViewSet,
     AboutPageViewSet,
     TeamMemberViewSet,

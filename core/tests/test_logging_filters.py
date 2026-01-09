@@ -5,7 +5,7 @@ Cobertura objetivo: 90%+
 import pytest
 import logging
 from django.test import TestCase
-from core.logging_filters import SanitizeAPIKeyFilter, SanitizePIIFilter
+from core.infra.logging_filters import SanitizeAPIKeyFilter, SanitizePIIFilter
 
 
 class SanitizeAPIKeyFilterTests(TestCase):

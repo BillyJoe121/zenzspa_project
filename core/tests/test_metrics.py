@@ -1,7 +1,7 @@
 
 import pytest
 from unittest.mock import patch, MagicMock
-from core.metrics import get_counter, get_histogram, _counter_cache, _hist_cache, _NoOpMetric
+from core.infra.metrics import get_counter, get_histogram, _counter_cache, _hist_cache, _NoOpMetric
 
 @pytest.fixture(autouse=True)
 def clear_caches():

@@ -75,17 +75,66 @@ class GlobalSettingsAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ("Capacidad y Pagos", {
-            "fields": ("low_supervision_capacity", "advance_payment_percentage"),
-            "description": "Capacidad simultánea y porcentaje de anticipo requerido.",
+            "fields": ("low_supervision_capacity", "advance_payment_percentage", "advance_expiration_minutes"),
+            "description": "Capacidad simultánea, porcentaje de anticipo requerido y tiempo para pagar.",
         }),
         ("Gestión de Horarios", {
             "fields": ("appointment_buffer_time",),
             "description": "Minutos de limpieza/preparación entre citas.",
         }),
+        ("Configuración VIP", {
+            "fields": (
+                "vip_monthly_price",
+                "vip_discount_percentage",
+                "vip_cashback_percentage",
+            ),
+            "description": "Precio mensual VIP, descuento en servicios y cashback sobre pagos.",
+        }),
+        ("Recompensas de Lealtad VIP", {
+            "fields": (
+                "loyalty_months_required",
+                "vip_loyalty_credit_reward",
+                "loyalty_voucher_service",
+            ),
+            "description": "Sistema de recompensas automáticas para VIPs leales. Los créditos tienen prioridad sobre vouchers.",
+        }),
+        ("Gestión de Créditos", {
+            "fields": ("credit_expiration_days", "no_show_credit_policy"),
+            "description": "Vigencia de créditos y política de créditos por no-show.",
+        }),
+        ("Sistema de Horarios y Notificaciones", {
+            "fields": ("timezone_display", "quiet_hours_start", "quiet_hours_end"),
+            "description": "Zona horaria del sistema y ventana de silencio para notificaciones.",
+        }),
+        ("Lista de Espera", {
+            "fields": ("waitlist_enabled", "waitlist_ttl_minutes"),
+            "description": "Configuración del módulo de lista de espera.",
+        }),
+        ("Marketplace", {
+            "fields": ("return_window_days",),
+            "description": "Ventana de devoluciones para productos del marketplace.",
+        }),
+        ("Comisión del Desarrollador", {
+            "fields": (
+                "developer_commission_percentage",
+                "developer_payout_threshold",
+                "developer_in_default",
+                "developer_default_since",
+            ),
+            "description": "Configuración de comisiones y pagos al desarrollador.",
+        }),
     )
 
-    list_display = ("low_supervision_capacity", "advance_payment_percentage", "appointment_buffer_time", "updated_at")
-    readonly_fields = ("id", "created_at", "updated_at")
+    list_display = (
+        "low_supervision_capacity",
+        "advance_payment_percentage",
+        "vip_monthly_price",
+        "loyalty_months_required",
+        "vip_loyalty_credit_reward",
+        "credit_expiration_days",
+        "updated_at"
+    )
+    readonly_fields = ("id", "created_at", "updated_at", "developer_in_default", "developer_default_since")
 
     def has_add_permission(self, request):
         """

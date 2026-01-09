@@ -7,7 +7,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
-from core.exceptions import BusinessLogicError
+from core.utils.exceptions import BusinessLogicError
 from ..models import InventoryMovement, Order
 from ..tasks import notify_order_status_change
 from .inventory_service import InventoryService
@@ -79,7 +79,7 @@ class OrderService:
 
         if new_status in [Order.OrderStatus.CANCELLED, Order.OrderStatus.REFUNDED]:
             try:
-                from finances.cashback_service import CashbackService
+                from finances.services.cashback import CashbackService
                 CashbackService.revert_cashback(order)
             except Exception as e:
                 logger.error("Error reverting cashback for order %s: %s", order.id, e)
@@ -223,6 +223,32 @@ class OrderService:
                 "Error al vaciar carrito después de pago: user=%s, order=%s, error=%s",
                 order.user.id, order.id, str(e)
             )
+
+        # Enviar notificación de confirmación de pedido
+        try:
+            from notifications.services import NotificationService
+            
+            # Construir resumen de items
+            items_summary = ", ".join([
+                f"{item.quantity}x {item.variant.product.name}"
+                for item in order.items.select_related('variant__product')[:3]
+            ])
+            if order.items.count() > 3:
+                items_summary += f" y {order.items.count() - 3} más"
+            
+            NotificationService.send_notification(
+                user=order.user,
+                event_code="ORDER_CONFIRMED",
+                context={
+                    "user_name": order.user.get_full_name() or order.user.first_name or "Cliente",
+                    "order_id": str(order.id)[:8],  # Solo primeros 8 caracteres del UUID
+                    "total": f"${order.total_amount:,.0f}",
+                    "items_summary": items_summary,
+                },
+                priority="high"
+            )
+        except Exception:
+            logger.exception("Error enviando notificación de orden confirmada para order %s", order.id)
 
         return order
 

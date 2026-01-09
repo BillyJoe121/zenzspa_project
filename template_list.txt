@@ -1,0 +1,101 @@
+
+============================================================
+  TEMPLATES DE WHATSAPP
+============================================================
+
+Ô£à Configurados (18):
+   - APPOINTMENT_REMINDER_24H
+     Recordatorio de cita 24 horas antes
+     SID: HX312e18d0e6d472368178c3755e3f4bb3
+     Variables: ['user_name', 'start_date', 'start_time', 'services', 'total']
+
+   - APPOINTMENT_REMINDER_2H
+     Recordatorio de cita 2 horas antes
+     SID: HX7c977d8ead9bac2813a66b58754cc917
+     Variables: ['user_name', 'start_time', 'services']
+
+   - APPOINTMENT_CANCELLED_AUTO
+     Cita cancelada autom├íticamente por falta de pago
+     SID: HXe844ba79509ef289a45b656072505712
+     Variables: ['user_name', 'start_date']
+
+   - APPOINTMENT_NO_SHOW_CREDIT
+     No-show con cr├®dito generado
+     SID: HXa84b86ef7d24a921a4f417a2896f5fe8
+     Variables: ['user_name', 'start_date', 'credit_amount']
+
+   - APPOINTMENT_WAITLIST_AVAILABLE
+     Espacio disponible en lista de espera
+     SID: HX83da0026a8d25244d52af581c5c9c88a
+     Variables: ['user_name', 'date', 'time', 'service']
+
+   - VIP_RENEWAL_FAILED
+     Error en renovaci├│n VIP
+     SID: HX977e936c1816bbc8e8c664c057f9cf0f
+     Variables: ['user_name', 'status']
+
+   - VIP_MEMBERSHIP_EXPIRED
+     Membres├¡a VIP expirada
+     SID: HX15513e163d033c4187b8f6ac45ba1157
+     Variables: ['user_name']
+
+   - VIP_LOYALTY_MILESTONE
+     Logro VIP alcanzado
+     SID: HX7ebb5c819f7ececf516dcf868115f3e6
+     Variables: ['user_name', 'visits_count', 'reward_description']
+
+   - VOUCHER_EXPIRING_SOON
+     Voucher pr├│ximo a expirar
+     SID: HXd19b5ed150271059aa325e3b713a9902
+     Variables: ['user_name', 'amount', 'expiry_date', 'voucher_code']
+
+   - PAYMENT_STATUS_APPROVED
+     Pago aprobado exitosamente
+     SID: HX275a2651d43ef940785ec9f0ee6c6048
+     Variables: ['user_name', 'amount', 'reference', 'service']
+
+   - PAYMENT_STATUS_DECLINED
+     Pago rechazado
+     SID: HX479d05d331cc6fa1180b9882a1c14d3c
+     Variables: ['user_name', 'amount', 'reference', 'decline_reason']
+
+   - ORDER_CANCELLED
+     Orden cancelada
+     SID: HXb77855705838ad99168a533ddeaffe21
+     Variables: ['user_name', 'order_id', 'cancellation_reason']
+
+   - ORDER_READY_FOR_PICKUP
+     Orden lista para recoger
+     SID: HX41bc72cadf2fb9cd1d35fb4f7516c11a
+     Variables: ['user_name', 'order_id', 'store_address', 'pickup_code']
+
+   - STOCK_LOW_ALERT
+     Alerta de stock bajo
+     SID: HX4e19875e73ed3868f168273c685be119
+     Variables: ['items_list']
+
+   - USER_FLAGGED_NON_GRATA
+     Usuario marcado como non grata
+     SID: HX4d172a0c984db30535bab2128b6f8605
+     Variables: ['user_name', 'user_email', 'user_phone', 'flag_reason', 'action_taken', 'admin_url']
+
+   - BOT_HANDOFF_CREATED
+     Nueva solicitud de atenci├│n humana
+     SID: HXfd587bceb76f122a320498ae163efe44
+     Variables: ['score_emoji', 'client_score', 'client_name', 'client_phone', 'warning_text', 'escalation_message', 'admin_url']
+
+   - BOT_HANDOFF_EXPIRED
+     Handoff sin atender expirado
+     SID: HXbf912e3b5e79b78c13f3219ffbc6d695
+     Variables: ['handoff_id', 'client_name', 'created_at', 'admin_url']
+
+   - BOT_SECURITY_ALERT
+     Alerta de seguridad del bot
+     SID: HX74e229b3d46184160fdd310955c47354
+     Variables: ['alert_type', 'user_identifier', 'alert_detail', 'timestamp']
+
+
+ÔÜá´©Å NO configurados (3):
+   - PAYMENT_STATUS_ERROR: Error procesando pago
+   - BOT_AUTO_BLOCK: Usuario auto-bloqueado
+   - ADMIN_APPOINTMENT_PAYMENT_LINK: Link de pago para cita creada por admin

@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.db.models import Q
 from rest_framework import status
 
-from core.exceptions import BusinessLogicError
+from core.utils.exceptions import BusinessLogicError
 from core.models import GlobalSettings
 from ..models import Appointment, WaitlistEntry
 
@@ -48,12 +48,6 @@ class WaitlistService:
             return
 
         entry.mark_offered(appointment, cls._ttl_minutes())
-        try:
-            from ..tasks import notify_waitlist_availability
-            notify_waitlist_availability.delay(str(entry.id))
-        except Exception:
-            logger.exception(
-                "No se pudo programar la notificación de lista de espera.")
 
     @classmethod
     def ensure_enabled(cls):

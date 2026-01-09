@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from core.permissions import IsAuthenticatedAndActive, ReadOnly, IsAdmin, IsStaff, RoleAllowed
+from core.api.permissions import IsAuthenticatedAndActive, ReadOnly, IsAdmin, IsStaff, RoleAllowed
 
 
 def test_is_authenticated_and_active_permission():

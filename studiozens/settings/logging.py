@@ -21,10 +21,10 @@ LOGGING = {
     },
     "filters": {
         "sanitize_api_keys": {
-            "()": "core.logging_filters.SanitizeAPIKeyFilter",
+            "()": "core.infra.logging_filters.SanitizeAPIKeyFilter",
         },
         "sanitize_pii": {
-            "()": "core.logging_filters.SanitizePIIFilter",
+            "()": "core.infra.logging_filters.SanitizePIIFilter",
         },
     },
     "handlers": {

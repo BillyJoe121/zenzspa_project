@@ -2,7 +2,7 @@
 
 ## Estado Actual
 
-El archivo `users/views.py` (~630 líneas) está siendo refactorizado en una estructura modular.
+El archivo monolítico original ya fue dividido. Mantenemos compatibilidad a través de `__init__.py`.
 
 ## Estructura Planificada
 
@@ -11,11 +11,20 @@ users/views/
 ├── __init__.py           # Exporta todas las vistas
 ├── README.md             # Este archivo
 ├── utils.py              # ✅ Funciones auxiliares (completado)
-├── auth.py               # Autenticación y registro
+├── auth.py               # ✅ Reexporta las vistas de auth*
+├── auth_registration.py  # ✅ Registro y reenvío OTP
+├── auth_verification.py  # ✅ Verificación OTP
+├── auth_tokens.py        # ✅ Emisión y refresh de tokens
+├── auth_user.py          # ✅ Current user y self-delete
 ├── password.py           # Reset y cambio de contraseña
 ├── sessions.py           # Gestión de sesiones
 ├── totp.py               # 2FA/TOTP
-├── admin_views.py        # Vistas administrativas
+├── admin_views.py        # ✅ Reexporta las vistas admin*
+├── admin_flagging.py     # ✅ Flag CNG
+├── admin_security.py     # ✅ Bloqueo de IP
+├── admin_export.py       # ✅ Exportar usuarios
+├── admin_staff.py        # ✅ Listado de staff
+├── admin_user_viewset.py # ✅ CRUD admin de usuarios
 └── webhooks.py           # Webhooks externos
 ```
 
@@ -28,9 +37,15 @@ Funciones auxiliares compartidas:
 - `deactivate_session_for_jti()`: Desactiva sesión por JTI
 - `revoke_all_sessions()`: Revoca todas las sesiones del usuario
 
+### ✅ auth*
+- `UserRegistrationView`, `ResendOTPView`, `VerifySMSView`, `CustomTokenObtainPairView`, `CustomTokenRefreshView`, `CurrentUserView`, `UserDeleteView`
+
+### ✅ admin* (reexportadas en admin_views.py)
+- `FlagNonGrataView`, `StaffListView`, `BlockIPView`, `UserExportView`, `AdminUserViewSet`
+
 ## Responsabilidades por Módulo
 
-### auth.py (Pendiente)
+### auth.py (Completo)
 - `UserRegistrationView`: Registro de usuarios
 - `VerifySMSView`: Verificación de códigos SMS
 - `CustomTokenObtainPairView`: Obtener tokens JWT
@@ -52,11 +67,12 @@ Funciones auxiliares compartidas:
 - `TOTPSetupView`: Configurar 2FA
 - `TOTPVerifyView`: Verificar código 2FA
 
-### admin_views.py (Pendiente)
+### admin_views.py (Completo, reexporta admin_*.py)
 - `FlagNonGrataView`: Marcar usuario como CNG
 - `StaffListView`: Listar staff
 - `BlockIPView`: Bloquear IP
 - `UserExportView`: Exportar usuarios
+- `AdminUserViewSet`: CRUD admin de usuarios
 
 ### webhooks.py (Pendiente)
 - `TwilioWebhookView`: Webhook de Twilio
@@ -64,12 +80,9 @@ Funciones auxiliares compartidas:
 
 ## Próximos Pasos
 
-1. Completar creación de archivos auth.py, password.py, sessions.py
-2. Completar totp.py, admin_views.py, webhooks.py
-3. Crear __init__.py con exportaciones
-4. Actualizar imports en urls.py
-5. Ejecutar tests de validación
-6. Renombrar archivo original a views.py.old
+1. Completar creación de archivos password.py, sessions.py, totp.py, webhooks.py
+2. Validar imports en urls.py (ya debería apuntar a __init__.py)
+3. Ejecutar tests de validación
 
 ## Notas Importantes
 
