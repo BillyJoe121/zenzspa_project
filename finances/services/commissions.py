@@ -1,0 +1,311 @@
+from __future__ import annotations
+
+import logging
+from decimal import Decimal, ROUND_HALF_UP
+
+from django.db import transaction
+from django.db.models import Sum, F
+from django.db.models.functions import Coalesce
+from django.utils import timezone
+
+from core.models import GlobalSettings, AuditLog
+from core.utils import safe_audit_log
+from users.models import CustomUser
+from notifications.services import NotificationService
+from ..models import CommissionLedger
+from .disbursement import WompiDisbursementClient, WompiPayoutError
+
+logger = logging.getLogger(__name__)
+
+
+def _to_decimal(value) -> Decimal:
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+
+class DeveloperCommissionService:
+    """
+    Orquesta el registro de comisiones, cálculo de deuda y pagos al desarrollador.
+    """
+
+    @classmethod
+    @transaction.atomic
+    def register_commission(cls, payment):
+        # -----------------------------------------------------------
+        # LOGICA DESCONECTADA POR SOLICITUD DEL USUARIO (2026-01-11)
+        # Se mantiene el código pero retorna inmediatamente para no generar deuda.
+        # -----------------------------------------------------------
+        return None
+
+        if payment is None or payment.amount in (None, Decimal("0")):
+            return None
+
+        if CommissionLedger.objects.filter(source_payment=payment).exists():
+            return None
+
+        settings_obj = GlobalSettings.load()
+        percentage = settings_obj.developer_commission_percentage
+        if not percentage or percentage <= 0:
+            return None
+
+        amount = (
+            _to_decimal(payment.amount)
+            * _to_decimal(percentage)
+            / Decimal("100")
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        if amount <= 0:
+            return None
+
+        return CommissionLedger.objects.create(
+            amount=amount,
+            source_payment=payment,
+            status=CommissionLedger.Status.PENDING,
+            payment_type=payment.payment_type or "",
+            payment_method=payment.payment_method_type or "",
+        )
+
+    @staticmethod
+    def get_developer_debt(include_failed: bool = True) -> Decimal:
+        statuses = [CommissionLedger.Status.PENDING]
+        if include_failed:
+            statuses.append(CommissionLedger.Status.FAILED_NSF)
+        aggregate = CommissionLedger.objects.filter(
+            status__in=statuses
+        ).aggregate(total=Coalesce(Sum(F("amount") - F("paid_amount")), Decimal("0")))
+        total = aggregate["total"] or Decimal("0")
+        return total.quantize(Decimal("0.01"))
+
+    @classmethod
+    def handle_successful_payment(cls, payment):
+        ledger = cls.register_commission(payment)
+        if not ledger:
+            return None
+        return cls.evaluate_payout()
+
+    @classmethod
+    def evaluate_payout(cls):
+        settings_obj = GlobalSettings.load()
+        debt = cls.get_developer_debt()
+        if debt <= Decimal("0"):
+            cls._exit_default(settings_obj)
+            return {"status": "no_debt"}
+
+        threshold = settings_obj.developer_payout_threshold
+        if not settings_obj.developer_in_default and debt < threshold:
+            return {"status": "below_threshold", "debt": str(debt)}
+
+        return cls._attempt_payout(settings_obj, debt)
+
+    @classmethod
+    def _attempt_payout(cls, settings_obj, current_debt: Decimal):
+        client = WompiDisbursementClient()
+        try:
+            balance = client.get_available_balance()
+        except WompiPayoutError as exc:
+            logger.error("No se pudo consultar saldo Wompi: %s", exc)
+            cls._enter_default(settings_obj, current_debt=current_debt)
+            cls._mark_failed_nsf()
+            cls._log_payout_failure("balance_unavailable", detail=str(exc))
+            return {"status": "balance_unavailable", "detail": str(exc)}
+
+        amount_to_pay = min(current_debt, balance)
+        if amount_to_pay <= Decimal("0"):
+            cls._enter_default(settings_obj, current_debt=current_debt)
+            cls._mark_failed_nsf()
+            cls._log_payout_failure(
+                "insufficient_funds",
+                debt=str(current_debt),
+                balance=str(balance),
+            )
+            return {"status": "insufficient_funds", "debt": str(current_debt), "balance": str(balance)}
+
+        try:
+            wompi_transfer_id = client.create_payout(amount_to_pay)
+        except WompiPayoutError as exc:
+            logger.error("Payout al desarrollador falló: %s", exc)
+            cls._enter_default(settings_obj, current_debt=current_debt)
+            cls._mark_failed_nsf()
+            cls._log_payout_failure("payout_failed", detail=str(exc))
+            return {"status": "payout_failed", "detail": str(exc)}
+
+        cls._apply_payout_to_ledger(amount_to_pay, wompi_transfer_id)
+        remaining_debt = cls.get_developer_debt()
+        if remaining_debt <= Decimal("0"):
+            cls._exit_default(settings_obj)
+        else:
+            cls._enter_default(settings_obj, current_debt=remaining_debt)
+        return {"status": "paid", "amount": str(amount_to_pay), "remaining_debt": str(remaining_debt)}
+
+    @classmethod
+    def process_fixed_weekly_payout(cls, amount: Decimal = Decimal("250000.00")):
+        """
+        Ejecuta un pago fijo semanal al desarrollador, independiente de comisiones.
+        """
+        client = WompiDisbursementClient()
+
+        try:
+            balance = client.get_available_balance()
+        except WompiPayoutError as exc:
+            logger.error("No se pudo consultar saldo Wompi para pago fijo: %s", exc)
+            cls._log_payout_failure("balance_unavailable_fixed", detail=str(exc))
+            return {"status": "balance_unavailable", "detail": str(exc)}
+
+        if balance < amount:
+            logger.error("Saldo insuficiente para pago fijo. Requerido: %s, Disponible: %s", amount, balance)
+            cls._log_payout_failure(
+                "insufficient_funds_fixed",
+                required=str(amount),
+                balance=str(balance),
+            )
+            return {"status": "insufficient_funds", "required": str(amount), "balance": str(balance)}
+
+        reference = f"DEV-FIXED-{timezone.now().strftime('%Y%m%d-%H%M%S')}"
+        try:
+            wompi_transfer_id = client.create_payout(amount, reference=reference)
+        except WompiPayoutError as exc:
+            logger.error("Pago fijo al desarrollador falló: %s", exc)
+            cls._log_payout_failure("payout_failed_fixed", detail=str(exc))
+            return {"status": "payout_failed", "detail": str(exc)}
+
+        # Log success
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            details={
+                "action": "developer_fixed_payout_completed",
+                "amount": str(amount),
+                "wompi_transfer_id": wompi_transfer_id,
+                "timestamp": timezone.now().isoformat(),
+            },
+        )
+
+        return {"status": "paid", "amount": str(amount), "transfer_id": wompi_transfer_id}
+
+    @classmethod
+    @transaction.atomic
+    def _apply_payout_to_ledger(cls, amount_to_pay: Decimal, transfer_id: str, performed_by=None):
+        remaining = amount_to_pay
+        entries = (
+            CommissionLedger.objects.select_for_update()
+            .filter(status__in=[CommissionLedger.Status.PENDING, CommissionLedger.Status.FAILED_NSF])
+            .order_by("created_at")
+        )
+        now = timezone.now()
+        paid_entries = []
+        for entry in entries:
+            if remaining <= Decimal("0"):
+                break
+            due = entry.pending_amount
+            if due <= Decimal("0"):
+                continue
+            chunk = min(due, remaining)
+            previous_status = entry.status
+            entry.paid_amount = (entry.paid_amount or Decimal("0")) + chunk
+            entry.wompi_transfer_id = transfer_id
+            if entry.paid_amount >= entry.amount:
+                entry.status = CommissionLedger.Status.PAID
+                entry.paid_at = now
+            entry.save(
+                update_fields=[
+                    "paid_amount",
+                    "status",
+                    "wompi_transfer_id",
+                    "paid_at",
+                    "updated_at",
+                ]
+            )
+            paid_entries.append(entry)
+            safe_audit_log(
+                action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+                admin_user=performed_by,
+                details={
+                    "action": "commission_payout_applied",
+                    "ledger_id": str(entry.id),
+                    "payment_id": str(entry.source_payment_id),
+                    "amount_paid": str(chunk),
+                    "previous_status": previous_status,
+                    "new_status": entry.status,
+                    "wompi_transfer_id": transfer_id,
+                    "total_paid": str(entry.paid_amount),
+                    "total_amount": str(entry.amount),
+                },
+            )
+            remaining -= chunk
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            admin_user=performed_by,
+            details={
+                "action": "developer_payout_completed",
+                "total_amount": str(amount_to_pay),
+                "wompi_transfer_id": transfer_id,
+                "entries_paid": len(paid_entries),
+                "timestamp": now.isoformat(),
+            },
+        )
+
+    @staticmethod
+    def _log_payout_failure(reason: str, **extra):
+        details = {"action": "developer_payout_failed", "reason": reason}
+        if extra:
+            details.update(extra)
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            details=details,
+        )
+
+    @staticmethod
+    def _enter_default(settings_obj, current_debt=None):
+        if not settings_obj.developer_in_default:
+            settings_obj.developer_in_default = True
+            settings_obj.developer_default_since = timezone.now()
+            settings_obj.save(update_fields=["developer_in_default", "developer_default_since", "updated_at"])
+
+            safe_audit_log(
+                action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+                details={
+                    "action": "developer_default_entered",
+                    "timestamp": timezone.now().isoformat(),
+                    "debt": str(current_debt) if current_debt else "unknown",
+                },
+            )
+
+            admins = CustomUser.objects.filter(is_superuser=True)
+            for admin in admins:
+                try:
+                    NotificationService.send_notification(
+                        user=admin,
+                        event_code="DEVELOPER_DEFAULT_ENTERED",
+                        context={
+                            "timestamp": timezone.now().isoformat(),
+                            "debt": str(current_debt) if current_debt else "N/A",
+                            "threshold": str(settings_obj.developer_payout_threshold),
+                        },
+                        priority="high",
+                    )
+                except Exception:
+                    logger.exception("Failed to notify admin %s about developer default", admin.id)
+
+    @staticmethod
+    def _exit_default(settings_obj):
+        if settings_obj.developer_in_default:
+            settings_obj.developer_in_default = False
+            settings_obj.developer_default_since = None
+            settings_obj.save(update_fields=["developer_in_default", "developer_default_since", "updated_at"])
+            safe_audit_log(
+                action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+                details={
+                    "action": "developer_default_exited",
+                    "timestamp": timezone.now().isoformat(),
+                },
+            )
+
+    @classmethod
+    @transaction.atomic
+    def _mark_failed_nsf(cls):
+        CommissionLedger.objects.select_for_update().filter(
+            status=CommissionLedger.Status.PENDING
+        ).update(
+            status=CommissionLedger.Status.FAILED_NSF,
+            updated_at=timezone.now(),
+        )

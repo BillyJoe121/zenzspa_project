@@ -1,0 +1,73 @@
+services:
+  - type: redis
+    name: studiozens-redis
+    plan: free # Explicitly set to free tier
+    ipAllowList: []
+
+  - type: web
+    name: studiozens-web
+    runtime: python
+    plan: free # Explicitly set to free tier
+    buildCommand: "./build.sh"
+    # TRICK: Run Celery in background & Start Gunicorn in foreground
+    # Note: On free tier, this stops when the web service sleeps.
+    startCommand: "bash -c 'celery -A studiozens worker -l info -B --detach && gunicorn studiozens.wsgi:application'"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DATABASE_URL
+        sync: false # Enter your Supabase connection string here
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: studiozens-redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: FERNET_KEY
+        generateValue: true
+      - key: WEB_CONCURRENCY
+        value: 2
+      - key: DEBUG
+        value: "False"
+      - key: TRUST_PROXY
+        value: "1"
+      # ALLOWED_HOSTS: Configure in Render Dashboard (e.g., "studiozens-web.onrender.com studiozens.com")
+      
+      # Require user input for these critical keys
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: WOMPI_PUBLIC_KEY
+        sync: false
+      - key: WOMPI_PRIVATE_KEY
+        sync: false
+      - key: WOMPI_INTEGRITY_SECRET
+        sync: false
+      - key: WOMPI_EVENT_SECRET
+        sync: false
+      - key: WOMPI_PAYOUT_PRIVATE_KEY
+        sync: false
+      - key: WOMPI_PAYOUT_USER_ID
+        sync: false
+      - key: WOMPI_PAYOUT_BASE_URL
+        value: "https://production.wompi.co/v1"
+      - key: WOMPI_DEVELOPER_DESTINATION
+        sync: false
+      - key: SITE_URL
+        sync: false # Must be set to the Render URL (e.g., https://studiozens-web.onrender.com)
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false # e.g. https://your-frontend.onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false # e.g. https://your-frontend.onrender.com
+      
+      # Twilio / Email (Optional for deploy start, but needed for app)
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_VERIFY_SERVICE_SID
+        sync: false
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false

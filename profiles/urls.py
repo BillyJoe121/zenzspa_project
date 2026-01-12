@@ -5,17 +5,34 @@ from rest_framework.routers import DefaultRouter
 # --- INICIO DE LA MODIFICACIÓN ---
 # Se importa el ViewSet principal y se eliminan las vistas que ahora maneja el router.
 from .views import (
-    ClinicalProfileViewSet, DoshaQuestionViewSet,
-    DoshaQuestionListView, DoshaQuizSubmitView,
-    KioskStartSessionView
+    ClinicalProfileViewSet,
+    ClinicalProfileHistoryViewSet,
+    ConsentTemplateViewSet,
+    DoshaQuestionListView,
+    DoshaQuestionViewSet,
+    DoshaQuizSubmitView,
+    KioskSessionDiscardChangesView,
+    KioskSessionHeartbeatView,
+    KioskSessionLockView,
+    KioskSessionPendingChangesView,
+    KioskSessionSecureScreenView,
+    KioskSessionStatusView,
+    KioskStartSessionView,
+    AnonymizeProfileView,
+    SignConsentView,
+    SignConsentView,
+    ExportClinicalDataView,
+    RevokeConsentView,
 )
 # --- FIN DE LA MODIFICACIÓN ---
 
 router = DefaultRouter()
 
-router.register(r'profiles', ClinicalProfileViewSet, basename='clinical-profile')
+router.register(r'profiles', ClinicalProfileViewSet, basename='clinicalprofile')
+router.register(r'clinical-history', ClinicalProfileHistoryViewSet, basename='clinical-profile-history')
 
 router.register(r'dosha-questions-admin', DoshaQuestionViewSet, basename='dosha-question-admin')
+router.register(r'consent-templates', ConsentTemplateViewSet, basename='consent-template')
 
 
 urlpatterns = [
@@ -24,7 +41,21 @@ urlpatterns = [
     # Se mantienen las rutas que no forman parte de un ViewSet estándar.
     path('dosha-quiz/', DoshaQuestionListView.as_view(), name='dosha-quiz-list'),
     path('dosha-quiz/submit/', DoshaQuizSubmitView.as_view(), name='dosha-quiz-submit'),
+    
+    # New endpoints requested
+    path('profiles/dosha-questions/', DoshaQuestionListView.as_view(), name='dosha-questions'),
+    path('profiles/dosha-quiz/submit/', DoshaQuizSubmitView.as_view(), name='dosha-quiz-submit-v2'),
     path('kiosk/start/', KioskStartSessionView.as_view(), name='kiosk-start-session'),
+    path('kiosk/status/', KioskSessionStatusView.as_view(), name='kiosk-status'),
+    path('kiosk/heartbeat/', KioskSessionHeartbeatView.as_view(), name='kiosk-heartbeat'),
+    path('kiosk/lock/', KioskSessionLockView.as_view(), name='kiosk-lock'),
+    path('kiosk/discard/', KioskSessionDiscardChangesView.as_view(), name='kiosk-discard'),
+    path('kiosk/secure-screen/', KioskSessionSecureScreenView.as_view(), name='kiosk-secure-screen'),
+    path('kiosk/pending-changes/', KioskSessionPendingChangesView.as_view(), name='kiosk-pending-changes'),
+    path('anonymize/<str:phone_number>/', AnonymizeProfileView.as_view(), name='clinical-profile-anonymize'),
+    path('consents/sign/', SignConsentView.as_view(), name='sign-consent'),
+    path('export/', ExportClinicalDataView.as_view(), name='export-clinical-data'),
+    path('consents/revoke/<uuid:consent_id>/', RevokeConsentView.as_view(), name='revoke-consent'),
     
     # Se incluye el router al final para que maneje todas las rutas registradas.
     path('', include(router.urls)),

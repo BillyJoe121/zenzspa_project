@@ -1,2 +1,18 @@
 [MAIN]
+# Mantén tu plugin de Django aquí. Si usas otros, añádelos separados por comas.
 load-plugins=pylint_django
+
+
+# Ignorar carpetas de migraciones y control de versiones para que no las analice
+ignore=CVS,migrations
+
+[MESSAGES CONTROL]
+# Lista de reglas a silenciar (Disable)
+# C0411: Wrong import order (Orden incorrecto de imports)
+# C0412: Ungrouped imports (Imports desagrupados)
+# C0413: Wrong import position (Imports no están arriba del todo)
+# E0401: Import error (No encuentra el módulo, útil si Docker/Venv molestan)
+disable=C0411,
+        C0412,
+        C0413,
+        E0401

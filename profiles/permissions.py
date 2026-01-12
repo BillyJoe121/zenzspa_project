@@ -1,7 +1,7 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 from users.models import CustomUser
-from users.permissions import IsStaffOrAdmin # Se mantiene la importación, es correcta.
-from django.core.cache import cache # Se añade la importación de cache que faltaba en tu archivo original
+from users.permissions import IsStaffOrAdmin, IsVerified  # Se mantiene la importación, es correcta.
+from .models import KioskSession
 
 class ClinicalProfileAccessPermission(BasePermission):
     """
@@ -12,7 +12,14 @@ class ClinicalProfileAccessPermission(BasePermission):
     """
 
     def has_object_permission(self, request, view, obj):
-        user = request.user
+        user = getattr(request, 'user', None)
+
+        kiosk_client = getattr(request, 'kiosk_client', None)
+        if kiosk_client and obj.user == kiosk_client:
+            return True
+
+        if not user or not getattr(user, 'is_authenticated', False):
+            return False
 
         if user.role == user.Role.ADMIN:
             return True
@@ -51,21 +58,20 @@ class IsKioskSession(BasePermission):
     message = "Sesión de quiosco inválida o expirada."
 
     def has_permission(self, request, view):
-        kiosk_token = request.headers.get('X-Kiosk-Token')
-        if not kiosk_token:
-            return False
+        session = load_kiosk_session_from_request(request, attach=True)
+        return session is not None
 
-        session_data = cache.get(f"kiosk_session_{kiosk_token}")
-        if not session_data:
-            return False
+class IsKioskSessionAllowExpired(BasePermission):
+    """
+    Permiso para endpoints de quiosco que necesitan funcionar incluso con sesiones expiradas.
+    Usado principalmente para el endpoint de secure-screen que necesita poder bloquear sesiones expiradas.
+    """
+    message = "Token de sesión de quiosco inválido."
 
-        try:
-            request.kiosk_client = CustomUser.objects.get(id=session_data['client_id'])
-            request.kiosk_staff = CustomUser.objects.get(id=session_data['staff_id'])
-            return True
-        except CustomUser.DoesNotExist:
-            return False
-        
+    def has_permission(self, request, view):
+        session = load_kiosk_session_from_request(request, attach=True, allow_inactive=True)
+        return session is not None
+
 class IsVerifiedUserOrKioskSession(BasePermission):
     """
     Permite el acceso si el usuario está autenticado y verificado
@@ -75,3 +81,32 @@ class IsVerifiedUserOrKioskSession(BasePermission):
         # DRF permite componer permisos usando operadores lógicos.
         # La siguiente línea es equivalente a: return IsVerified().check() OR IsKioskSession().check()
         return IsVerified().has_permission(request, view) or IsKioskSession().has_permission(request, view)
+
+
+def load_kiosk_session_from_request(request, *, allow_inactive=False, attach=False):
+    kiosk_token = request.headers.get('X-Kiosk-Token')
+    if not kiosk_token:
+        return None
+
+    try:
+        session = KioskSession.objects.select_related(
+            'profile__user',
+            'staff_member',
+        ).get(token=kiosk_token)
+    except KioskSession.DoesNotExist:
+        return None
+
+    if session.has_expired:
+        session.mark_expired()
+
+    if not allow_inactive and not session.is_valid:
+        return None
+
+    if session.is_valid:
+        session.heartbeat()
+
+    if attach:
+        request.kiosk_client = session.profile.user
+        request.kiosk_staff = session.staff_member
+        request.kiosk_session = session
+    return session

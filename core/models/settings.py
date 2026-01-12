@@ -1,0 +1,336 @@
+"""
+Modelo de configuración global del sistema (Singleton).
+
+Este módulo define el modelo GlobalSettings que almacena todas las
+configuraciones operativas del sistema como un patrón Singleton.
+"""
+import logging
+import uuid
+from decimal import Decimal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from django.conf import settings
+from django.core.cache import cache
+from django.core.exceptions import ValidationError
+from django.db import models, transaction
+from django.utils import timezone
+
+from .base import BaseModel
+
+logger = logging.getLogger(__name__)
+
+# Importar la clave de caché desde el módulo centralizado
+from core.utils.caching import GLOBAL_SETTINGS_CACHE_KEY
+
+# UUID fijo para garantizar singleton
+GLOBAL_SETTINGS_SINGLETON_UUID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
+class GlobalSettings(BaseModel):
+    """
+    Modelo Singleton para configuraciones globales del sistema.
+
+    Implementa el patrón Singleton mediante un UUID fijo para garantizar
+    que solo exista una instancia de configuración en la base de datos.
+
+    Características:
+    - UUID fijo: GLOBAL_SETTINGS_SINGLETON_UUID
+    - Caché persistente: Los datos se cachean automáticamente en memoria
+    - Validaciones robustas: Previene valores absurdos en producción
+    - Logging de cambios: Registra modificaciones en campos críticos
+    - Thread-safe: Usa select_for_update en operaciones críticas
+
+    Uso:
+        # Obtener la configuración (crea si no existe)
+        settings = GlobalSettings.load()
+
+        # Modificar valores
+        settings.advance_payment_percentage = 25
+        settings.save()  # Invalida caché automáticamente
+    """
+    low_supervision_capacity = models.PositiveIntegerField(
+        default=1,
+        verbose_name="Capacidad Máxima para Servicios de Baja Supervisión",
+        help_text="Número máximo de citas de baja supervisión que pueden ocurrir simultáneamente.",
+    )
+    advance_payment_percentage = models.PositiveIntegerField(
+        default=40,
+        verbose_name="Porcentaje de Anticipo Requerido (%)",
+        help_text="Porcentaje del costo total de la cita que se debe pagar como anticipo.",
+    )
+    appointment_buffer_time = models.PositiveIntegerField(
+        default=10,
+        verbose_name="Tiempo de Limpieza entre Citas (minutos)",
+        help_text="Minutos de búfer que se añadirán después de cada cita para preparación.",
+    )
+    vip_monthly_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        verbose_name="Precio Mensual VIP",
+        help_text="Costo en COP para una suscripción mensual VIP.",
+    )
+    vip_discount_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("15.00"),
+        verbose_name="Porcentaje de Descuento VIP (%)",
+        help_text="Porcentaje de descuento aplicado a servicios para usuarios VIP.",
+    )
+    vip_cashback_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("1.00"),
+        verbose_name="Porcentaje de Cashback VIP (%)",
+        help_text="Porcentaje de reintegro en créditos para usuarios VIP sobre pagos realizados.",
+    )
+    advance_expiration_minutes = models.PositiveIntegerField(
+        default=20,
+        verbose_name="Minutos para cancelar citas sin pago",
+        help_text="Tiempo máximo para pagar el anticipo antes de cancelar automáticamente.",
+    )
+    credit_expiration_days = models.PositiveIntegerField(
+        default=365,
+        verbose_name="Días de vigencia para créditos",
+        help_text="Número de días antes de que un saldo a favor expire.",
+    )
+    return_window_days = models.PositiveIntegerField(
+        default=30,
+        verbose_name="Ventana de devoluciones (días)",
+        help_text="Número máximo de días para aceptar devoluciones desde la entrega.",
+    )
+
+    class NoShowCreditPolicy(models.TextChoices):
+        NONE = "NONE", "Sin crédito"
+        PARTIAL = "PARTIAL", "Crédito parcial"
+        FULL = "FULL", "Crédito total"
+
+    no_show_credit_policy = models.CharField(
+        max_length=10,
+        choices=NoShowCreditPolicy.choices,
+        default=NoShowCreditPolicy.NONE,
+        help_text="Regla para convertir anticipos en crédito cuando hay No-Show.",
+    )
+    loyalty_months_required = models.PositiveIntegerField(
+        default=3,
+        verbose_name="Meses continuos para recompensa VIP",
+        help_text="Cantidad de meses continuos como VIP para recibir un beneficio.",
+    )
+    vip_loyalty_credit_reward = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("50000.00"),
+        verbose_name="Recompensa de lealtad VIP (Créditos)",
+        help_text="Cantidad de créditos otorgados automáticamente al cumplir la lealtad.",
+    )
+    loyalty_voucher_service = models.ForeignKey(
+        "spa.Service",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Servicio de recompensa VIP",
+        help_text="Servicio que se otorga como voucher al cumplir la lealtad.",
+    )
+    quiet_hours_start = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Inicio de horas de silencio",
+        help_text="Hora desde la cual se silencian notificaciones no críticas.",
+    )
+    quiet_hours_end = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Fin de horas de silencio",
+        help_text="Hora en la que termina la ventana de silencio.",
+    )
+    timezone_display = models.CharField(
+        max_length=64,
+        default="America/Bogota",
+        verbose_name="Zona horaria de visualización",
+        help_text="Zona horaria usada para mostrar fechas al usuario.",
+    )
+    waitlist_enabled = models.BooleanField(
+        default=False,
+        verbose_name="Lista de espera habilitada",
+        help_text="Permite activar/desactivar el módulo de lista de espera.",
+    )
+    waitlist_ttl_minutes = models.PositiveIntegerField(
+        default=60,
+        verbose_name="TTL de lista de espera (minutos)",
+        help_text="Tiempo máximo para responder a una oferta de lista de espera.",
+    )
+    developer_commission_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("5.00"),
+        verbose_name="Comisión del desarrollador (%)",
+        help_text="Porcentaje reservado para el desarrollador. Mínimo permitido: 5%.",
+    )
+    developer_payout_threshold = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("200000.00"),
+        verbose_name="Umbral de pago al desarrollador",
+        help_text="Saldo mínimo acumulado antes de intentar una dispersión al desarrollador.",
+    )
+    developer_in_default = models.BooleanField(
+        default=False,
+        verbose_name="Desarrollador en mora",
+        help_text="Indica si el sistema adeuda pagos al desarrollador.",
+    )
+    developer_default_since = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Inicio de mora con el desarrollador",
+    )
+
+    def clean(self):
+        """
+        Ejecuta validaciones de dominio antes de guardar.
+
+        Valida que todos los campos tengan valores razonables y consistentes
+        para prevenir configuraciones que puedan causar problemas en producción.
+
+        Raises:
+            ValidationError: Si algún campo tiene un valor inválido.
+        """
+        errors = {}
+        if self.advance_payment_percentage > 100:
+            errors["advance_payment_percentage"] = "Debe estar entre 0 y 100."
+        if self.low_supervision_capacity < 1:
+            errors["low_supervision_capacity"] = "Debe ser al menos 1."
+        if self.appointment_buffer_time > 180:
+            errors["appointment_buffer_time"] = "No debería exceder 180 minutos."
+        if self.vip_monthly_price is not None and self.vip_monthly_price < 0:
+            errors["vip_monthly_price"] = "Debe ser un valor positivo."
+        if self.vip_discount_percentage < 0 or self.vip_discount_percentage > 100:
+            errors["vip_discount_percentage"] = "El porcentaje debe estar entre 0 y 100."
+        if self.vip_cashback_percentage < 0 or self.vip_cashback_percentage > 100:
+            errors["vip_cashback_percentage"] = "El porcentaje de cashback debe estar entre 0 y 100."
+        if self.advance_expiration_minutes < 1:
+            errors["advance_expiration_minutes"] = "Debe ser al menos 1 minuto."
+        if self.credit_expiration_days < 1:
+            errors["credit_expiration_days"] = "Debe ser al menos 1 día."
+        if self.return_window_days < 0:
+            errors["return_window_days"] = "No puede ser negativo."
+        if self.loyalty_months_required < 1:
+            errors["loyalty_months_required"] = "Debe ser al menos 1."
+        if self.vip_loyalty_credit_reward < 0:
+             errors["vip_loyalty_credit_reward"] = "La recompensa en créditos no puede ser negativa."
+        if self.waitlist_ttl_minutes < 5:
+            errors["waitlist_ttl_minutes"] = "Debe ser al menos 5 minutos."
+        commission = self.developer_commission_percentage
+        if commission is None or commission <= 0:
+            errors["developer_commission_percentage"] = "El porcentaje de la comisión debe ser mayor a cero."
+        elif commission < Decimal("5.00"):
+            errors["developer_commission_percentage"] = "El porcentaje de la comisión no puede ser menor al 5%."
+        threshold = self.developer_payout_threshold
+        if threshold is None or threshold <= 0:
+            errors["developer_payout_threshold"] = "El umbral de pago debe ser mayor que cero."
+
+        # Validar timezone
+        if self.timezone_display:
+            try:
+                ZoneInfo(self.timezone_display)
+            except ZoneInfoNotFoundError:
+                errors["timezone_display"] = f"Timezone inválido: {self.timezone_display}"
+
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        """
+        Guarda la configuración aplicando el patrón singleton y registrando cambios.
+
+        Comportamiento:
+        1. Fuerza el UUID singleton para garantizar una única instancia
+        2. Registra cambios en campos críticos en los logs
+        3. Ejecuta validaciones completas (full_clean)
+        4. Actualiza automáticamente la caché después de guardar
+
+        Args:
+            *args: Argumentos posicionales para el método save de Django
+            **kwargs: Argumentos con nombre para el método save de Django
+        """
+        # Forzamos UUID singleton
+        self.pk = self.id = GLOBAL_SETTINGS_SINGLETON_UUID
+
+        should_update_prices = False
+
+        # Log cambios importantes en campos críticos
+        if self.pk:
+            try:
+                old = GlobalSettings.objects.get(pk=self.pk)
+                changes = []
+                for field in ['advance_payment_percentage', 'low_supervision_capacity',
+                             'developer_commission_percentage', 'vip_discount_percentage']:
+                    old_val = getattr(old, field)
+                    new_val = getattr(self, field)
+                    if old_val != new_val:
+                        changes.append(f"{field}: {old_val} -> {new_val}")
+                        if field == 'vip_discount_percentage':
+                            should_update_prices = True
+
+                if changes:
+                    logger.warning(
+                        "GlobalSettings modificado: %s",
+                        ", ".join(changes)
+                    )
+            except GlobalSettings.DoesNotExist:
+                pass
+
+        self.full_clean()
+        super().save(*args, **kwargs)
+        # Invalida/actualiza caché después de guardar
+        cache.set(GLOBAL_SETTINGS_CACHE_KEY, self, timeout=None)
+
+        # Trigger update if needed (using on_commit to be safe with transactions)
+        if should_update_prices:
+            from spa.services.pricing import update_service_vip_prices
+            transaction.on_commit(lambda: update_service_vip_prices(self.vip_discount_percentage))
+
+    @classmethod
+    def load(cls) -> "GlobalSettings":
+        """
+        Obtiene la instancia singleton de configuración global.
+
+        Comportamiento:
+        1. Intenta obtener desde caché primero (rendimiento)
+        2. Si no está en caché, consulta la base de datos
+        3. Si no existe en BD, crea una nueva instancia con valores default
+        4. Usa select_for_update para prevenir condiciones de carrera
+        5. Actualiza la caché antes de retornar
+
+        Returns:
+            GlobalSettings: La única instancia de configuración global.
+
+        Thread-safe: Sí, mediante transacciones atómicas y locks de base de datos.
+        """
+        cached = cache.get(GLOBAL_SETTINGS_CACHE_KEY)
+        if cached is not None:
+            return cached
+
+        # Usar select_for_update con get_or_create para evitar race conditions
+        with transaction.atomic():
+            try:
+                obj = cls.objects.select_for_update().get(id=GLOBAL_SETTINGS_SINGLETON_UUID)
+            except cls.DoesNotExist:
+                obj = cls.objects.create(id=GLOBAL_SETTINGS_SINGLETON_UUID)
+
+            if not obj.created_at:
+                obj.created_at = timezone.now()
+                obj.save(update_fields=["created_at"])
+
+            cache.set(GLOBAL_SETTINGS_CACHE_KEY, obj, timeout=None)
+            return obj
+
+    def __str__(self) -> str:
+        return "Configuraciones Globales del Sistema"
+
+    class Meta:
+        verbose_name = "Configuración Global"
+        verbose_name_plural = "Configuraciones Globales"
+        # Ayuda en búsquedas y ordenaciones
+        indexes = [
+            models.Index(fields=["updated_at"]),
+        ]
