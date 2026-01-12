@@ -5,7 +5,7 @@ from .models import Promocion
 class PromocionSerializer(serializers.ModelSerializer):
     """
     Serializer para promociones que se mostrará al frontend.
-    Solo incluye campos necesarios para la visualización.
+    Incluye campos necesarios para la visualización y tracking.
     """
     esta_vigente = serializers.SerializerMethodField()
 
@@ -15,7 +15,9 @@ class PromocionSerializer(serializers.ModelSerializer):
             'id', 'titulo', 'descripcion', 'imagen', 'imagen_url',
             'tipo', 'paginas', 'mostrar_siempre', 'link_accion',
             'texto_boton', 'esta_vigente', 'activa', 'fecha_inicio', 'fecha_fin',
+            'veces_mostrada', 'veces_clickeada', 'prioridad',
         ]
+        read_only_fields = ['veces_mostrada', 'veces_clickeada']
 
     def to_internal_value(self, data):
         """

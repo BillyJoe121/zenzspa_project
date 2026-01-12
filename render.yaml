@@ -47,6 +47,8 @@ services:
         sync: false
       - key: WOMPI_PAYOUT_PRIVATE_KEY
         sync: false
+      - key: WOMPI_PAYOUT_USER_ID
+        sync: false
       - key: WOMPI_PAYOUT_BASE_URL
         value: "https://production.wompi.co/v1"
       - key: WOMPI_DEVELOPER_DESTINATION

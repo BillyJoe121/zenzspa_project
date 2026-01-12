@@ -179,7 +179,7 @@ class OrderActionsMixin:
                     )
 
             # Usar el servicio para transicionar a CANCELLED
-            from .services import OrderService
+            from ..services import OrderService
             OrderService.transition_to(order, Order.OrderStatus.CANCELLED, changed_by=request.user)
 
             # Generar crédito si la orden ya fue pagada (PAID o PREPARING)
@@ -253,7 +253,7 @@ class OrderActionsMixin:
             )
 
         # Liberar stock reservado antes de eliminar
-        from .services import OrderService
+        from ..services import OrderService
         OrderService.release_reservation(
             order,
             movement_type=InventoryMovement.MovementType.RESERVATION_RELEASE,

@@ -30,6 +30,10 @@ MARKETPLACE_PRODUCTS = [
         "what_is_included": "• Frasco de vidrio ámbar de 10ml con gotero\n• Aceite esencial 100% puro sin diluir\n• Etiqueta con información de origen y propiedades\n• Caja de cartón reciclado con instrucciones",
         "benefits": "• Aromaterapia natural que mejora el estado de ánimo\n• Propiedades relajantes o energizantes según variedad\n• Purifica el ambiente del hogar\n• Ayuda a conciliar el sueño\n• Reduce el estrés y la ansiedad",
         "how_to_use": "1. Difusor: Agregar 3-5 gotas en difusor con agua\n2. Masaje: Diluir 2-3 gotas en 10ml de aceite portador\n3. Baño: Añadir 5-8 gotas al agua tibia de la tina\n4. Inhalación: 1-2 gotas en pañuelo o manos\n\n⚠️ No aplicar directamente sobre la piel sin diluir",
+        "images": [
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/AceitesEsenciales/cosmetic-oil-in-a-brown-bottle-with-pebbles-2026-01-09-07-46-55-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/AceitesEsenciales/top-view-of-arranged-essential-oil-and-towels-for-2026-01-05-23-50-03-utc.webp",
+        ],
         "variants": [
             {
                 "name": "Lavanda del Valle - 10ml",
@@ -66,6 +70,14 @@ MARKETPLACE_PRODUCTS = [
         "what_is_included": "• Vela de cera de soja 100% natural\n• Mecha de algodón libre de plomo\n• Envase reutilizable (lata o vidrio según variante)\n• Fragancia premium de larga duración\n• Instrucciones de uso y seguridad",
         "benefits": "• Aromatiza espacios de forma natural\n• No produce hollín negro como las velas de parafina\n• Crea ambiente de relajación y bienestar\n• Ideal para meditación y rituales de autocuidado\n• El envase es reutilizable después de terminar",
         "how_to_use": "1. Primer uso: Dejar encendida hasta que toda la superficie se derrita (2-3h)\n2. Recortar la mecha a 5mm antes de cada uso\n3. Máximo 4 horas continuas de uso\n4. Usar en superficie plana y estable\n5. Mantener alejada de corrientes de aire\n\n💡 Tip: Para mayor duración, apagar soplando suavemente",
+        "images": [
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/VelasAromaticas/burning-candles-on-rustic-stone-slabs-close-up-2026-01-08-22-40-28-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/VelasAromaticas/soy-scented-candle-in-a-jar-coffee-beans-anise-2026-01-06-10-34-09-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/VelasAromaticas/aromatic-candles-chocolate-brown-and-caramel-scen-2026-01-05-22-55-35-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/VelasAromaticas/cozy-composition-with-burning-candles-in-the-inter-2026-01-08-22-54-26-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/VelasAromaticas/candles-for-cold-weather-cosy-winter-evening-or-w-2026-01-08-22-34-04-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/VelasAromaticas/autumn-setting-with-candles-2025-10-28-21-22-15-utc.webp",
+        ],
         "variants": [
             {
                 "name": "Vela de Soja - Lavanda & Vainilla",
@@ -102,6 +114,11 @@ MARKETPLACE_PRODUCTS = [
         "what_is_included": "• Frasco atomizador de vidrio ámbar 120ml\n• Bruma con aceites esenciales y base acuosa\n• Etiqueta con instrucciones y precauciones\n• Caja reciclada con sello de seguridad",
         "benefits": "• Refresca textiles sin manchar\n• Ayuda a crear rutina de sueño\n• Aromas relajantes que calman la mente\n• Uso seguro en habitación y ropa de cama\n• Ideal para viajes y hotelería",
         "how_to_use": "1. Agitar antes de usar\n2. Pulverizar a 20-30cm sobre textiles\n3. Esperar 2-3 minutos antes de contacto\n4. Evitar aplicar directamente sobre seda\n5. Para almohadas, usar 1-2 disparos antes de dormir\n\n⚠️ Evitar contacto directo con ojos y piel sensible",
+        "images": [
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/BrumaDeAlmohada/cosmetic-spray-bottle-on-wood-near-natural-boho-de-2026-01-09-00-38-26-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/BrumaDeAlmohada/cosmetic-product-oil-or-face-serum-on-white-bed-ba-2026-01-06-10-54-30-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/BrumaDeAlmohada/natural-skincare-cosmetics-creams-and-oils-on-bat-2025-10-16-06-21-28-utc.webp",
+        ],
         "variants": [
             {
                 "name": "Bruma Textil Serenity - 120ml",
@@ -122,6 +139,10 @@ MARKETPLACE_PRODUCTS = [
         "what_is_included": "• Frasco de vidrio ámbar 15ml con gotero\n• Blend pre-diluido en aceite portador\n• Ficha con propiedades y uso recomendado\n• Caja reciclada con sello de seguridad",
         "benefits": "• Lista para usar sin necesidad de mezclar\n• Aroma equilibrado y suave\n• Propiedades calmantes y ansiolíticas\n• Perfecto para rutinas de noche\n• Compatible con la mayoría de difusores",
         "how_to_use": "1. Agregar 5-8 gotas al difusor con agua\n2. Para baño relajante, diluir 8-10 gotas en 1 cucharada de aceite portador\n3. Para masaje, usar 5 gotas en 10ml de aceite base\n4. Mantener fuera del alcance de niños y mascotas\n\n⚠️ No ingerir. Evitar contacto con ojos.",
+        "images": [
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/AceitesEsenciales/mockup-white-cosmetic-box-on-natural-stone-podium-2026-01-05-06-03-34-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/AceitesEsenciales/masage-body-oil-2025-10-16-13-59-28-utc.webp",
+        ],
         "variants": [
             {
                 "name": "Blend Relax - 15ml",
@@ -142,6 +163,11 @@ MARKETPLACE_PRODUCTS = [
         "what_is_included": "• Botella vidrio ámbar 120ml con válvula dosificadora\n• Aceite corporal mezcla de aceites vegetales y esenciales\n• Etiqueta con ingredientes y modo de uso\n• Caja reciclada con sello de seguridad",
         "benefits": "• Hidrata profundamente sin sensación grasosa\n• Calma irritaciones leves y rojeces\n• Aromaterapia relajante para antes de dormir\n• Apto para masajes en casa\n• Vegano y libre de parabenos",
         "how_to_use": "1. Aplicar sobre piel limpia y húmeda\n2. Masajear con movimientos circulares hasta absorber\n3. Ideal después del baño nocturno\n4. Para masaje, aplicar cantidad generosa en zona a trabajar\n5. No usar en heridas abiertas\n\n⚠️ Probar en zona pequeña si tienes piel sensible",
+        "images": [
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/AceitesDeMasaje/isolated-spa-cosmetic-products-plastic-bottle-for-2026-01-08-05-23-16-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/AceitesDeMasaje/pipette-with-cosmetic-oil-in-a-brown-bottle-with-b-2026-01-09-00-00-29-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/AceitesDeMasaje/bathroom-accessories-shampoo-loofah-towel-bat-2026-01-05-00-56-39-utc.webp",
+        ],
         "variants": [
             {
                 "name": "Aceite Calm - Lavanda & Vainilla 120ml",
@@ -170,6 +196,13 @@ MARKETPLACE_PRODUCTS = [
         "what_is_included": "• Tarro de vidrio 450g con cuchara de bambú\n• Sales de baño mezcladas con aceites esenciales\n• Etiqueta con ingredientes y uso recomendado\n• Bolsa de muselina para infusión opcional",
         "benefits": "• Relaja músculos cansados\n• Ayuda a eliminar toxinas\n• Mejora la calidad del sueño\n• Reduce inflamación leve\n• Experiencia de spa en casa",
         "how_to_use": "1. Añadir 4-6 cucharadas a la tina con agua caliente\n2. Para baño de pies, usar 2 cucharadas en agua tibia\n3. Opcional: colocar en bolsa de muselina para evitar residuos\n4. Disfrutar 15-20 minutos\n5. Hidratar la piel después del baño\n\n⚠️ No usar en heridas abiertas o piel irritada",
+        "images": [
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/SalesDeBaño/bath-and-spa-accessories-sea-salt-with-lavender-d-2026-01-06-09-34-21-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/SalesDeBaño/sea-salt-in-bowl-with-roses-on-wooden-background-2025-10-17-00-31-13-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/SalesDeBaño/close-up-view-of-sea-salt-in-bowls-and-small-white-2026-01-06-00-44-44-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/SalesDeBaño/blue-and-pink-sea-salt-nobody-hygiene-products-2026-01-06-09-07-14-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/SalesDeBaño/bath-salts-2025-10-15-04-44-16-utc.webp",
+        ],
         "variants": [
             {
                 "name": "Sales Detox - Lavanda & Romero 450g",
@@ -226,6 +259,10 @@ MARKETPLACE_PRODUCTS = [
         "what_is_included": "• Pulsera tejida artesanalmente\n• Cuarzo rosa o rodocrosita natural\n• Herrajes en oro laminado 14k\n• Bolsa de terciopelo para guardar\n• Tarjeta de intención y cuidado\n• Certificado de autenticidad de la piedra",
         "benefits": "• Fomenta la autoestima y la compasión\n• Abre el chakra del corazón\n• Protege de energías negativas\n• Regalo significativo con intención\n• Hecha a mano en Colombia",
         "how_to_use": "1. Colocar en la muñeca dominante para sentir más su energía\n2. Repetir una afirmación al ponértela\n3. Limpiar con palo santo o luna llena\n4. Evitar contacto prolongado con agua y perfumes\n5. Guardar en la bolsa cuando no se use\n\nMantra sugerido: \"Merezco amor y cuidado\"",
+        "images": [
+             "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/PulseraTejida/woman-hands-with-different-bracelets-and-jewellery-2026-01-05-00-42-54-utc.webp",
+             "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/PulseraTejida/close-up-red-decorated-bracelet-on-wood-2026-01-05-01-13-01-utc.webp",
+        ],
         "variants": [
             {
                 "name": "Amor Propio - Cuarzo Rosa & Oro 14k",
@@ -254,6 +291,11 @@ MARKETPLACE_PRODUCTS = [
         "what_is_included": "• Pulsera tejida artesanalmente\n• Piedras de amatista o aventurina natural\n• Herrajes mixtos plata 925 y oro laminado 14k\n• Bolsa de terciopelo para guardar\n• Tarjeta con guía de meditación\n• Certificado de autenticidad",
         "benefits": "• Armoniza los chakras principales\n• Equilibra las emociones y la mente\n• Atrae abundancia y prosperidad (aventurina)\n• Promueve la paz interior (amatista)\n• Diseño versátil para cualquier ocasión",
         "how_to_use": "1. MEDITACIÓN: Sostener la pulsera mientras meditas para amplificar la conexión\n2. Usar en cualquier muñeca según tu intuición del día\n3. En momentos de estrés, tocar las piedras y respirar profundo\n4. Limpiar pasándola por humo de palo santo\n5. Guardar en bolsa de terciopelo cuando no se use\n\n☯️ Mantras sugeridos: 'Estoy en equilibrio' o 'Fluyo con la vida'",
+        "images": [
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/PulseraTejida/braided-bracelet-made-of-synthetic-thread-decorat-2026-01-07-02-26-50-utc.webp",
+            "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/PulseraTejida/a-picture-of-a-bracelet-that-looks-like-it-is-made-2026-01-07-07-35-41-utc.webp",
+             "https://raw.githubusercontent.com/BillyJoe121/StudiozensImages/main/Productos/PulseraTejida/metal-key-pendant-on-dark-concrete-background-2026-01-08-05-44-39-utc.webp",
+        ],
         "variants": [
             {
                 "name": "Balance - Amatista & Herrajes Mixtos",

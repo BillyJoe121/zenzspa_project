@@ -24,45 +24,6 @@ def _to_decimal(value) -> Decimal:
     return Decimal(str(value))
 
 
-class WompiDisbursementClient:
-    """
-    Cliente wrapper para mantener compatibilidad con código existente.
-
-    Delega todas las operaciones al nuevo WompiPayoutsClient que implementa
-    correctamente la API de Wompi Payouts.
-    """
-
-    def __init__(self):
-        self._client = WompiPayoutsClient()
-
-    def get_available_balance(self, account_id: str | None = None) -> Decimal:
-        try:
-            return self._client.get_available_balance(account_id=account_id)
-        except WompiPayoutsError as exc:
-            raise WompiPayoutError(str(exc)) from exc
-
-    def create_payout(self, amount: Decimal, reference: str | None = None) -> str:
-        if not reference:
-            reference = f"DEV-COMM-{timezone.now().strftime('%Y%m%d-%H%M%S')}"
-
-        try:
-            payout_id, payout_data = self._client.create_payout(
-                amount=amount,
-                reference=reference,
-                beneficiary_data=None,
-                account_id=None,
-            )
-            logger.info(
-                "Payout creado para desarrollador: ID=%s, Monto=$%s, Estado=%s",
-                payout_id,
-                amount,
-                payout_data.get("status", "unknown"),
-            )
-            return payout_id
-        except WompiPayoutsError as exc:
-            raise WompiPayoutError(str(exc)) from exc
-
-
 class DeveloperCommissionService:
     """
     Orquesta el registro de comisiones, cálculo de deuda y pagos al desarrollador.
@@ -71,6 +32,12 @@ class DeveloperCommissionService:
     @classmethod
     @transaction.atomic
     def register_commission(cls, payment):
+        # -----------------------------------------------------------
+        # LOGICA DESCONECTADA POR SOLICITUD DEL USUARIO (2026-01-11)
+        # Se mantiene el código pero retorna inmediatamente para no generar deuda.
+        # -----------------------------------------------------------
+        return None
+
         if payment is None or payment.amount in (None, Decimal("0")):
             return None
 
@@ -170,6 +137,50 @@ class DeveloperCommissionService:
         else:
             cls._enter_default(settings_obj, current_debt=remaining_debt)
         return {"status": "paid", "amount": str(amount_to_pay), "remaining_debt": str(remaining_debt)}
+
+    @classmethod
+    def process_fixed_weekly_payout(cls, amount: Decimal = Decimal("250000.00")):
+        """
+        Ejecuta un pago fijo semanal al desarrollador, independiente de comisiones.
+        """
+        client = WompiDisbursementClient()
+
+        try:
+            balance = client.get_available_balance()
+        except WompiPayoutError as exc:
+            logger.error("No se pudo consultar saldo Wompi para pago fijo: %s", exc)
+            cls._log_payout_failure("balance_unavailable_fixed", detail=str(exc))
+            return {"status": "balance_unavailable", "detail": str(exc)}
+
+        if balance < amount:
+            logger.error("Saldo insuficiente para pago fijo. Requerido: %s, Disponible: %s", amount, balance)
+            cls._log_payout_failure(
+                "insufficient_funds_fixed",
+                required=str(amount),
+                balance=str(balance),
+            )
+            return {"status": "insufficient_funds", "required": str(amount), "balance": str(balance)}
+
+        reference = f"DEV-FIXED-{timezone.now().strftime('%Y%m%d-%H%M%S')}"
+        try:
+            wompi_transfer_id = client.create_payout(amount, reference=reference)
+        except WompiPayoutError as exc:
+            logger.error("Pago fijo al desarrollador falló: %s", exc)
+            cls._log_payout_failure("payout_failed_fixed", detail=str(exc))
+            return {"status": "payout_failed", "detail": str(exc)}
+
+        # Log success
+        safe_audit_log(
+            action=AuditLog.Action.ADMIN_ENDPOINT_HIT,
+            details={
+                "action": "developer_fixed_payout_completed",
+                "amount": str(amount),
+                "wompi_transfer_id": wompi_transfer_id,
+                "timestamp": timezone.now().isoformat(),
+            },
+        )
+
+        return {"status": "paid", "amount": str(amount), "transfer_id": wompi_transfer_id}
 
     @classmethod
     @transaction.atomic

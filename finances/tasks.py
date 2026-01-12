@@ -10,6 +10,7 @@ Incluye tasks de:
 import logging
 import uuid
 from datetime import timedelta
+from decimal import Decimal
 
 from celery import shared_task
 from django.utils import timezone
@@ -31,6 +32,18 @@ def run_developer_payout():
     en función de la deuda y el saldo Wompi disponible.
     """
     return DeveloperCommissionService.evaluate_payout()
+
+
+@shared_task
+def send_weekly_developer_payment():
+    """
+    Ejecuta el pago fijo de 250.000 COP al desarrollador.
+    Programado para los sábados a las 6pm.
+    """
+    logger.info("Iniciando pago semanal fijo al desarrollador...")
+    result = DeveloperCommissionService.process_fixed_weekly_payout(Decimal("250000.00"))
+    logger.info("Resultado pago semanal fijo: %s", result)
+    return result
 
 
 @shared_task

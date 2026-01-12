@@ -27,7 +27,7 @@ class ServiceFilter(django_filters.FilterSet):
 class ServiceCategoryViewSet(viewsets.ModelViewSet):
     """
     ViewSet para gestión de categorías de servicios.
-    
+
     - LIST/RETRIEVE: Cualquier usuario autenticado
     - CREATE/UPDATE/DELETE: Solo ADMIN
     """
@@ -37,6 +37,22 @@ class ServiceCategoryViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'created_at']
+
+    def get_queryset(self):
+        """
+        Retorna solo categorías que tienen servicios activos.
+        Los admins pueden ver todas las categorías.
+        """
+        queryset = super().get_queryset()
+
+        # Si es admin, mostrar todas las categorías
+        if self.request.user and self.request.user.is_staff:
+            return queryset
+
+        # Para usuarios normales, solo categorías con servicios activos
+        return queryset.filter(
+            services__is_active=True
+        ).distinct().order_by('name')
     
     def get_permissions(self):
         """

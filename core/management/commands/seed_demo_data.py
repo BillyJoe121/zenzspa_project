@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from marketplace.models import Product, ProductVariant
+from marketplace.models import Product, ProductVariant, ProductImage, ProductCategory
 from notifications.models import NotificationPreference
 from profiles.models import ClinicalProfile
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -139,21 +139,20 @@ class Command(BaseCommand):
         """
         category_map = {}
         for key, cat_data in PRODUCT_CATEGORIES.items():
-            category = ServiceCategory.all_objects.filter(name=cat_data["name"]).first()
+            category = ProductCategory.all_objects.filter(name=cat_data["name"]).first()
 
             if not category:
-                category = ServiceCategory.objects.create(
+                category = ProductCategory.objects.create(
                     name=cat_data["name"],
-                    description=cat_data["description"],
-                    is_low_supervision=cat_data["is_low_supervision"]
+                    description=cat_data["description"]
                 )
             else:
                 if category.is_deleted:
                     category.restore()
 
                 category.description = cat_data["description"]
-                category.is_low_supervision = cat_data["is_low_supervision"]
-                category.save(update_fields=['description', 'is_low_supervision', 'updated_at'])
+                # ProductCategory no tiene is_low_supervision
+                category.save(update_fields=['description', 'updated_at'])
 
             category_map[key] = category
 
@@ -206,6 +205,35 @@ class Command(BaseCommand):
                 )
                 if created_variant:
                     variants_created += 1
+
+            # Handle Images
+            image_urls = product_data.get("images", [])
+            if image_urls:
+                # 1. Actualizar la imagen principal en el modelo Product (para miniaturas rápidas)
+                primary_url = image_urls[0]
+                if product.image_url != primary_url:
+                    product.image_url = primary_url
+                    product.save(update_fields=['image_url'])
+
+                # 2. Gestionar ProductImage (Galería)
+                # Borramos las imágenes que son URLs externas (sean null o vacías no cuenta como url válida manejada por seed)
+                # Queremos borrar las que TIENEN una URL seteada.
+                ProductImage.objects.filter(product=product).exclude(image_url="").delete()
+                ProductImage.objects.filter(product=product).exclude(image_url__isnull=True).delete()
+                
+                for idx, url in enumerate(image_urls):
+                    is_main = (idx == 0)
+                    # Si esta va a ser la principal, asegurarnos de que ninguna otra lo sea (ej. una subida manual)
+                    if is_main:
+                        ProductImage.objects.filter(product=product, is_primary=True).update(is_primary=False)
+
+                    ProductImage.objects.create(
+                        product=product,
+                        image_url=url,
+                        is_primary=is_main,
+                        display_order=idx,
+                        alt_text=f"{product.name} - Imagen {idx + 1}"
+                    )
 
         return {
             "products_processed": products_processed,

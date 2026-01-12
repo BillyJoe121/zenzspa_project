@@ -64,32 +64,31 @@ class PromocionViewSet(viewsets.ModelViewSet):
         Retorna promociones activas para una página específica.
 
         Query params:
-        - pagina: 'dashboard', 'home', o 'servicios'
+        - pagina (opcional): 'dashboard', 'home', 'services', 'shop', 'book'
+          Si no se proporciona, retorna todas las promociones vigentes.
 
         Ejemplo: GET /api/promociones/activas/?pagina=dashboard
         """
         pagina = request.query_params.get('pagina', None)
 
-        if not pagina:
-            return Response(
-                {'error': 'El parámetro "pagina" es requerido'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # Si se proporciona página, validar que sea válida
+        if pagina:
+            paginas_validas = dict(Promocion.PAGINA_CHOICES).keys()
+            if pagina not in paginas_validas:
+                return Response(
+                    {
+                        'error': f'Página inválida. Opciones: {", ".join(paginas_validas)}'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        # Validar que la página sea válida
-        paginas_validas = dict(Promocion.PAGINA_CHOICES).keys()
-        if pagina not in paginas_validas:
-            return Response(
-                {
-                    'error': f'Página inválida. Opciones: {", ".join(paginas_validas)}'
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Filtrar promociones que incluyan esta página y estén vigentes
-        promociones = Promocion.objects.filter(
-            paginas__contains=[pagina]
-        ).order_by('-prioridad', '-creada_en')
+            # Filtrar promociones que incluyan esta página
+            promociones = Promocion.objects.filter(
+                paginas__contains=[pagina]
+            ).order_by('-prioridad', '-creada_en')
+        else:
+            # Si no se proporciona página, retornar todas las promociones activas
+            promociones = Promocion.objects.all().order_by('-prioridad', '-creada_en')
 
         # Filtrar manualmente por vigencia (para considerar fechas)
         promociones_vigentes = [p for p in promociones if p.esta_vigente()]

@@ -65,11 +65,12 @@ class Article(models.Model):
     content = models.TextField(verbose_name="Contenido")
 
     # Imágenes
-    cover_image = models.ImageField(
-        upload_to='blog/covers/%Y/%m/',
+    # Imágenes
+    cover_image = models.URLField(
+        max_length=500,
         blank=True,
         null=True,
-        verbose_name="Imagen de portada"
+        verbose_name="URL de imagen de portada"
     )
     cover_image_alt = models.CharField(
         max_length=200,

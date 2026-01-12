@@ -67,12 +67,7 @@ class ArticleListSerializer(serializers.ModelSerializer):
         ]
 
     def get_cover_image_url(self, obj):
-        if obj.cover_image:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.cover_image.url)
-            return obj.cover_image.url
-        return None
+        return obj.cover_image if obj.cover_image else None
 
 
 class ArticleDetailSerializer(serializers.ModelSerializer):
@@ -117,12 +112,7 @@ class ArticleDetailSerializer(serializers.ModelSerializer):
         ]
 
     def get_cover_image_url(self, obj):
-        if obj.cover_image:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.cover_image.url)
-            return obj.cover_image.url
-        return None
+        return obj.cover_image if obj.cover_image else None
 
     def update(self, instance, validated_data):
         # Manejar tags si se proporcionan

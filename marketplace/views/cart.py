@@ -259,7 +259,7 @@ class CartViewSet(viewsets.GenericViewSet):
                 )
             except ValueError as e:
                 logger.error("Error al iniciar pago de orden %s: %s", order.id, e)
-                from .services import OrderService
+                from ..services import OrderService
                 OrderService.transition_to(order, Order.OrderStatus.CANCELLED)
                 return Response(
                     {"error": str(e), "code": "MKT-PAYMENT-ERROR"},

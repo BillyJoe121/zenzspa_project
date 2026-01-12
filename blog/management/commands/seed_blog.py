@@ -4,7 +4,7 @@ from datetime import timedelta
 from django.core.files.base import ContentFile
 from blog.models import Category, Tag, Article
 import random
-import requests
+import random
 import os
 
 
@@ -267,21 +267,10 @@ class Command(BaseCommand):
                 }
             )
             
-            # Descargar imagen si existe
+            # Asignar URL de imagen directamente
             if 'image_url' in art_data:
-                try:
-                    self.stdout.write(f"Descargando imagen para {article.slug}...")
-                    response = requests.get(art_data['image_url'])
-                    if response.status_code == 200:
-                        # Extraer nombre del archivo de la URL
-                        # Usamos slug + extensión jpg para simplificar ya que algunas urls no tienen extension clara o son largas
-                        file_name = f"{article.slug}.jpg"
-                        article.cover_image.save(file_name, ContentFile(response.content), save=True)
-                        self.stdout.write(self.style.SUCCESS(f"  ✓ Imagen descargada: {file_name}"))
-                    else:
-                        self.stdout.write(self.style.ERROR(f"  ✗ Error {response.status_code} al descargar imagen"))
-                except Exception as e:
-                    self.stdout.write(self.style.ERROR(f"  ✗ Excepción al descargar imagen: {str(e)}"))
+                article.cover_image = art_data['image_url']
+                self.stdout.write(f"  ✓ URL de imagen asignada: {art_data['image_url']}")
 
             if not created:
                 # Si ya existe, actualizamos los campos clave

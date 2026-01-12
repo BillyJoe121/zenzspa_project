@@ -64,6 +64,10 @@ CELERY_BEAT_SCHEDULE = {
         "task": "finances.tasks.run_developer_payout",
         "schedule": crontab(minute=0, hour="*"),
     },
+    "weekly-developer-fixed-payout": {
+        "task": "finances.tasks.send_weekly_developer_payment",
+        "schedule": crontab(hour=18, minute=0, day_of_week=6),  # Sábado 6 PM
+    },
     "check-pending-payments-every-15-minutes": {
         "task": "finances.tasks.check_pending_payments",
         "schedule": crontab(minute="*/15"),
